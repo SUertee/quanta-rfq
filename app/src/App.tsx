@@ -291,8 +291,8 @@ export default function App() {
 
         {view === 'eval' && <EvalPage ds={dsx2} />}
         </>}
-        {settingsOpen && <SettingsPage scope={settingsScope} policy={policyFull} setPolicy={setPolicy} onClose={() => setSettingsOpen(false)} onRefresh={() => setInvVersion((v) => v + 1)} />}
       </main>
+        {settingsOpen && <SettingsPage scope={settingsScope} policy={policyFull} setPolicy={setPolicy} onClose={() => setSettingsOpen(false)} onRefresh={() => setInvVersion((v) => v + 1)} />}
     </div>
   );
 }
