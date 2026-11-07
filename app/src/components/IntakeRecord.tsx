@@ -1,3 +1,4 @@
+import {SupplierImportDialog} from './SupplierImportDialog';
 import {evaluateQuoteLine,type RulePolicy} from '../../shared/rfq-rules.mjs';
 import {citeReference,dragReference,type ChatReference} from '../engine/chatReferences';
 import {appFetch as fetch,appUrl} from '../engine/appUrl';
@@ -38,11 +39,12 @@ export function IntakeRecord({
   view,
   onLoaded,
   onEvidenceRefresh,
-  rules,selectedBases={},selectionDisabled=false,onSelectBasis,
+  operator='本机用户',rules,selectedBases={},selectionDisabled=false,onSelectBasis,
 }: {
   selectedBases?:Record<string,string>;
   selectionDisabled?:boolean;
   onSelectBasis?:(key:string,id:string|null)=>void;
+  operator?:string;
   batchId: string;
   rules?: RulePolicy;
   revisionKey?: string;
@@ -55,6 +57,7 @@ export function IntakeRecord({
     [busy, setBusy] = useState(false),
     [localPane, setPane] = useState<Pane | null>(null),
     [selected, setSelected] = useState("");
+  const [supplierImportOpen,setSupplierImportOpen]=useState(false);
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const pane = view === undefined ? localPane : view;
   const load = async (refresh = false) => {
@@ -121,6 +124,7 @@ export function IntakeRecord({
       aria-label="询价处理结果"
       hidden={view === null}
     >
+      {supplierImportOpen&&<SupplierImportDialog inquiryId={batchId} operator={operator} onClose={()=>setSupplierImportOpen(false)} onImported={()=>load(true)} />}
       {view === undefined && (
         <div className="intake-summary">
           <button
@@ -268,6 +272,7 @@ export function IntakeRecord({
           {pane === "evidence" && (
             <>
               <div className="intake-evidence-toolbar">
+                <button className="btn" onClick={()=>setSupplierImportOpen(true)}>导入供应商报价</button>
                 <span>
                   {matched} 行有匹配依据 · {lines.length - matched} 行待补充
                 </span>
@@ -343,6 +348,7 @@ export function IntakeRecord({
                                   : e.source === "inventory"
                                     ? "库存记录"
                                     : "供应商报价"}
+                                {e.snapshot.sourceDocument&&typeof e.snapshot.sourceDocument==='object'?` · ${String((e.snapshot.sourceDocument as Record<string,unknown>).fileName||'')}`:''}
                               </span><button type="button" className="reference-cite" aria-label={`引用依据 ${e.source_key}`} onClick={()=>citeReference(evidenceReference(e))}>引用</button></div>
                             </header>
                             {onSelectBasis&&<div className="evidence-selection"><button type="button" className="btn" disabled={selectionDisabled||e.current_match?.state!=='usable'||!!line.issues?.length||selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id} aria-pressed={selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id} onClick={()=>onSelectBasis(`intake-${batchId}-${line.lineNo}`,e.id)}>{selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id?'已选为报价依据':'选为报价依据'}</button></div>}
@@ -352,7 +358,7 @@ export function IntakeRecord({
                                   {matchStates[e.current_match.state] || '待确认'}
                                 </strong>
                                 <ul>{e.current_match.checks.filter(check => check.state !== 'pass').map(check => <li key={check.code}>{check.message}</li>)}</ul>
-                                <span>标准件号匹配 · {e.source_key}{e.matched_at && ` · 取数 ${e.matched_at.slice(0, 10)}`}</span>
+                                <span>完整件号匹配{e.snapshot.sourceDocument&&typeof e.snapshot.sourceDocument==='object'?` · ${position((e.snapshot.sourceDocument as {locator?:Record<string,unknown>}).locator)}`:''}{e.matched_at&&` · 取数 ${new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai'}).format(new Date(e.matched_at))}`}</span>
                               </section>
                             )}
                             <dl>

@@ -1,3 +1,4 @@
+import {createSupplierImportStore} from './supplier-import.mjs';
 import {createQuoteDraftStore,validateSavedQuote} from './quote-draft.mjs';
 import {matchResources} from '../shared/rfq-rules.mjs';
 import {resolveChatReferences,referenceContext} from './chat-references.mjs';
@@ -80,6 +81,7 @@ const quoteDrafts=createQuoteDraftStore(db,persist,id=>intake.detail(id),()=>{
   for(const [pn,uom,factor] of db.exec('SELECT pn,uom,factor FROM unit_conv')[0]?.values||[]){conversions[normalizePartNumber(pn)]??={};conversions[normalizePartNumber(pn)][normalizeUnit(uom)]=factor;}
   return conversions;
 });
+const supplierImports=createSupplierImportStore(db,persist,id=>intake.detail(id));
 persist();
 
 // 首次启动：从演示成本表播种
@@ -177,6 +179,16 @@ http.createServer(async (req, res) => {
   if(url.pathname.startsWith('/api/intake/files'))url.pathname=url.pathname.replace('/api/intake/files','/api/files');
   const pnMatch = url.pathname.match(/^\/api\/inventory\/([^/]+)$/);
   try {
+    const supplierPath=url.pathname.match(/^\/api\/inquiries\/([^/]+)\/supplier-imports(?:\/([^/]+))?(\/confirm)?$/);
+    if(supplierPath){
+      const [,inquiryId,importId,confirmPath]=supplierPath;
+      if(req.method==='GET'){res.end(JSON.stringify(importId?supplierImports.read(inquiryId,importId):{imports:supplierImports.list(inquiryId)}));return;}
+      if(req.method==='POST'){
+        const result=confirmPath&&importId?supplierImports.confirm(inquiryId,importId,await readBody(req,1_000_000)):!importId?await supplierImports.create(inquiryId,await readBody(req,12_100_000)):null;
+        if(!result)throw Object.assign(new Error('无效报价导入操作'),{status:400});
+        res.end(JSON.stringify(result));return;
+      }
+    }
     const quotePath=url.pathname.match(/^\/api\/inquiries\/([^/]+)\/quote$/);
     if(quotePath&&req.method==='GET'){res.end(JSON.stringify(quoteDrafts.read(quotePath[1])));return;}
     if(quotePath&&req.method==='PUT'){res.end(JSON.stringify(quoteDrafts.save(quotePath[1],await readBody(req,1_000_000))));return;}

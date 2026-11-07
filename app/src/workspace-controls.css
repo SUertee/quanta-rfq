@@ -1019,3 +1019,27 @@ tr:hover .material-reference-name>.reference-cite,.material-reference-name:focus
 .evidence-selection .btn { min-height:44px;white-space:nowrap; }
 .evidence-selection .btn[aria-pressed="true"] { color:var(--inquiry-ink);opacity:1; }
 @media(max-width:600px) { .evidence-selection { justify-content:flex-start; } }
+
+/* Supplier import uses the existing dialog, table and field scales. */
+.supplier-import-dialog { width:min(1050px,calc(100vw - 32px));max-height:calc(100dvh - 48px);padding:0; }
+.supplier-import-body { overflow:auto;min-height:0;padding:24px; }
+.supplier-import-actions,.supplier-import-list { display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:20px; }
+.supplier-import-list .btn[aria-pressed="true"] { background:var(--ink);color:var(--panel); }
+.supplier-import-table { overflow:auto;max-height:260px; }
+.supplier-import-table table { width:100%;border-collapse:collapse; }
+.supplier-import-table th,.supplier-import-table td { padding:12px;text-align:left;border-bottom:1px solid var(--line);white-space:nowrap; }
+.supplier-import-table th { position:sticky;top:0;background:var(--panel); }
+.supplier-import-fields h3 { margin:24px 0 16px; }
+.supplier-field-grid { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px; }
+.supplier-field-grid label { display:flex;flex-direction:column;gap:8px;min-width:0; }
+.supplier-field-grid input { width:100%;min-width:0;min-height:44px; }
+.supplier-import-fields fieldset { display:flex;gap:20px;flex-wrap:wrap;margin:20px 0;border:0;padding:0; }
+.supplier-import-fields fieldset label,.supplier-source-confirm { display:flex;align-items:center;gap:8px;min-height:44px; }
+.supplier-import-footer { display:flex;align-items:center;justify-content:flex-end;gap:12px;padding:20px 24px;border-top:1px solid var(--line); }
+@media(max-width:650px) { .supplier-field-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }.supplier-import-body { padding:16px; }.supplier-import-footer { flex-wrap:wrap;padding:16px; } }
+@media(max-width:420px) { .supplier-field-grid { grid-template-columns:1fr; } }
+.layout-reference .supplier-import-dialog[open] { display:flex;flex-direction:column;width:min(1050px,calc(100vw - 32px));padding:0;overflow:hidden; }
+.supplier-import-dialog>.app-dialog-head { flex-shrink:0;margin:0;padding:20px 24px;border-bottom:1px solid var(--line); }
+.supplier-import-footer { flex-shrink:0; }
+.supplier-field-grid input { box-sizing:border-box;padding:10px 14px;border:1px solid var(--line);border-radius:var(--field-radius);background:var(--hal-head);color:var(--ink);font:inherit; }
+.supplier-import-issues { color:var(--ink);line-height:1.7; }

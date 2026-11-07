@@ -18,7 +18,7 @@ const hash=value=>createHash('sha256').update(canonicalJson(value)).digest('hex'
 const fail=(status,message)=>{const error=new Error(message);error.status=status;throw error;};
 
 export function quoteSourceFingerprint(inquiry){
-  return hash({ruleVersion:RFQ_RULE_VERSION,asOf:businessToday(),status:inquiry.status,issues:inquiry.issues,files:inquiry.files?.map(file=>({id:file.id,status:file.status,sha256:file.sha256})),lines:inquiry.lines.map(line=>({id:line.id,version:line.version,fields:Object.fromEntries(Object.entries(line).filter(([key])=>key!=='evidence')),evidence:line.evidence?.map(entry=>({id:entry.id,source:entry.source,matchedAt:entry.matched_at,snapshot:entry.snapshot}))}))});
+  return hash({ruleVersion:RFQ_RULE_VERSION,asOf:businessToday(),status:inquiry.status,issues:inquiry.issues,files:inquiry.files?.filter(file=>!['supplier_quote','certificate','inventory'].includes(file.document_type)).map(file=>({id:file.id,status:file.status,sha256:file.sha256})),lines:inquiry.lines.map(line=>({id:line.id,version:line.version,fields:Object.fromEntries(Object.entries(line).filter(([key])=>key!=='evidence')),evidence:line.evidence?.map(entry=>({id:entry.id,source:entry.source,matchedAt:entry.matched_at,snapshot:entry.snapshot}))}))});
 }
 
 export function createQuoteDraftStore(db,persist,getInquiry,getUnitConversions=()=>({})){

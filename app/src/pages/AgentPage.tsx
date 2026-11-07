@@ -23,7 +23,7 @@ import { isYellow, priceAll } from '../engine/pricing';
 import {ExecutionSteps} from '../components/ExecutionSteps';
 import {MessageRail} from '../components/MessageRail';
 
-type DraftLine = { key: string; partNumber: string; quantity: number; uom?: string; cost?: number; basisSource?:string; basisId?:string; suggestedPrice?: number; currency: string; source?: string; issues: string[] };
+type DraftLine = { key: string; partNumber: string; quantity: number; uom?: string; cost?: number; basisSource?:string; basisId?:string; basisLabel?:string; suggestedPrice?: number; currency: string; source?: string; issues: string[] };
 type AgentResult = { runId: string; status: 'needs_review' | 'failed'; summary: string; answer?: string; model: string; draft: { lines: DraftLine[]; questions: string[]; mode?: string; limitations?: string[] }; events: { tool: string; state: string; detail: string }[] };
 type Turn = { references?:ChatReference[]; attachments?:ChatAttachment[]; createdAt?:string; inquiry?:ChatInquiryResult; role: 'user' | 'assistant'; content: string; basis?: string; result?: AgentResult; elapsed?: number };
 type Session = { state: 'idle' | 'running' | 'failed' | 'stopped'; input: string; turns: Turn[]; error?: string; progressEvents?:{tool:string;state:string}[]; creation?:ChatIntakeRequest };
@@ -132,7 +132,14 @@ export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOv
     const id = ++generation.current;
     const controller = new AbortController(); request.current = controller;
     const started = performance.now();
-    const activeReferences=conversationReferences(references.items,session.turns);
+    const activeReferences=references.items.length?references.items:conversationReferences([],session.turns.filter(turn=>turn.basis===basis)).filter(reference=>{
+      if(!reference.inquiryId)return true;
+      if(reference.inquiryId!==current.email?.intakeBatchId)return false;
+      const raw=current.email?.parsedRows?.find(row=>row.persistedLineId===reference.lineId);
+      if(reference.lineId&&!raw)return false;
+      if(reference.version&&reference.version!==raw?.version)return false;
+      return !reference.evidenceId||!!raw?.evidence?.some(entry=>entry.id===reference.evidenceId&&(!reference.matchedAt||entry.matched_at===reference.matchedAt));
+    });
     const history = session.turns.filter(t => (!t.basis || t.basis === basis) && t.content.trim()).slice(-6).map(t => ({role:t.role,content:t.content.slice(0,2000)}));
     append(sessionKey, {role:'user',content:instruction,basis,attachments,references:references.items});setAttachments([]);setAttachmentEpoch(n=>n+1);
     patch(sessionKey,{state:'running',input:'',error:undefined,progressEvents:[]});
@@ -209,7 +216,7 @@ export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOv
                     <div><strong className="quote-part">{line.partNumber||'缺件号'}</strong><span className="quote-quantity">{line.quantity} {line.uom||'单位待补'}</span></div>
                     <div className="quote-unit-price"><span>建议单价</span><b>{fmtMoney(line.suggestedPrice,line.currency)||'待补依据'}</b></div>
                   </header>
-                  <dl className="quote-cost-basis"><div><dt>{line.basisSource==='supplier_price'?'供应商成本':'内部成本'}</dt><dd>{fmtMoney(line.cost,line.currency)||'待补充'}</dd></div><div><dt>报价依据</dt><dd>{line.basisSource==='supplier_price'?'供应商报价':line.source?'内部库存成本':'暂无满足条件的依据'}</dd></div></dl>
+                  <dl className="quote-cost-basis"><div><dt>{line.basisSource==='supplier_price'?'供应商成本':'内部成本'}</dt><dd>{fmtMoney(line.cost,line.currency)||'待补充'}</dd></div><div><dt>报价依据</dt><dd>{line.basisLabel||(line.basisSource==='supplier_price'?'供应商报价':line.source?'内部库存成本':'暂无满足条件的依据')}</dd></div></dl>
                   {line.issues.length>0&&<ul className="quote-line-issues">{line.issues.map((issue,k)=><li key={k}>{issue}</li>)}</ul>}
                   <footer className="quote-line-actions">
                     <span className={`quote-price-state ${stale?'stale':applied?'applied':'pending'}`}>{stale?'需重新核对':applied?'✓ 已填入单价':line.suggestedPrice==null?'缺少报价依据':'待核对'}</span>

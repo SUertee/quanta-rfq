@@ -23,7 +23,7 @@ export function buildDraft(input,costs,resources={}) {
   if(selected&&price.target==null)issues.push('定价规则未产生有效单价，请检查配置');
   const candidates=evaluated.candidates.map(resource=>({source:resource.source,sourceKey:resource.source_key,evidenceId:resource.id,...resource.match,snapshotFingerprint:createHash('sha256').update(JSON.stringify(resource.snapshot)).digest('hex')}));
   return {key:line.key,partNumber:line.partNumber,quantity:line.quantity,uom:line.uom||'',candidates,checks:selected?.match.checks||[],currency:'CNY',ruleVersion:RFQ_RULE_VERSION,
-   ...(selected?{cost:price.costBase,basisId:selected.id,basisSource:selected.source,source:selected.source==='inventory'?`SQLite inventory:${selected.source_key}; costUpdateDate=${selected.snapshot.costUpdateDate||'未知'}`:`supplier_price:${selected.source_key}`} :{}),
+   ...(selected?{cost:price.costBase,basisId:selected.id,basisSource:selected.source,basisLabel:selected.source==='inventory'?'内部库存成本':String(selected.snapshot.supplierName||'供应商报价'),source:selected.source==='inventory'?`SQLite inventory:${selected.source_key}; costUpdateDate=${selected.snapshot.costUpdateDate||'未知'}`:`supplier_price:${selected.source_key}`} :{}),
    ...(!analysisOnly&&!issues.length&&price.target!=null?{suggestedPrice:price.target}:{}),issues};
  });
  return {mode:analysisOnly?'analysis':'draft',ruleVersion:RFQ_RULE_VERSION,lines,questions:lines.flatMap(line=>line.issues.map(issue=>`${line.partNumber||line.key}：${issue}`)),limitations:['全部结果为待审核草稿，依据与条件变化后需要重新核对。']};
@@ -89,7 +89,7 @@ async function executeAgent(value,costs,{signal,modelOverride,onAuditEvent,resou
  return {runId:randomUUID(),status:incomplete?'failed':'needs_review',outcome:incomplete?'incomplete':draft?'draft':'evidence',summary,answer,model:cfg.model,draft:finalDraft,events};
 }
 
-export const RFQ_AGENT_DEFINITION=Object.freeze({agentId:'rfq-quote',version:'1.4.0',promptSha256:createHash('sha256').update(RFQ_SYSTEM_PROMPT).digest('hex'),tools:['read_inquiry','lookup_costs','build_quote_draft']});
+export const RFQ_AGENT_DEFINITION=Object.freeze({agentId:'rfq-quote',version:'1.4.1',promptSha256:createHash('sha256').update(RFQ_SYSTEM_PROMPT).digest('hex'),tools:['read_inquiry','lookup_costs','build_quote_draft']});
 export async function runAgent(value,costs,options={}) {
  const audit=options.audit;
  if(!audit) return executeAgent(value,costs,options);
