@@ -149,6 +149,11 @@ export function priceLine(line: InquiryLine, ds: Dataset, opts: PriceOpts = {}):
   } else if (matchLevel > 0) {
     flags.add('NO_MATCH'); // 成本表命中但无外部资源价
   }
+  // Supplier purchasing MOQ does not block fulfillment from matching internal stock.
+  const stockCoversQuantity = cost && cost.partNumber === line.partNumber &&
+    cost.uom === line.uom && cost.stockCondition === line.condition &&
+    line.quantity > 0 && cost.stockQty >= line.quantity;
+  if (stockCoversQuantity) flags.delete('MOQ_SHORTAGE');
   flags.add('PRICE_PENDING'); // 售价口径：规则未确认前一律人工确认
 
   return { line, matchLevel, cost, candidates: kept, excluded, flags: [...flags] };

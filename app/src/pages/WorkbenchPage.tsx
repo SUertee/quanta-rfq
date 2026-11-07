@@ -452,13 +452,13 @@ export function WorkbenchPage({
       <nav className="inquiry-stage-rail" aria-label="询价阶段">{stageItems.map(item=><button key={item.id} aria-current={stage===item.id?'step':undefined} aria-label={`${item.id}. ${item.label}，${item.detail}`} aria-describedby={`stage-tip-${item.id}`} data-tip-dismissed={dismissedStageTip===item.id?'true':undefined} className={`stage-node ${stage===item.id?'current':''} ${item.state}`} onClick={()=>goToStage(item.id)} onMouseEnter={()=>setDismissedStageTip(null)} onFocus={()=>setDismissedStageTip(null)} onKeyDown={e=>{if(e.key==='Escape')setDismissedStageTip(item.id)}}><span className="stage-dot" aria-hidden="true">{item.state==='done'&&stage!==item.id?'✓':item.id}</span><span className="stage-tooltip" role="tooltip" id={`stage-tip-${item.id}`}><strong><span>{String(item.id).padStart(2,'0')}</span>{item.label}</strong><span>{item.detail}</span><small>{item.state==='done'?'已有结果':item.state==='attention'?'待处理':'待执行'}</small></span></button>)}</nav>
       <section className="stage-main" ref={flowRef} aria-label="询价完整流程">
 
-      <section className="workflow-section" id="inquiry-stage-1" tabIndex={-1} data-inquiry-stage="1" aria-labelledby="inquiry-stage-title-1">
+      <section className="workflow-section" data-current={stage===1} id="inquiry-stage-1" tabIndex={-1} data-inquiry-stage="1" aria-labelledby="inquiry-stage-title-1">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-1">{stageItems[0].label}</h2></header>
       {email?.intakeBatchId&&<IntakeRecord batchId={email.intakeBatchId} revisionKey={JSON.stringify(email.parsedRows?.map(l=>l.version))} view="files" onLoaded={setIntakeRecord} onEvidenceRefresh={onDataRefresh} />}
       {!email?.intakeBatchId&&<section className="panel stage-original"><div className="panel-title">原始材料 <Badge text="演示／历史记录" tone="gray" /></div>{email?<><div className="source-file-row"><span>邮件</span><b>{email.file}</b><span>{email.from}</span></div><pre className="stage-raw-text">{email.body||'邮件正文为空'}</pre>{email.attachments.map((name,i)=><div className="source-file-row" key={i}><span>附件</span><b>{name}</b></div>)}</>:<div className="source-file-row"><span>历史询价</span><b>{label}</b><span>{lines.length} 行</span></div>}</section>}
 
       </section>
-      <section className="workflow-section" id="inquiry-stage-2" tabIndex={-1} data-inquiry-stage="2" aria-labelledby="inquiry-stage-title-2">
+      <section className="workflow-section" data-current={stage===2} id="inquiry-stage-2" tabIndex={-1} data-inquiry-stage="2" aria-labelledby="inquiry-stage-title-2">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-2">{stageItems[1].label}</h2></header>
       {intakeRecord?.issues.length? <div className="stage-input-issues">{intakeRecord.issues.map((issue,i)=><button key={i} onClick={()=>goToStage(1)}>{issue} ↗</button>)}</div>:null}
       <div className="panel inquiry-materials-panel" id="rfq-materials" role="region" aria-label="物料核对">
@@ -689,18 +689,18 @@ export function WorkbenchPage({
 
 
       </section>
-      <section className="workflow-section" id="inquiry-stage-3" tabIndex={-1} data-inquiry-stage="3" aria-labelledby="inquiry-stage-title-3">
+      <section className="workflow-section" data-current={stage===3} id="inquiry-stage-3" tabIndex={-1} data-inquiry-stage="3" aria-labelledby="inquiry-stage-title-3">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-3">{stageItems[2].label}</h2></header>
       {email?.intakeBatchId&&<IntakeRecord batchId={email.intakeBatchId} revisionKey={JSON.stringify(email.parsedRows?.map(l=>l.version))} view="evidence" onLoaded={setIntakeRecord} onEvidenceRefresh={onDataRefresh} />}
       {!email?.intakeBatchId&&<section className="panel"><div className="panel-title">库存与供应商依据</div><div className="table-wrap"><table><thead><tr><th>件号</th><th>库存</th><th>内部成本</th><th>供应商参考</th></tr></thead><tbody>{priced.map(p=><tr key={p.line.key}><td><b>{p.line.partNumber}</b></td><td>{p.cost?`${p.cost.stockQty} ${p.cost.uom}`:'未匹配'}</td><td>{p.cost?fmtMoney(p.cost.lastPurchasePrice||p.cost.avgCost):'缺依据'}</td><td>{p.candidates.length?<div className="candidate-evidence-list">{p.candidates.map((c,i)=><div className="candidate-evidence" key={i}><b>{c.row.supplierName}</b><span>{c.row.unitPrice} {c.row.currency}</span><span>{c.row.condition} · MOQ {c.row.moq} · {c.row.validUntil||'有效期缺失'}</span></div>)}</div>:'未匹配'}</td></tr>)}</tbody></table></div></section>}
 
       </section>
-      <section className="workflow-section" id="inquiry-stage-4" tabIndex={-1} data-inquiry-stage="4" aria-labelledby="inquiry-stage-title-4">
+      <section className="workflow-section" data-current={stage===4} id="inquiry-stage-4" tabIndex={-1} data-inquiry-stage="4" aria-labelledby="inquiry-stage-title-4">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-4">{stageItems[3].label}</h2></header>
-      {<section className="panel stage-checks"><div className="stage-check-filters"><FilterTabs label="条件检查筛选" value={checkFilter} onChange={setCheckFilter} items={[{value:'pending',label:'待核对',count:activePriced.filter(p=>!resolved.has(p.line.key)).length},{value:'all',label:'全部',count:activePriced.length}]} /></div>{activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).map(p=><article className="stage-check-row" key={p.line.key}><div><b>{p.line.partNumber||'件号待补'}</b><span>{p.line.quantity} {p.line.uom}</span></div><div className="stage-check-findings">{yellowReasons(p).length?yellowReasons(p).map(f=><span className="check-finding" key={f}>{FLAG_PLAIN[f]}</span>):<span className="check-neutral">规则未发现阻断项 · 待人工核对</span>}</div><div className="stage-check-actions"><button className="btn" onClick={()=>{goToStage(2);setOpen(p.line.key)}}>查看物料</button><button className="btn" onClick={()=>onAskAgent?.(p.line.key)}>问助手</button><button className="btn" onClick={()=>toggleResolved(p.line.key)}>{resolved.has(p.line.key)?'撤销核对':'标记人工已核对'}</button></div></article>)}{!activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).length&&<div className="stage-empty"><span>✓</span><strong>{activePriced.length?'当前没有待核对行':'暂无物料'}</strong><button className="btn" onClick={()=>goToStage(2)}>打开物料表</button></div>}</section>}
+      {<section className="panel stage-checks"><div className="stage-check-filters"><FilterTabs label="条件检查筛选" value={checkFilter} onChange={setCheckFilter} items={[{value:'pending',label:'待核对',count:activePriced.filter(p=>!resolved.has(p.line.key)).length},{value:'all',label:'全部',count:activePriced.length}]} /></div>{activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).map(p=><article className="stage-check-row" key={p.line.key}><div><b>{p.line.partNumber||'件号待补'}</b><span>{p.line.quantity} {p.line.uom}</span></div><div className="stage-check-findings">{yellowReasons(p).length?yellowReasons(p).map(f=><span className="check-finding" key={f}><span className="check-finding-mark" aria-hidden="true">!</span><span>{FLAG_PLAIN[f]}</span></span>):<span className="check-neutral">规则未发现阻断项 · 待人工核对</span>}</div><div className="stage-check-actions"><button className="btn" onClick={()=>{goToStage(2);setOpen(p.line.key)}}>查看物料</button><button className="btn" onClick={()=>onAskAgent?.(p.line.key)}>问助手</button><button className="btn" onClick={()=>toggleResolved(p.line.key)}>{resolved.has(p.line.key)?'撤销核对':'标记人工已核对'}</button></div></article>)}{!activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).length&&<div className="stage-empty"><span>✓</span><strong>{activePriced.length?'当前没有待核对行':'暂无物料'}</strong><button className="btn" onClick={()=>goToStage(2)}>打开物料表</button></div>}</section>}
 
       </section>
-      <section className="workflow-section" id="inquiry-stage-5" tabIndex={-1} data-inquiry-stage="5" aria-labelledby="inquiry-stage-title-5">
+      <section className="workflow-section" data-current={stage===5} id="inquiry-stage-5" tabIndex={-1} data-inquiry-stage="5" aria-labelledby="inquiry-stage-title-5">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-5">{stageItems[4].label}</h2></header>
       <section className="quote-stage-tools">
 
@@ -862,7 +862,7 @@ export function WorkbenchPage({
       </div>
 
       </section>
-      <section className="workflow-section" id="inquiry-stage-6" tabIndex={-1} data-inquiry-stage="6" aria-labelledby="inquiry-stage-title-6">
+      <section className="workflow-section" data-current={stage===6} id="inquiry-stage-6" tabIndex={-1} data-inquiry-stage="6" aria-labelledby="inquiry-stage-title-6">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-6">{stageItems[5].label}</h2></header>
       <section className="panel stage-export">
         <div className="export-checklist"><div><span>有效物料</span><b>{activePriced.length-invalidLines.length}/{activePriced.length}</b><button className="btn" onClick={()=>goToStage(2)}>核对物料</button></div><div><span>人工核对</span><b>{activePriced.filter(p=>resolved.has(p.line.key)).length}/{activePriced.length}</b><button className="btn" onClick={()=>goToStage(4)}>检查条件</button></div><div><span>已填单价</span><b>{activePriced.filter(p=>validUnitPrice(confirmOf(p))).length}/{activePriced.length}</b><button className="btn" onClick={()=>goToStage(5)}>查看草稿</button></div></div>

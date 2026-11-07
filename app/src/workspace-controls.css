@@ -144,7 +144,7 @@
 
 /* One continuous RFQ record: stage navigation scrolls, never hides business sections. */
 .layout-reference .stage-main { display:flex;flex-direction:column;gap:40px; }
-.layout-reference .workflow-section { min-width:0;scroll-margin-top:24px;outline:none; }
+.layout-reference .workflow-section { min-width:0;scroll-margin-top:16px;outline:none; }
 .layout-reference .workflow-section:focus-visible { outline:2px solid var(--hal-accent);outline-offset:6px;border-radius:var(--panel-radius,16px); }
 .layout-reference .workflow-section-heading { display:flex;align-items:baseline;gap:14px;margin:0 0 16px; }
 .layout-reference .workflow-section-heading h2 { margin:0;font-size:24px;font-weight:500;line-height:1.35;color:var(--ink); }
@@ -507,3 +507,47 @@ html:has(dialog[open]) { overflow:hidden; }
 .resource-checks>.badge { justify-self:start; }
 .resource-checks ul { margin:0;padding-left:20px;line-height:1.7; }
 .resource-checks>span { color:var(--ink-2);overflow-wrap:anywhere; }
+
+/* Stage headings share the marker's centerline. Feedback never changes geometry. */
+.layout-reference .workflow-section-heading { align-items:center;min-height:52px; }
+.layout-reference .workflow-section { border-radius:var(--radius-surface); }
+.layout-reference .workflow-section>.panel,
+.layout-reference .workflow-section .intake-detail {
+ transition:box-shadow 180ms ease,border-color 180ms ease;
+}
+.layout-reference .workflow-section[data-current=true]>.panel,
+.layout-reference .workflow-section[data-current=true] .intake-detail {
+ border-color:rgba(91,124,240,.36);
+ box-shadow:0 0 0 2px rgba(91,124,240,.1),0 10px 28px -20px rgba(11,29,58,.32);
+}
+@media(hover:hover) {
+ .layout-reference .workflow-section:hover>.panel,
+ .layout-reference .workflow-section:hover .intake-detail {
+  border-color:rgba(91,124,240,.48);
+  box-shadow:0 0 0 2px rgba(91,124,240,.12),0 12px 32px -18px rgba(11,29,58,.3);
+ }
+}
+.layout-reference .workflow-section:focus-within>.panel,
+.layout-reference .workflow-section:focus-within .intake-detail { border-color:var(--hal-accent); }
+.layout-reference .stage-check-row { padding:24px;gap:16px; }
+.layout-reference .stage-check-row>div:first-child { flex-direction:row;align-items:center;gap:12px;font-size:16px; }
+.layout-reference .stage-check-row>div:first-child span { font-size:14px; }
+.layout-reference .stage-check-findings { grid-column:1/-1;align-items:stretch; }
+.layout-reference .check-finding {
+ display:flex;align-items:center;gap:12px;flex:1 1 100%;padding:14px 16px;
+ border:1px solid rgba(139,100,31,.24);border-radius:var(--radius-control);
+ background:var(--yellow-bg);color:var(--amber);font-size:15px;font-weight:500;line-height:1.6;
+}
+.layout-reference .check-finding-mark {
+ display:grid;place-items:center;flex:0 0 24px;width:24px;height:24px;
+ border:1px solid currentColor;border-radius:50%;font-size:16px;font-weight:600;line-height:1;
+}
+.layout-reference .check-neutral { font-size:14px;line-height:1.6; }
+@media(max-width:650px) {
+ .layout-reference .stage-check-row { padding:18px; }
+ .layout-reference .stage-check-actions { justify-content:flex-start; }
+}
+@media(prefers-reduced-motion:reduce) {
+ .layout-reference .workflow-section>.panel,
+ .layout-reference .workflow-section .intake-detail { transition:none; }
+}
