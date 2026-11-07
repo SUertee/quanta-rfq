@@ -203,14 +203,16 @@ export function WorkbenchPage({
     setEditError('');
     const { base, suffix } = splitPn(pn);
     const u = normalizeUom(draft.uom);
-    onEditLine(key, {
+    const original=lines.find(line=>line.key===key);
+    const patch:Partial<InquiryLine>={
       partNumber: pn, basePn: base, pnSuffix: suffix,
       quantity: Number(draft.quantity) || 0,
       uom: draft.uom, uomNormalized: u.norm, uomFactor: u.factor,
       condition: draft.condition, description: draft.description.trim(),
       requirement:draft.requirement.trim(), needByDate:draft.needByDate.trim(), quoteDeadline:draft.quoteDeadline.trim(), dueDate:draft.dueDate.trim(),
       issues: [], manualFixedMark: true,
-    });
+    };
+    onEditLine(key,Object.fromEntries(Object.entries(patch).filter(([field,value])=>String(value ?? '')!==String(original?.[field as keyof InquiryLine] ?? ''))));
     setEditKey(null);
     onOp('edit');
   };

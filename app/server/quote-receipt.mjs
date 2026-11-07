@@ -1,5 +1,6 @@
+import {validDate} from '../shared/normalization.mjs';
 import {validateSignature} from '../shared/signature.mjs';
-import {businessToday,freightChargeFor} from '../shared/rfq-rules.mjs';
+import {quoteDeadlineExpired,freightChargeFor} from '../shared/rfq-rules.mjs';
 import {createHash} from 'node:crypto';
 
 export function validateQuoteReceipt(value,inquiry) {
@@ -19,6 +20,10 @@ export function validateQuoteReceipt(value,inquiry) {
       const amount=content.policy?.[field];
       if(amount!=null&&(!Number.isFinite(amount)||amount<0))fail('运费规则无效');
     }
+    for(const line of content.lines.filter(line=>!line.skipped)){
+      if(line.quoteDeadline&&!validDate(line.quoteDeadline))fail('报价截止日期不明确，请重新核对');
+      if(quoteDeadlineExpired(line.quoteDeadline))fail('已超过报价截止日期，请重新确认询价要求');
+    }
     const items=content.lines.filter(line=>!line.skipped).reduce((sum,line)=>sum+line.price*line.qty,0);
     const total=Math.round((items+freightChargeFor(items,content.policy))*100)/100;
     if(!Number.isFinite(total)||total!==value.total)fail('报价合计不一致，请重新核对');
@@ -34,7 +39,7 @@ export function validateQuoteReceipt(value,inquiry) {
       if(!source||seen.has(line.key)||source.partNumber!==line.pn||source.quantity!==line.requestedQty||source.uom!==line.uom||source.condition!==line.condition)fail('询价已变更，请重新核对');
       seen.add(line.key);
       if((String(source.description||'')!==String(line.desc||'')||String(source.requirement||'')!==String(line.requirement||'')||String(source.dueDate||'')!==String(line.dueDate||'')||String(source.needByDate||'')!==String(line.needByDate||'')||String(source.quoteDeadline||'')!==String(line.quoteDeadline||'')))fail('询价要求已变更，请重新核对');
-      if(!line.skipped&&source.quoteDeadline&&source.quoteDeadline.slice(0,10)<businessToday())fail('已超过报价截止日期，请重新确认询价要求');
+      if(!line.skipped&&quoteDeadlineExpired(source.quoteDeadline))fail('已超过报价截止日期，请重新确认询价要求');
       if(line.basisId){
         const evidence=source.evidence?.find(entry=>entry.id===line.basisId);
         if(!evidence||JSON.stringify(evidence.snapshot)!==JSON.stringify(line.basisResource))fail('报价依据已变化，请刷新后重新核对');

@@ -2,7 +2,7 @@ import { normalizeLine, normalizePartNumber, DOCUMENT_TYPES, NORMALIZATION_VERSI
 import { evaluateResource } from "./resource-match.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import { decodeFile, INTAKE_PARSER_VERSION } from "./intake-parser.mjs";
-import { extractStructured, extractSemantic, mergeExtractedRequirements, mergeSemanticLines, extractionFieldLabel } from "./intake-extract.mjs";
+import { extractStructured, extractSemantic, mergeExtractedRequirements, mergeSemanticLines, extractionFieldLabel, hasUnmappedText, hasGlobalScope, containsPartNumber } from "./intake-extract.mjs";
 const hash = (b) => createHash("sha256").update(b).digest("hex");
 export function rows(db, sql, args = []) {
   const s = db.prepare(sql);
@@ -81,11 +81,41 @@ export function initIntake(db) {
  CREATE TABLE IF NOT EXISTS schema_migration(id TEXT PRIMARY KEY,applied_at TEXT NOT NULL);
  `);
   migrateNormalization(db);
+  migrateRequirementScope(db);
+}
+function migrateRequirementScope(db) {
+  const migration='requirement-scope-v2';
+  if (rows(db,'SELECT id FROM schema_migration WHERE id=?',[migration]).length) return;
+  db.run('BEGIN');
+  try {
+    for (const inquiry of rows(db,'SELECT id,issues FROM inquiry')) {
+      const stored=rows(db,'SELECT * FROM inquiry_line WHERE inquiry_id=?',[inquiry.id]);
+      const lines=stored.map(row=>JSON.parse(row.fields));
+      const chunks=rows(db,'SELECT c.* FROM file_content c JOIN file f ON f.id=c.file_id WHERE f.inquiry_id=?',[inquiry.id]).map(chunk=>({...chunk,locator:JSON.parse(chunk.locator)}));
+      for (const row of stored) {
+        const line=JSON.parse(row.fields), issues=JSON.parse(row.issues);
+        for (const [key,origin] of Object.entries(line.fieldSources || {})) {
+          const sources=origin.sources || [];
+          const invalid=sources.some(source=>{const chunk=chunks.find(chunk=>chunk.id===source.contentId);return source.scope==='all'?!hasGlobalScope(chunk||{text:''},lines):source.scope==='part'&&(!source.partNumber||!chunk||!chunk.text.split(/[\r\n；;。]/).some(fragment=>containsPartNumber(fragment,source.partNumber)&&fragment.includes(source.value)));});
+          const lost=origin.method==='manual'&&!origin.previousSources&&rows(db,'SELECT fields FROM line_revision WHERE line_id=?',[row.id]).some(revision=>JSON.parse(revision.fields).fieldSources?.[key]?.sources?.some(source=>source.scope==='all'));
+          if (invalid||lost) issues.push(`共同要求的${extractionFieldLabel(key)}适用范围需确认`);
+        }
+        if (JSON.stringify(issues)===row.issues) continue;
+        line.issues=[...new Set(issues)];
+        db.run('INSERT INTO line_revision VALUES(?,?,?,?,?,?)',[randomUUID(),row.id,row.version,row.fields,'requirement_scope_migration',new Date().toISOString()]);
+        db.run('UPDATE inquiry_line SET fields=?,issues=?,version=version+1 WHERE id=?',[JSON.stringify(line),JSON.stringify(line.issues),row.id]);
+        db.run("UPDATE inquiry SET status='needs_input' WHERE id=?",[inquiry.id]);
+      }
+    }
+    db.run('INSERT INTO schema_migration VALUES(?,?)',[migration,new Date().toISOString()]);
+    db.run('COMMIT');
+  } catch(error) { db.run('ROLLBACK');throw error; }
 }
 export function migrateNormalization(db) {
   const has = (table, name) => rows(db, `PRAGMA table_info("${table}")`).some(column => column.name === name);
   db.run("BEGIN");
   try {
+    if (!has('inquiry', 'requirements')) db.run("ALTER TABLE inquiry ADD COLUMN requirements TEXT NOT NULL DEFAULT '[]'");
     if (!has('file', 'document_type')) db.run("ALTER TABLE file ADD COLUMN document_type TEXT NOT NULL DEFAULT 'unknown'");
     if (!has('inquiry_line', 'part_number')) db.run("ALTER TABLE inquiry_line ADD COLUMN part_number TEXT");
     db.run("CREATE INDEX IF NOT EXISTS inquiry_line_part_number ON inquiry_line(part_number)");
@@ -176,6 +206,7 @@ export function createIntakeService(
     return {
       ...batch,
       issues: JSON.parse(batch.issues),
+      requirements: JSON.parse(batch.requirements || "[]"),
       files: rows(
         db,
         "SELECT id,inquiry_id,parent_id,source,file_type,document_type,mime_type,name,sha256,size,status,parser_version,metadata,error,created_at FROM file WHERE inquiry_id=? ORDER BY rowid",
@@ -363,7 +394,7 @@ export function createIntakeService(
     }
     const id = randomUUID(),
       at = now();
-    db.run("INSERT INTO inquiry VALUES(?,?,?,?,?,?,?,?,?,?)", [
+    db.run("INSERT INTO inquiry(id,request_id,payload_hash,source,operator,title,status,created_at,updated_at,issues) VALUES(?,?,?,?,?,?,?,?,?,?)", [
       id,
       input.requestId,
       digest,
@@ -479,15 +510,19 @@ export function createIntakeService(
       issues.push(...extra.issues);
       const semanticResult = mergeSemanticLines(result.lines,extra.lines);
       issues.push(...semanticResult.issues);
-      const merged = mergeExtractedRequirements(semanticResult.lines, [...result.requirements, ...(extra.requirements || [])], chunks);
-      const covered = new Set([...extra.lines.map((l) => l.contentId), ...merged.applied]);
-      const pending = result.unresolved.filter(
-        (c) =>
-          !covered.has(c.id) &&
-          /[0-9]|要求|证书|交期|有效|截止|FAA|EASA|certificate|delivery|condition|MOQ/i.test(
-            c.text,
-          ),
-      );
+      const requirements=[...result.requirements,...(extra.requirements || [])].filter(requirement=>{
+        if (requirement.scope!=='all') return true;
+        const chunk=chunks.find(chunk=>chunk.id===requirement.contentId);
+        const valid=chunk&&hasGlobalScope(chunk,semanticResult.lines);
+        if (!valid) issues.push('共同要求适用范围需确认，请核对原文');
+        return valid;
+      });
+      const merged=mergeExtractedRequirements(semanticResult.lines,requirements,chunks);
+      const pending=result.unresolved.filter(chunk=>{
+        const values=[...semanticResult.lines.filter(line=>line.contentId===chunk.id).flatMap(line=>Object.values(line.rawFields || {})),...requirements.filter(requirement=>requirement.contentId===chunk.id).map(requirement=>requirement.value)];
+        if (!values.length) return /[0-9]|要求|证书|交期|有效|截止|FAA|EASA|certificate|delivery|condition|MOQ/i.test(chunk.text);
+        return hasUnmappedText(chunk.text,Object.fromEntries(values.map((value,index)=>[index,value])));
+      });
       if (pending.length)
         issues.push(
           `${pending.length}处原文包含未落实到物料行的要求或数据，需核对原文`,
@@ -495,6 +530,7 @@ export function createIntakeService(
       const all = merged.lines;
       db.run("BEGIN");
       try {
+        db.run('UPDATE inquiry SET requirements=? WHERE id=?',[JSON.stringify(requirements),id]);
         for (const [i, l] of all.entries()) {
           const lid = randomUUID();
           db.run(
@@ -568,6 +604,19 @@ export function createIntakeService(
     persist();
     return detail(id);
   }
+  function applyInquiryRequirements(batchId, line) {
+    const inquiry=detail(batchId);
+    const chunks=inquiry.contents;
+    let requirements=inquiry.requirements;
+    if (!requirements.length) {
+      requirements=inquiry.lines.flatMap(existing=>Object.entries(existing.fieldSources || {}).flatMap(([field,origin])=>[...(origin.sources || []),...(origin.previousSources || []),...(origin.rejectedSources || [])].filter(source=>source.scope==='all'&&source.value).map(source=>({contentId:source.contentId,field,value:source.value,scope:'all'}))));
+      requirements=requirements.filter(requirement=>{
+        const chunk=chunks.find(content=>content.id===requirement.contentId);
+        return chunk&&hasGlobalScope(chunk,inquiry.lines);
+      });
+    }
+    return mergeExtractedRequirements([line],requirements,chunks).lines[0];
+  }
   function addLine(
     batchId,
     { partNumber, quantity, uom, description = "", operator = "本机用户" },
@@ -594,7 +643,7 @@ export function createIntakeService(
       cid = randomUUID(),
       lid = randomUUID(),
       at = now();
-    const fields = normalizeLine({
+    const fields = applyInquiryRequirements(batchId,normalizeLine({
       partNumber: partNumber.trim(),
       quantity,
       uom: uom.trim(),
@@ -603,7 +652,7 @@ export function createIntakeService(
       issues: ["缺件状"],
       contentId: cid,
       method: "manual",
-    });
+    }));
     const bytes = Buffer.from(JSON.stringify({ operator, ...fields }));
     db.run("BEGIN");
     try {
@@ -712,12 +761,21 @@ export function createIntakeService(
           throw Object.assign(new Error("数量必须为正数或空"), { status: 400 });
       } else if (v !== null && (typeof v !== "string" || v.length > 4000))
         throw Object.assign(new Error("字段类型无效"), { status: 400 });
-      fields[k] = v;
     }
-    fields.issues = (fields.issues || []).filter(issue => !Object.keys(patch).some(key => issue === `共同要求与物料行的${extractionFieldLabel(key)}冲突，需核对原文` || issue === `语义提取与已识别的${extractionFieldLabel(key)}不一致，需核对原文`));
-    const normalized = normalizeLine({ ...fields, fieldSources: { ...fields.fieldSources, ...Object.fromEntries(Object.keys(patch).map(key => [key, { contentId: null, originalContentId: old.content_id, method: "manual", operator: String(operator).slice(0, 100), value: patch[key] }])) } });
+    const effective=normalizeLine({...fields,...patch});
+    patch=Object.fromEntries(Object.entries(patch).filter(([key])=>String(effective[key] ?? '')!==String(fields[key] ?? '')));
+    if (!Object.keys(patch).length) return detail(batchId);
+    Object.assign(fields,patch);
+    fields.issues = (fields.issues || []).filter(issue => !Object.keys(patch).some(key => issue === `共同要求与物料行的${extractionFieldLabel(key)}冲突，需核对原文` || issue === `语义提取与已识别的${extractionFieldLabel(key)}不一致，需核对原文` || issue === `共同要求的${extractionFieldLabel(key)}适用范围需确认`));
+    const normalized = normalizeLine({ ...fields, fieldSources: { ...fields.fieldSources, ...Object.fromEntries(Object.keys(patch).map(key => [key, { contentId: null, originalContentId: old.content_id, method: "manual", operator: String(operator).slice(0, 100), value: patch[key], previousSources:[...(fields.fieldSources?.[key]?.previousSources || []),...(fields.fieldSources?.[key]?.sources || []),...(fields.fieldSources?.[key]?.rejectedSources || [])] }])) } });
     Object.assign(fields, normalized);
-    const issues = [...normalized.issues];
+    if ('partNumber' in patch) {
+      for(const [key,origin] of Object.entries(fields.fieldSources || {})) {
+        if(origin.sources?.some(source=>source.scope==='part'&&normalizePartNumber(source.partNumber)!==fields.partNumber)) fields.issues.push(`共同要求的${extractionFieldLabel(key)}适用范围需确认`);
+      }
+      Object.assign(fields,applyInquiryRequirements(batchId,fields));
+    }
+    const issues = [...fields.issues];
     fields.issues = issues;
     db.run("BEGIN");
     try {

@@ -1,5 +1,6 @@
 export const RFQ_RULE_VERSION:string;
-export function businessToday():string;
+export function businessToday(now?:number):string;
+export function quoteDeadlineExpired(value:unknown,asOf?:string,now?:number):boolean;
 export interface RuleLine {issues?:string[];quoteDeadline?:string|null;dueDate?:string|null;partNumber?:string|null;quantity?:number|null;uom?:string|null;condition?:string|null;requirement?:string|null;needByDate?:string|null;urgency?:string|null;}
 export interface RuleResource {partNumber?:string;uom?:string;stockCondition?:string;condition?:string;currency?:string;lastPurchasePrice?:number;avgCost?:number;unitPrice?:number;stockQty?:number;moq?:number;validFrom?:string;validUntil?:string;taxBasis?:string;authorized?:boolean;certType?:string;leadDays?:number;}
 export interface RulePolicy {inventoryOnly?:boolean;source?:string;sourceKey?:string;asOf?:string;condFnNe?:boolean;certMutual?:boolean;freightDays?:number;fxRates?:Record<string,number>;unitConversions?:Record<string,Record<string,number>>;margin?:number;markupRate?:number;marginRate?:number;marginFloor?:number;aogPremium?:number;bulkDiscount?:number;bulkQty?:number;}

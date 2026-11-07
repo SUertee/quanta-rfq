@@ -15,3 +15,4 @@ assert.equal(validateQuoteReceipt(input({...line,quoteDeadline:'2999-01-01',need
 console.log('PASS: server export rechecks quotation deadline even when the saved price and human review are unchanged');
 
 assert.throws(()=>validateQuoteReceipt(input({...line,quoteDeadline:'2999-01-01'}),inquiry),/询价要求已变更/);
+assert.throws(()=>validateQuoteReceipt({...input({...line,quoteDeadline:'2000-01-01'}),inquiryId:undefined},null),/报价截止日期/);

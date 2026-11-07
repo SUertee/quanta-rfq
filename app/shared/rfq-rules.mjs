@@ -1,7 +1,15 @@
 import {normalizePartNumber,normalizeUnit,validDate} from './normalization.mjs';
 
-export const RFQ_RULE_VERSION='3';
-export const businessToday=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
+export const RFQ_RULE_VERSION='4';
+export const businessToday=(now=Date.now())=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(now));
+export function quoteDeadlineExpired(value, asOf=businessToday(), now=Date.now()) {
+  if (!validDate(value)) return false;
+  if (value.length===10) return value<asOf;
+  const timestamp=value.replace(' ','T');
+  const zoned=/(?:Z|[+-]\d{2}:?\d{2})$/.test(timestamp)?timestamp:timestamp+'+08:00';
+  const cutoff=Date.parse(zoned);
+  return businessToday(now)===asOf?cutoff<now:businessToday(cutoff)<asOf;
+}
 const positive=value=>typeof value==='number'&&Number.isFinite(value)&&value>0;
 const rounded=value=>Math.round(value*100)/100;
 const addDays=(date,days)=>new Date(Date.parse(date.slice(0,10)+'T00:00:00Z')+days*86400000).toISOString().slice(0,10);
@@ -79,7 +87,7 @@ export function evaluateResource(line,resource,{source,sourceKey,asOf=businessTo
   if(line.dueDate)check('quote_date','unknown',validDate(line.dueDate)?'截止日期用途不明确，需人工确认':'日期格式不明确，需人工确认');
   if(line.quoteDeadline){
     const valid=validDate(line.quoteDeadline);
-    const expired=valid&&line.quoteDeadline.slice(0,10)<asOf;
+    const expired=valid&&quoteDeadlineExpired(line.quoteDeadline,asOf);
     check('quote_deadline',!valid?'unknown':expired?'conflict':'pass',!valid?'报价截止日期不明确，需确认':expired?'已超过报价截止日期':'报价截止日期有效');
   }
   const state=checks.some(item=>item.state==='conflict')?'conflict':checks.some(item=>item.state==='unknown')?'needs_review':'usable';

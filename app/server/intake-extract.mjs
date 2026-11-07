@@ -55,26 +55,32 @@ function labeledValue(text, labels) {
   const match = text.match(new RegExp('(?:^|[\\s，,；;])(?:' + labels + ')(?=\\s|[:：=]|$)\\s*[:：=]?\\s*(.*?)(?=[\\s，,；;]+' + boundary + '(?:\\s|[:：=])|$)', 'i'));
   return match?.[1]?.trim().replace(/[。；;，,.]+$/, '').trim() || null;
 }
-function hasGlobalScope(chunk) {
-  return /全部物料|所有物料|每项物料|各项物料|附件(?:清单|物料)|all\s+(?:items|parts|materials)|each\s+(?:item|part)|attached\s+(?:items|parts|list)/i.test(chunk.text) ||
-    (chunk.locator?.part === 'body' && !/(?:件号|料号|P\/?N|Part\s*Number)\s*[:：=]/i.test(chunk.text));
+export function containsPartNumber(text, partNumber) {
+  const escaped = String(partNumber).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp('(?<![A-Z0-9./-])' + escaped + '(?![A-Z0-9./-])', 'i').test(text);
+}
+export function hasGlobalScope(chunk, lines = []) {
+  if (/(?:件号|料号|P\/?N|Part\s*Number)\s*[:：=]?\s*[A-Z0-9]/i.test(chunk.text) ||
+      lines.some(line => line.partNumber && (line.contentId === chunk.id || containsPartNumber(chunk.text,line.partNumber)))) return false;
+  return /^(?:全部物料|所有物料|每项物料|各项物料|附件(?:清单|物料)|all\s+(?:items|parts|materials)|each\s+(?:item|part)|attached\s+(?:items|parts|list))/i.test(chunk.text.trim()) || chunk.locator?.part === 'body';
 }
 
 // Retain the exact source fragment for every cross-file requirement.
-function structuredRequirements(chunks) {
+function structuredRequirements(chunks, lines) {
   const requirements = [];
   for (const chunk of chunks) {
-    if (!hasGlobalScope(chunk)) continue;
+    if (!hasGlobalScope(chunk, lines)) continue;
     const text = chunk.text.replace(/^(?:全部物料|所有物料|每项物料|各项物料)\s*/, '');
     for (const [field, labels] of [
-      ['requirement', '要求|Requirement|证书|Certificate|Cert(?:ification)?'],
+      ['requirement', '要求|Requirement'],
+      ['requirement', '证书|Certificate|Cert(?:ification)?'],
       ['needByDate', '交期|需求日期|到货日期|要货日期|Need\\s*By|Required\\s*By|Delivery\\s*Date|Deliver\\s*By'],
       ['quoteDeadline', '报价截止日期|截止报价日期|报价截止|回复截止日期|Quote\\s*Deadline|Quotation\\s*Deadline|Quote\\s*By|Response\\s*Deadline'],
       ['condition', '件状|Condition'],
       ['uom', '单位|UOM|Unit'],
     ]) {
       const value = labeledValue(text, labels);
-      if (value) requirements.push({contentId:chunk.id, scope:'all', field, value});
+      if (value && (field !== 'uom' || /^(?:EA|Each|PCS|IN|FT)$/i.test(value))) requirements.push({contentId:chunk.id, scope:'all', field, value});
     }
   }
   return requirements;
@@ -86,21 +92,27 @@ export function mergeExtractedRequirements(lines, requirements, chunks) {
   for (const requirement of requirements) {
     const chunk = chunks.find(source => source.id === requirement.contentId);
     if (!chunk || !chunk.text.includes(requirement.value)) continue;
+    if(requirement.scope==='all'&&!hasGlobalScope(chunk,lines)){
+      for(const line of merged) line.issues.push(`共同要求的${extractionFieldLabel(requirement.field)}适用范围需确认`);
+      continue;
+    }
     const targets = merged.filter(line => requirement.scope === 'all' || normalizePartNumber(line.partNumber) === normalizePartNumber(requirement.partNumber));
     if (!targets.length) continue;
     for (const line of targets) {
       const key = requirement.field;
-      const source = {contentId:chunk.id, locator:chunk.locator, method:'requirement_link', value:requirement.value, scope:requirement.scope};
+      const source = {contentId:chunk.id, locator:chunk.locator, method:'requirement_link', value:requirement.value, scope:requirement.scope, partNumber:requirement.partNumber};
       const previous = line.fieldSources[key];
       const sources = [...(previous?.sources || (previous ? [previous] : [])), source].filter((entry,index,all)=>all.findIndex(other=>other.contentId===entry.contentId&&other.value===entry.value)===index);
-      line.fieldSources[key] = {...(previous || source), sources};
       const old = line[key];
       const comparable = value => key === 'uom' ? normalizeUnit(value) : String(value).trim().toUpperCase();
       if (key === 'requirement') {
         if (!String(old || '').includes(requirement.value)) line[key] = [old,requirement.value].filter(Boolean).join('；');
       } else if (old && comparable(old) !== comparable(requirement.value)) {
         line.issues.push(`共同要求与物料行的${extractionFieldLabel(key)}冲突，需核对原文`);
+        line.fieldSources[key] = {...previous,rejectedSources:[...(previous?.rejectedSources || []),source]};
+        continue;
       } else line[key] = requirement.value;
+      line.fieldSources[key] = {...(previous || source), sources};
     }
     applied.add(chunk.id);
   }
@@ -108,12 +120,13 @@ export function mergeExtractedRequirements(lines, requirements, chunks) {
 }
 
 // Unknown cells and unconsumed prose must receive a semantic pass.
-function hasUnmappedText(text, fields) {
+export function hasUnmappedText(text, fields) {
   let rest = text;
   const values = Object.values(fields).filter(value => value != null && String(value).trim()).map(String).sort((a,b)=>b.length-a.length);
   for (const value of values) rest = rest.split(value).join(' ');
   const labels = Object.values(aliases).flat().sort((a,b)=>b.length-a.length);
-  for (const label of labels) rest = rest.split(label).join(' ');
+  for (const label of labels) rest = rest.replace(new RegExp(label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'),'gi'),' ');
+  rest = rest.replace(/全部物料|所有物料|每项物料|各项物料|all\s+(?:items|parts|materials)(?:\s+require)?/gi, '');
   rest = rest.replace(/请(?:帮忙)?报价|please\s+quote/gi, '').replace(/[\s，,；;:：=。.!！?？\t-]/g, '');
   return Boolean(rest);
 }
@@ -162,13 +175,19 @@ export function extractStructured(chunks) {
       continue;
     }
     if (mapping && cells) {
-      const row = {};
+      const row = {}, conflicts = [];
       mapping.forEach((k, i) => {
-        if (k) row[k] = k === "requirement" && row[k] ? row[k] + "；" + (cells[i] || "") : cells[i] ?? null;
+        if (!k) return;
+        const value=cells[i] ?? null;
+        if (k==='requirement' && row[k]) row[k]+='；'+(value || '');
+        else if (row[k] && value && row[k]!==value) conflicts.push(`多列${extractionFieldLabel(k)}不一致，需核对原文`);
+        else if (value || row[k]==null) row[k]=value;
       });
       if (Object.values(row).some((v) => String(v ?? "").trim())) {
-        lines.push(normalize(row, c, "column_mapping"));
-        if (cells.some((cell,index)=>!mapping[index]&&String(cell || '').trim())) unresolved.push(c);
+        const line=normalize(row, c, "column_mapping");
+        line.issues.push(...conflicts);
+        lines.push(line);
+        if (conflicts.length || cells.some((cell,index)=>!mapping[index]&&String(cell || '').trim())) unresolved.push(c);
       }
       continue;
     }
@@ -210,7 +229,7 @@ export function extractStructured(chunks) {
     }
     if (c.text.trim()) unresolved.push(c);
   }
-  return { lines, unresolved, requirements: structuredRequirements(unresolved) };
+  return { lines, unresolved, requirements: structuredRequirements(unresolved, lines) };
 }
 const semanticSchema = z.object({
   lines: z
@@ -295,11 +314,11 @@ export async function extractSemantic(
       issues.push("模型返回不存在的来源，已拒绝该行");
       continue;
     }
-    if (row.partNumber && !chunk.text.includes(row.partNumber)) {
+    if (row.partNumber && !containsPartNumber(chunk.text,row.partNumber)) {
       issues.push("模型件号无法在原文定位，已拒绝该行");
       continue;
     }
-    if (!row.partNumber && hasGlobalScope(chunk)) continue;
+    if (!row.partNumber && !row.description) continue;
     const verified = { ...row };
     if (
       row.quantity !== null &&
@@ -319,7 +338,7 @@ export async function extractSemantic(
   const requirements = parsed.requirements.filter(requirement => {
     const chunk = chunks.find(source => source.id === requirement.contentId);
     const valid = chunk && chunk.text.includes(requirement.value) &&
-      (requirement.scope === 'all' ? hasGlobalScope(chunk) : requirement.partNumber && chunk.text.includes(requirement.partNumber));
+      (requirement.scope === 'all' ? hasGlobalScope(chunk,[...knownLines,...parsed.lines]) : requirement.partNumber && chunk.text.split(/[\r\n；;。]/).some(fragment=>containsPartNumber(fragment,requirement.partNumber)&&fragment.includes(requirement.value)));
     if (!valid) issues.push('共同要求或适用范围无法在原文定位，已拒绝');
     return valid;
   });

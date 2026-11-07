@@ -24,7 +24,7 @@ export function resolveChatReferences(value,detail,{inquiryId}={}) {
     if(reference.lineId&&!line)fail('引用的物料已变更，请重新选择');
     if(reference.version&&reference.version!==line?.version)fail('引用的物料版本已更新，请重新引用');
     const content=reference.contentId?inquiry.contents.find(item=>item.id===reference.contentId):null;
-    const linkedContent=line&&content&&Object.values(line.fieldSources||{}).some(source=>source.contentId===content.id||source.sources?.some(entry=>entry.contentId===content.id));
+    const linkedContent=line&&content&&Object.values(line.fieldSources||{}).some(source=>source.contentId===content.id||source.sources?.some(entry=>entry.contentId===content.id)||source.previousSources?.some(entry=>entry.contentId===content.id));
     if(reference.contentId&&(!content||(line&&line.contentId!==content.id&&!linkedContent)))fail('引用原文与物料不一致，请重新选择');
     const evidence=reference.evidenceId?line?.evidence.find(item=>item.id===reference.evidenceId):null;
     if(reference.evidenceId&&(!evidence||(reference.matchedAt&&reference.matchedAt!==evidence.matched_at)))fail('报价依据已刷新，请重新引用');
