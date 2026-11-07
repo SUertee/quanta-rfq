@@ -18,15 +18,16 @@ type SettingsSection = typeof SETTING_SECTIONS[number]['id'];
 
 /** 设置：AI 服务 + 定价策略 + 业务规则 + 单位换算 + 汇率 + 货运 + 企业资料 */
 export function SettingsPage({
-  scope = 'platform', policy: initialPolicy, setPolicy: commitPolicy, onRefresh, onClose,
+  scope = 'platform', initialSection, policy: initialPolicy, setPolicy: commitPolicy, onRefresh, onClose,
 }: {
   scope?: 'platform'|'business'|'all';
+  initialSection?: SettingsSection;
   policy: PricingPolicy;
   setPolicy: (p: PricingPolicy) => void;
   onRefresh: () => void;
   onClose: () => void;
 }) {
-  const [activeSection,setActiveSection] = useState<SettingsSection>(scope==='platform'?'services':'pricing');
+  const [activeSection,setActiveSection] = useState<SettingsSection>(initialSection||(scope==='platform'?'services':'pricing'));
   const sections = scope==='all'?[...SETTING_SECTIONS.filter(item=>item.id!=='services'),SETTING_SECTIONS[0]]:SETTING_SECTIONS.filter(item=>scope==='platform'?item.id==='services':item.id!=='services');
   const settingsBody = useRef<HTMLDivElement>(null);
   const selectSection = (id: SettingsSection) => { setActiveSection(id); if(settingsBody.current) settingsBody.current.scrollTop=0; };

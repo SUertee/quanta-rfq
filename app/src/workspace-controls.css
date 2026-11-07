@@ -718,9 +718,6 @@ html:has(.layout-reference),body:has(.layout-reference) { height:100%;overflow:h
 
 .copilot-icon svg { display:block;width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round; }
 
-/* The floating chat keeps its compact one-row composer. */
-.floating-assistant:not(.expanded):not(.docked) .platform-chat-form textarea,
-.floating-assistant:not(.expanded):not(.docked) .rfq-chat-composer textarea { height:56px;min-height:56px;max-height:120px;padding:14px 0 14px 44px; }
 .layout-reference .copilot-icon { display:inline-grid;place-items:center;padding:0;line-height:1; }
 .layout-reference .rfq-embedded .rfq-chat-suggestions button { display:flex;align-items:center;justify-content:center;text-align:center; }
 
@@ -739,3 +736,9 @@ html:has(.layout-reference),body:has(.layout-reference) { height:100%;overflow:h
 .settings-nav-entry>button { width:100%; }
 .settings-group-label { display:block;padding:12px 14px 6px;color:var(--ink-2);font-size:13px;font-weight:500; }
 @media(max-width:700px) { .layout-reference .page-inspect,.layout-reference .page-inventory { padding-top:12px; } .settings-nav-entry { flex-shrink:0; } }
+
+.account-menu { position:relative;display:flex;align-items:center; }
+.account-menu-panel { position:absolute;right:0;top:calc(100% + 12px);z-index:60;display:grid;gap:4px;width:188px;padding:8px;border:1px solid var(--line);border-radius:var(--radius-surface);background:var(--panel);box-shadow:0 12px 36px -16px rgba(11,29,58,.3); }
+.account-menu-panel [role=menuitem] { display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:10px 12px;border:0;border-radius:var(--radius-control);background:transparent;color:var(--ink);font:inherit;font-size:15px;text-align:left;cursor:pointer; }
+.account-menu-panel [role=menuitem]:hover,.account-menu-panel [role=menuitem]:focus-visible { background:var(--hal-nav-selected);outline:none; }
+.account-menu-panel svg { width:18px;height:18px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round; }

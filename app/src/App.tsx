@@ -1,6 +1,7 @@
 import {appFetch as fetch,appUrl} from './engine/appUrl';
 import {conversationMeta,newConversation} from './engine/conversations';
 import {PlatformChat,ConversationList} from './components/AssistantConversations';
+import {AccountMenu} from './components/AccountMenu';
 import {Modal} from './components/Modal';
 import {FloatingAssistant} from './components/FloatingAssistant';
 import {batchEmail} from './engine/intake';
@@ -34,6 +35,7 @@ export default function App() {
   const [assignees, setAssignees] = useStoredState<Record<string, string>>('task-assignees', {});
   const [manualTasks, setManualTasks] = useStoredState<string[]>('manual-tasks', []);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection,setSettingsSection]=useState<'pricing'|'services'>('pricing');
   const [importRequested, setImportRequested] = useState(new URLSearchParams(location.search).get('new') === '1');
   const [activeChat,setActiveChat]=useStoredState<string|null>('active-chat-v1',null);
   const [quickMessage,setQuickMessage]=useState<{id:number;text:string}|null>(null);
@@ -188,10 +190,9 @@ export default function App() {
           </button>
 
           <button className={`nav-item ${mode==='agent'?'active':''}`} onClick={()=>{setMode('agent');setAssistantOpen(true);}}><span className="nav-label">AI 对话</span></button>
-          <button className="nav-item" onClick={()=>setSettingsOpen(true)}><span className="nav-label">设置</span></button>
         </nav>
         <div className="sidebar-foot">
-          <button className="avatar" aria-label="用户设置" onClick={() => setProfileOpen(true)}>{userName.slice(0, 1) || '我'}</button>
+          <AccountMenu name={userName} onProfile={()=>setProfileOpen(true)} onBusiness={()=>{setSettingsSection('pricing');setSettingsOpen(true);}} onModels={()=>{setSettingsSection('services');setSettingsOpen(true);}} />
         </div>
       </aside>
       <main className={`content ${mode === 'workbench' && view === 'workbench' && assistantOpen ? 'with-copilot' : ''}`}>
@@ -227,7 +228,7 @@ export default function App() {
         </div>
         </FloatingAssistant>
         {dsx2.intakeLoadError && <div role="alert" className="hint">{dsx2.intakeLoadError}</div>}
-        {profileOpen && <Modal title="个人设置" className="profile-dialog" onClose={()=>setProfileOpen(false)}>
+        {profileOpen && <Modal title="个人信息" className="profile-dialog" onClose={()=>setProfileOpen(false)}>
           <div className="dialog-fields"><label>用户 ID<input autoFocus aria-label="用户 ID" placeholder="输入用户 ID" value={userId} onChange={e=>setUserId(e.target.value)} /></label><label>显示名称<input aria-label="显示名称" value={userName} onChange={e=>{setUserName(e.target.value);localStorage.setItem('quanta-user-name',e.target.value);}} /></label></div>
           <footer className="app-dialog-actions"><button className="btn primary" onClick={()=>setProfileOpen(false)}>完成</button></footer>
         </Modal>}
@@ -290,7 +291,7 @@ export default function App() {
         {view === 'eval' && <EvalPage ds={dsx2} />}
         </>}
       </main>
-        {settingsOpen && <SettingsPage scope="all" policy={policyFull} setPolicy={setPolicy} onClose={() => setSettingsOpen(false)} onRefresh={() => setInvVersion((v) => v + 1)} />}
+        {settingsOpen && <SettingsPage scope="all" initialSection={settingsSection} policy={policyFull} setPolicy={setPolicy} onClose={() => setSettingsOpen(false)} onRefresh={() => setInvVersion((v) => v + 1)} />}
     </div>
   );
 }
