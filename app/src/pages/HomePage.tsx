@@ -9,7 +9,7 @@ import {createIntake,batchEmail} from '../engine/intake';
 
 /** 首页 = 任务列表 + 新建任务入口（粘贴询价内容 / 上传 .eml / 上传订单 xlsx） */
 export function HomePage({
-  tasks, onPick, onNewTask, onDelete, onRestore, deletedCount, industryKw, taskTime, operator, openImport = false, onImportHandled,
+  tasks, onPick, onNewTask, onDelete, onRestore, deletedCount, industryKw, operator, openImport = false, onImportHandled,
 }: {
   operator?: string;
   openImport?: boolean; onImportHandled?: () => void;
@@ -41,7 +41,6 @@ export function HomePage({
     finally{setBusy(false);}
   };
   const statusOf=(t:TaskSummary)=>t.intakeStatus==='processing'?<Badge text="处理中" tone="blue" />:['failed','interrupted'].includes(t.intakeStatus||'')?<Badge text="处理未完成" tone="amber" />:t.intakeStatus==='needs_input'?<Badge text="待补充材料或字段" tone="amber" />:t.inquiryError?<Badge text="询价错误 · 可转手工单" tone="amber" />:t.total===0?<Badge text="待解析 · 无询价行" tone="amber" />:t.checkCount>0?<Badge text={`${t.checkCount} 行需核对`} tone="amber" />:<Badge text="待核价" tone="blue" />;
-  const elapsedOf=(t:TaskSummary)=>{const sec=taskTime[t.key]??0;return sec?(sec<3600?`${Math.max(1,Math.round(sec/60))} 分钟`:`${(sec/3600).toFixed(1)} 小时`):'—'};
   return (
     <div className="page-home">
       <section className="home-overview" aria-label="询价工作台">
@@ -58,22 +57,20 @@ export function HomePage({
         <DataTable
           rows={filteredTasks}
           mobileRender={t=><article className="task-record-card">
-            <button className="task-record-open" aria-label={`打开询价 ${t.title}`} onClick={()=>onPick(t.source)}><b title={t.title}>{t.title}</b><span aria-hidden="true">↗</span></button>
-            <div className="task-record-main"><span className="task-record-customer" title={t.customer}>{t.customer||'客户待补'}</span>{statusOf(t)}</div>
-            <div className="task-record-meta"><span>{t.total} 行物料</span>{t.urgent&&<Badge text="加急" tone="red" />}<details className="task-record-more"><summary>更多</summary><dl><div><dt>来源</dt><dd>{t.tag}</dd></div><div><dt>截止</dt><dd>{t.due||'—'}</dd></div><div><dt>耗时</dt><dd>{elapsedOf(t)}</dd></div></dl><button className="btn" aria-label={`删除询价 ${t.title}`} onClick={()=>onDelete(t.key)}>删除询价</button></details></div>
+            <div className="task-record-main">{statusOf(t)}<span>{t.total} 行物料</span></div>
+            <button className="task-record-open" aria-label={`打开询价 ${t.title}`} onClick={()=>onPick(t.source)}><b title={t.title}>{t.title}</b></button>
+            <div className="task-record-meta"><span>{t.customer||'客户待补'}</span>{t.urgent&&<Badge text="加急" tone="red" />}<button className="record-delete" aria-label={`删除询价 ${t.title}`} onClick={()=>onDelete(t.key)}>删除</button></div>
           </article>}
           rowKey={(t) => t.key}
           onRowClick={(t) => onPick(t.source)}
           rowClass={() => ''}
           cols={[
-            { title: '询价 / 客户', w:'42%', render: (t) => <div className="task-identity"><b className="task-name" title={t.title}>{t.title}</b><span>{t.customer||'客户待补'}{t.urgent&&<Badge text="加急" tone="red" />}</span></div> },
-            { title: '来源', w:'12%', render: (t) => <Badge text={t.tag} tone="blue" /> },
-            { title: '行数', w:'8%', render: (t) => t.total },
-            {
-              title: '状态', w:'22%', render:statusOf,
-            },
-            { title:'',render:t=><div className="record-actions" onClick={e=>e.stopPropagation()}><button className="record-open" aria-label={`打开询价 ${t.title}`} onClick={()=>onPick(t.source)}>打开 <span aria-hidden="true">↗</span></button><details className="record-menu"><summary aria-label={`更多操作 ${t.title}`}>···</summary><dl><div><dt>截止</dt><dd>{t.due||'—'}</dd></div><div><dt>耗时</dt><dd>{elapsedOf(t)}</dd></div></dl><button className="btn" aria-label={`删除询价 ${t.title}`} onClick={()=>onDelete(t.key)}>删除询价</button></details></div> },
+            {title:'状态',w:'180px',render:statusOf},
+            {title:'询价 / 客户',render:t=><div className="task-identity"><b className="task-name" title={t.title}>{t.title}</b><span>{t.customer||'客户待补'}{t.urgent&&<Badge text="加急" tone="red" />}</span></div>},
+            {title:'行数',w:'72px',render:t=>t.total},
+            {title:'操作',w:'140px',render:t=><div className="record-actions" onClick={e=>e.stopPropagation()}><button className="record-open" aria-label={`打开询价 ${t.title}`} onClick={()=>onPick(t.source)}>打开</button><button className="record-delete" aria-label={`删除询价 ${t.title}`} onClick={()=>onDelete(t.key)}>删除</button></div>},
           ]}
+
         />
       </div>
 

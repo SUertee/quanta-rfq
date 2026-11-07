@@ -98,8 +98,8 @@ export function InspectPage({
             { title: '类型', w:'110px', render: (r) => <Badge text={r.type} tone={['过期价', '缺证书', '毛利不足'].includes(r.type) ? 'red' : 'amber'} /> },
             { title: '询价任务', w:'28%', render: (r) => <div className="task-identity"><span className="task-name" title={r.taskTitle}>{r.taskTitle}</span><span className="issue-order-id" title={`接单ID：${r.orderId}`}>{r.orderId}</span></div> },
             { title: '件号', w:'130px', render: (r) => <b>{r.pn}</b> },
-            { title: '描述', w:'18%', render: (r) => r.desc },
-            { title: '待处理原因', render: (r) => r.detail },
+            { title: '描述', w:'18%', render: (r) => <span className="table-cell-lines" title={r.desc}>{r.desc}</span> },
+            { title: '待处理原因', render: (r) => <span className="table-cell-lines" title={r.detail}>{r.detail}</span> },
           ]}
         />
       </div>

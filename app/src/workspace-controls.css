@@ -742,3 +742,35 @@ html:has(.layout-reference),body:has(.layout-reference) { height:100%;overflow:h
 .account-menu-panel [role=menuitem] { display:flex;align-items:center;gap:12px;width:100%;min-height:44px;padding:10px 12px;border:0;border-radius:var(--radius-control);background:transparent;color:var(--ink);font:inherit;font-size:15px;text-align:left;cursor:pointer; }
 .account-menu-panel [role=menuitem]:hover,.account-menu-panel [role=menuitem]:focus-visible { background:var(--hal-nav-selected);outline:none; }
 .account-menu-panel svg { width:18px;height:18px;flex-shrink:0;fill:none;stroke:currentColor;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round; }
+
+/* Shared data density and explicit text actions across the three record tables. */
+.layout-reference .page-home tbody tr,.layout-reference .page-inspect tbody tr,.layout-reference .page-inventory tbody tr { height:72px; }
+.layout-reference .page-home .table-wrap td,.layout-reference .page-inspect .table-wrap td,.layout-reference .page-inventory .table-wrap td { box-sizing:border-box;height:72px;padding:10px 16px;vertical-align:middle;font-size:14px;line-height:1.5; }
+.layout-reference .page-home .table-wrap th,.layout-reference .page-inspect .table-wrap th,.layout-reference .page-inventory .table-wrap th { height:48px;padding:10px 16px;vertical-align:middle; }
+.layout-reference .task-identity { gap:4px; }
+.layout-reference .task-identity .task-name { display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.table-cell-lines { display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden; }
+.record-delete { padding:8px;border:0;border-radius:var(--radius-control);background:transparent;color:var(--ink-2);font:inherit;font-size:14px;cursor:pointer; }
+.record-delete:hover { color:var(--red);background:var(--hal-hover); }
+.record-open:focus-visible,.record-delete:focus-visible { outline:2px solid var(--hal-accent);outline-offset:2px; }
+.layout-reference .record-actions { gap:8px;justify-content:flex-start; }
+@media(min-width:701px) and (max-width:1000px) {
+ .layout.layout-reference .sidebar { grid-template-columns:auto minmax(0,1fr) auto;grid-template-areas:none;padding:6px 14px;border-radius:999px; }
+ .layout-reference .sidebar .brand,.layout-reference .sidebar nav,.layout-reference .sidebar-foot { grid-area:auto; }
+ .layout-reference .sidebar nav { justify-content:center;justify-self:stretch;gap:2px;padding:0; }
+ .layout-reference .sidebar .nav-item { font-size:14px;padding:10px 12px; }
+ .layout-reference .sidebar-foot { justify-self:end; }
+ .layout-reference .home-overview { grid-template-columns:minmax(160px,.8fr) minmax(300px,1.2fr);gap:20px; }
+ .layout-reference .home-overview .task-metrics { gap:0; }
+ .layout-reference .home-overview .task-metrics>div { padding:8px 14px; }
+ .layout-reference .page-home .responsive-record-grid>.table-wrap { display:block; }
+ .layout-reference .page-home .responsive-record-grid>.responsive-record-list { display:none; }
+}
+@media(max-width:700px) {
+ .layout-reference .task-record-card { padding:16px;display:flex;flex-direction:column;gap:10px; }
+ .layout-reference .task-record-main { display:flex;align-items:center;justify-content:space-between;gap:12px; }
+ .layout-reference .task-record-main>.badge { margin-left:0;max-width:75%; }
+ .task-record-main>span:last-child { color:var(--ink-2);font-size:13px; }
+ .layout-reference .task-record-open { min-height:28px;padding:0; }
+ .layout-reference .task-record-meta { justify-content:space-between; }
+}
