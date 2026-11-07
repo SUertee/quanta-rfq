@@ -446,7 +446,7 @@ export function WorkbenchPage({
     <div className="quotation-workbench">
       {inquiryError && <div className="check-box" role="alert"><strong>询价错误：PDF 附件未完成结构化核验</strong><button className="btn primary" onClick={onConvertManual}>转为手工单（保留草稿）</button></div>}
       <header className="inquiry-page-head">
-        <div><button className="btn inquiry-back" onClick={onBack}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12 5-5 5 5 5" /></svg><span>返回询价列表</span></button><h1>{label}</h1></div>
+        <div><button className="btn inquiry-back" aria-label="返回询价列表" title="返回询价列表" onClick={onBack}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12 5-5 5 5 5" /></svg></button><h1>{label}</h1></div>
       </header>
       <div className="stage-workspace">
       <nav className="inquiry-stage-rail" aria-label="询价阶段">{stageItems.map(item=><button key={item.id} aria-current={stage===item.id?'step':undefined} aria-label={`${item.id}. ${item.label}，${item.detail}`} aria-describedby={`stage-tip-${item.id}`} data-tip-dismissed={dismissedStageTip===item.id?'true':undefined} className={`stage-node ${stage===item.id?'current':''} ${item.state}`} onClick={()=>goToStage(item.id)} onMouseEnter={()=>setDismissedStageTip(null)} onFocus={()=>setDismissedStageTip(null)} onKeyDown={e=>{if(e.key==='Escape')setDismissedStageTip(item.id)}}><span className="stage-dot" aria-hidden="true">{item.state==='done'&&stage!==item.id?'✓':item.id}</span><span className="stage-tooltip" role="tooltip" id={`stage-tip-${item.id}`}><strong><span>{String(item.id).padStart(2,'0')}</span>{item.label}</strong><span>{item.detail}</span><small>{item.state==='done'?'已有结果':item.state==='attention'?'待处理':'待执行'}</small></span></button>)}</nav>

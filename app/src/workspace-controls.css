@@ -605,3 +605,16 @@ html:has(dialog[open]) { overflow:hidden; }
 .intake-inline-preview>p { padding:0 16px;color:var(--red);font-size:14px; }
 .layout-reference .content { transition:padding-right 360ms cubic-bezier(.22,.8,.28,1); }
 @media(prefers-reduced-motion:reduce) { .layout-reference .content { transition:none; } }
+
+/* The composer keeps attachment and send actions on one baseline. */
+.platform-chat-form,.rfq-chat-composer { position:relative; }
+.platform-chat-form:has(.chat-upload-toggle) textarea,.rfq-chat-composer:has(.chat-upload-toggle) textarea { padding-bottom:48px;min-height:104px; }
+.chat-upload-actions { position:absolute;left:14px;bottom:12px;padding:0;z-index:3; }
+.chat-upload-actions .chat-upload-toggle { display:grid;place-items:center;width:42px;height:42px;padding:0;border-radius:50%;font-size:26px;line-height:1;color:var(--ink); }
+.chat-upload-menu { position:absolute;bottom:50px;left:0;display:grid;min-width:144px;padding:6px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:0 8px 28px -12px rgba(11,29,58,.3); }
+.chat-upload-menu button { text-align:left;white-space:nowrap;padding:10px 12px; }
+.chat-upload-toggle:focus-visible,.chat-upload-menu button:focus-visible { outline:2px solid var(--hal-accent);outline-offset:2px; }
+.layout-reference .inquiry-page-head>div { display:flex;align-items:center;gap:16px;width:100%; }
+.layout-reference .btn.inquiry-back { display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;min-height:42px;padding:0;margin:0;border-radius:50%; }
+.layout-reference .inquiry-page-head h1 { margin:0;font-size:28px;line-height:1.35; }
+@media(max-width:650px) { .layout-reference .inquiry-page-head>div { gap:12px; } .layout-reference .inquiry-page-head h1 { font-size:22px; } }
