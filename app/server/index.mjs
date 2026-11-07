@@ -1,3 +1,4 @@
+import {createQuoteDraftStore,validateSavedQuote} from './quote-draft.mjs';
 import {matchResources} from '../shared/rfq-rules.mjs';
 import {resolveChatReferences,referenceContext} from './chat-references.mjs';
 import { normalizePartNumber,normalizeUnit } from "./normalization.mjs";
@@ -74,6 +75,7 @@ seedPrices(db,existsSync(priceSeedPath)?JSON.parse(readFileSync(priceSeedPath,'u
 db.run("UPDATE inquiry SET status='interrupted',issues='[\"服务重启中断了处理，已保留已接收文件\"]' WHERE status='processing'");
 const runtime=getRuntimeConfig();
 const intake=createIntakeService(db,persist,{modelConfig:runtime.model,ocrConfig:runtime.ocr});
+const quoteDrafts=createQuoteDraftStore(db,persist,id=>intake.detail(id));
 persist();
 
 // 首次启动：从演示成本表播种
@@ -171,6 +173,9 @@ http.createServer(async (req, res) => {
   if(url.pathname.startsWith('/api/intake/files'))url.pathname=url.pathname.replace('/api/intake/files','/api/files');
   const pnMatch = url.pathname.match(/^\/api\/inventory\/([^/]+)$/);
   try {
+    const quotePath=url.pathname.match(/^\/api\/inquiries\/([^/]+)\/quote$/);
+    if(quotePath&&req.method==='GET'){res.end(JSON.stringify(quoteDrafts.read(quotePath[1])));return;}
+    if(quotePath&&req.method==='PUT'){res.end(JSON.stringify(quoteDrafts.save(quotePath[1],await readBody(req,1_000_000))));return;}
     const addLinePath=url.pathname.match(/^\/api\/inquiries\/([^/]+)\/lines$/);
     if(addLinePath&&req.method==='POST'){res.end(JSON.stringify(intake.addLine(addLinePath[1],await readBody(req,50000))));return;}
     const linePath=url.pathname.match(/^\/api\/inquiries\/([^/]+)\/lines\/([^/]+)$/);
@@ -343,6 +348,7 @@ http.createServer(async (req, res) => {
     } else if (req.method === 'POST' && url.pathname === '/api/snapshots') {
       const body=await readBody(req,2_000_000);
       const inquiry=body.inquiryId?intake.detail(body.inquiryId):null;
+      if(body.inquiryId)validateSavedQuote(body,quoteDrafts.read(body.inquiryId));
       const {fingerprint}=validateQuoteReceipt(body,inquiry);
       db.run('INSERT INTO quote_snapshot (order_id,kind,total,content,operator,created_at,inquiry_id,content_sha256) VALUES (?,?,?,?,?,?,?,?)',
         [body.orderId,body.kind,body.total,body.content,String(body.operator||'local-user'),new Date().toISOString(),body.inquiryId||null,fingerprint]);

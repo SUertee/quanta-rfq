@@ -1,3 +1,4 @@
+import {useInquiryQuote} from './engine/useInquiryQuote';
 import {appFetch as fetch,appUrl} from './engine/appUrl';
 import {conversationMeta,newConversation} from './engine/conversations';
 import {PlatformChat,ConversationList} from './components/AssistantConversations';
@@ -139,6 +140,16 @@ export default function App() {
   }, [dsx2, source, lineEdits, addedLines]);
   const priced = useMemo(() => (dsx2 ? priceAll(current.lines, dsx2, priceOpts) : []), [dsx2, current.lines, priceOpts]);
 
+  const quoteSync=useInquiryQuote({inquiryId:current.email?.intakeBatchId,sourceRevision:JSON.stringify(current.email?.parsedRows||[]),operator:userName,value:{policy:policyFull,lines:current.lines.map(line=>({key:line.key,price:priceBook[line.key]??null,manual:manualPrices.has(line.key),reviewed:resolved.has(line.key),skipped:skipped.has(line.key),manualCost:estCost[line.key]??null}))},onRestore:state=>{
+    const prefix=`intake-${current.email?.intakeBatchId}-`;
+    setPolicy(state.policy);
+    setPriceBook(old=>({...Object.fromEntries(Object.entries(old).filter(([key])=>!key.startsWith(prefix))),...Object.fromEntries(state.lines.filter(line=>line.price!=null).map(line=>[line.key,line.price!]))}));
+    setManualPrices(old=>new Set([...old].filter(key=>!key.startsWith(prefix)).concat(state.lines.filter(line=>line.manual).map(line=>line.key))));
+    setResolved(old=>new Set([...old].filter(key=>!key.startsWith(prefix)).concat(state.lines.filter(line=>line.reviewed).map(line=>line.key))));
+    setSkipped(old=>new Set([...old].filter(key=>!key.startsWith(prefix)).concat(state.lines.filter(line=>line.skipped).map(line=>line.key))));
+    setEstCost(old=>({...Object.fromEntries(Object.entries(old).filter(([key])=>!key.startsWith(prefix))),...Object.fromEntries(state.lines.filter(line=>line.manualCost).map(line=>[line.key,line.manualCost!]))}));
+  }});
+
   if (err) return <div className="boot">数据载入失败：{err}</div>;
   if (!dsx2) return <div className="boot">正在载入…</div>;
 
@@ -197,6 +208,7 @@ export default function App() {
         </div>
       </aside>
       <main className={`content ${mode === 'workbench' && view === 'workbench' && assistantOpen ? 'with-copilot' : ''}`}>
+        {quoteSync.error&&<div role="alert" className="panel"><span>{quoteSync.error}</span> <button className="btn" onClick={quoteSync.retry}>重试</button>{quoteSync.conflict&&<button className="btn" onClick={()=>{quoteSync.loadServer();setInvVersion(version=>version+1);}}>载入服务端版本</button>}</div>}
         {saveError && <div role="alert" className="panel">本机保存失败，可能是浏览器存储空间不足。请暂时不要刷新或关闭页面，先导出当前报价备份。</div>}
 
 
@@ -204,7 +216,7 @@ export default function App() {
         <div className={mode === 'agent' ? "agent-mode-host" : "embedded-agent-host"}>
           {mode==='agent'&&<ConversationList tasks={tasks} selected={activeChat||(source?sourceKey(source)+(agentLineKey?':line:'+agentLineKey:''):'__no_task__')} onNew={()=>{const key=newConversation();if(key){setActiveChat(key);setSource(null);setAgentLineKey(null);}}} onSelect={(key)=>{setQuickMessage(null);setActiveChat(key.startsWith('chat:')?key:null);const linked=conversationMeta()[key]?.taskKey;if(key.startsWith('chat:')||Object.prototype.hasOwnProperty.call(conversationMeta()[key]||{},'taskKey')){setActiveChat(key);const linkedTask=tasks.find(t=>t.key===linked);setSource(linkedTask?.source||null);setAgentLineKey(null);return;}if(key==='__no_task__'){setSource(null);setAgentLineKey(null);return;}const task=tasks.find(t=>key===t.key||key.startsWith(t.key+':line:'));if(task){setSource(task.source);setAgentLineKey(key.startsWith(task.key+':line:')?key.slice(task.key.length+6):null);}}} />}
           {!source && <PlatformChat onNewInquiry={()=>{setMode('workbench');setView('home');setImportRequested(true);setAssistantOpen(false);setAssistantDocked(false);}} standalone={mode==='agent'} docked={assistantDocked} onDock={()=>setAssistantDocked(value=>!value)} key={activeChat||'__no_task__'} conversationKey={activeChat||'__no_task__'} onQuickHandled={()=>setQuickMessage(null)} quickMessage={quickMessage} onClose={()=>{setMode('workbench');setAssistantOpen(false);setAssistantDocked(false);}} onHistory={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}} />}
-          {source&&<div className="copilot-body"><AgentPage key={(activeChat||'')+sourceKey(source)+(agentLineKey||'')}
+          {source&&quoteSync.ready&&<div className="copilot-body"><AgentPage key={(activeChat||'')+sourceKey(source)+(agentLineKey||'')}
             sessionOverride={activeChat||undefined} onQuickHandled={()=>setQuickMessage(null)} quickMessage={source?quickMessage:null} onHistory={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}} embedded expanded={mode === 'agent'} docked={assistantDocked} selectedLineKey={agentLineKey}
             onClearLine={() => setAgentLineKey(null)}
             onClose={() => { setMode('workbench'); setAssistantOpen(false); setAssistantDocked(false); }}
@@ -243,8 +255,9 @@ export default function App() {
               return cur === key ? null : old;
             });
           }} onRestore={() => setDeletedTasks([])} deletedCount={deletedTasks.length} tasks={tasks} onPick={openTask} onNewTask={newTask} taskTime={taskTime} />}
-        {view === 'workbench' && source && (
-          <WorkbenchPage key={sourceKey(source)} onDataRefresh={()=>setInvVersion(v=>v+1)}
+        {view === 'workbench' && source && !quoteSync.ready && <section className="panel" role="status">{quoteSync.error?'询价审核尚未恢复':'正在载入询价审核…'}</section>}
+        {view === 'workbench' && source && quoteSync.ready && (
+          <WorkbenchPage persistenceError={quoteSync.error} persistenceConflict={quoteSync.conflict} onRetryQuote={()=>{if(quoteSync.conflict){quoteSync.loadServer();setInvVersion(version=>version+1);}else quoteSync.retry();}} quoteVersion={current.email?.intakeBatchId?quoteSync.version:undefined} persistencePending={!quoteSync.ready||quoteSync.saving||!!quoteSync.error} key={sourceKey(source)} onDataRefresh={()=>setInvVersion(v=>v+1)}
             onAskAgent={(key) => { setAgentLineKey(key); setAssistantOpen(true); }}
             selectedAgentLine={agentLineKey}
 

@@ -50,9 +50,14 @@ function RawHighlight({ body, needle }: { body: string; needle: string }) {
 
 /** 报价工作台：一个页面完成 核对 → 定价 → 预览 → 导出 */
 export function WorkbenchPage({
-  onDataRefresh, onAskAgent, selectedAgentLine, ds, source, lines, priced, email, label, assigneeId, onAssigneeChange, currentUserId, inquiryError, onConvertManual,
+  persistenceError, persistenceConflict, onRetryQuote, quoteVersion, persistencePending=false, onDataRefresh, onAskAgent, selectedAgentLine, ds, source, lines, priced, email, label, assigneeId, onAssigneeChange, currentUserId, inquiryError, onConvertManual,
   policy, priceBook, setPriceBook, resolved, setResolved, estCost, setEstCost, manualPrices, setManualPrices, skipped, setSkipped, taskKey, timing, ops, onTime, onOp, onEditLine, onAddLine, onBack, onApplyLlmRows,
 }: {
+  persistenceError?:string;
+  persistenceConflict?:boolean;
+  onRetryQuote?:()=>void;
+  quoteVersion?:number;
+  persistencePending?:boolean;
   onDataRefresh?:()=>void;
   onAskAgent?: (key: string | null) => void; selectedAgentLine?: string | null;
   assigneeId: string; onAssigneeChange: (id: string) => void; currentUserId: string; inquiryError: boolean; onConvertManual: () => void;
@@ -349,7 +354,7 @@ export function WorkbenchPage({
     taskLabel: label, priceBook, policy, company: getCompany(), resolved, skipped,
     manualCost: estCost,
   };
-  const unsignedReceiptContent=JSON.stringify({schemaVersion:2,policy,company:getCompany(),manualCost:estCost,lines:priced.map(p=>({
+  const unsignedReceiptContent=JSON.stringify({schemaVersion:2,draftVersion:quoteVersion,policy,company:getCompany(),manualCost:estCost,lines:priced.map(p=>({
     key:p.line.key,pn:p.line.partNumber,desc:p.line.description,requestedQty:p.line.quantity,qty:quoteQtyOf(p).qty,
     uom:p.line.uom,condition:p.line.condition,requirement:p.line.requirement,needByDate:p.line.needByDate||'',dueDate:p.line.dueDate,ruleVersion:p.ruleVersion,basisId:p.basisId,basisResource:p.basisResource,price:priceBook[p.line.key]??null,skipped:skipped.has(p.line.key),reviewed:resolved.has(p.line.key),flags:p.flags,
   }))});
@@ -375,7 +380,7 @@ export function WorkbenchPage({
   /** Persist the human-reviewed receipt before generating a download. */
   const postSnapshot = async (kind: string) => {
     const content=currentReceiptContent;
-    const response=await fetch('/api/snapshots',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderId,kind,total:orderTotal,content,operator:getCompany().operator,inquiryId:email?.intakeBatchId})});
+    const response=await fetch('/api/snapshots',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({orderId,kind,total:orderTotal,content,operator:getCompany().operator,inquiryId:email?.intakeBatchId,draftVersion:quoteVersion})});
     const receipt=await response.json();
     if(!response.ok||!receipt.ok||!receipt.id)throw new Error(receipt.error||'无法保存审核快照，尚未生成导出文件');
     return receipt.id as number;
@@ -455,7 +460,7 @@ export function WorkbenchPage({
 
   const [checkFilter,setCheckFilter]=useState<'pending'|'all'>('pending');
   const extractionGaps=lines.filter(l=>!l.partNumber||!(l.quantity>0)||!l.uom||!l.condition||l.issues.length).length+(intakeRecord?.issues.length||0);
-  const stageExportable=exportable&&extractionGaps===0&&activePriced.length>0&&activePriced.every(p=>resolved.has(p.line.key));
+  const stageExportable=!persistencePending&&exportable&&extractionGaps===0&&activePriced.length>0&&activePriced.every(p=>resolved.has(p.line.key));
   const stageItems=inquiryStages({materialCount:intakeRecord?.files.length ?? (email?1+email.attachments.length:lines.length?1:0),lineCount:lines.length,extractionGaps,matchedLines:intakeRecord?intakeRecord.lines.filter(l=>(l as typeof l&{evidence?:unknown[]}).evidence?.length).length:priced.filter(p=>p.cost||p.candidates.length).length,reviewedLines:activePriced.filter(p=>resolved.has(p.line.key)).length,activeLines:activePriced.length,pricedLines:activePriced.filter(p=>validUnitPrice(confirmOf(p))).length,exportAllowed:stageExportable,exported});
   const reviewBasis=JSON.stringify([lines,policy,priced.map(p=>({cost:p.cost,candidates:p.candidates.map(c=>c.row)}))]);
   const seenReviewBasis=useRef(reviewBasis);
@@ -714,7 +719,7 @@ export function WorkbenchPage({
       </section>
       <section className="workflow-section" data-current={stage===4} id="inquiry-stage-4" tabIndex={-1} data-inquiry-stage="4" aria-labelledby="inquiry-stage-title-4">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-4">{stageItems[3].label}</h2></header>
-      {<section className="panel stage-checks"><div className="stage-check-filters"><FilterTabs label="条件检查筛选" value={checkFilter} onChange={setCheckFilter} items={[{value:'pending',label:'待核对',count:activePriced.filter(p=>!resolved.has(p.line.key)).length},{value:'all',label:'全部',count:activePriced.length}]} /></div>{activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).map(p=><article className="stage-check-row" key={p.line.key}><div><b>{p.line.partNumber||'件号待补'}</b><span>{p.line.quantity} {p.line.uom}</span></div><div className="stage-check-findings">{p.ruleIssues?.length?p.ruleIssues.map(issue=><span className="check-finding" key={issue}><span className="check-finding-mark" aria-hidden="true">!</span><span>{issue}</span></span>):yellowReasons(p).length?yellowReasons(p).map(f=><span className="check-finding" key={f}><span className="check-finding-mark" aria-hidden="true">!</span><span>{FLAG_PLAIN[f]}</span></span>):<span className="check-neutral">规则未发现阻断项 · 待人工核对</span>}</div><div className="stage-check-actions"><button className="btn" onClick={()=>{goToStage(2);setOpen(p.line.key)}}>查看物料</button><button className="btn" onClick={()=>toggleResolved(p.line.key)}>{resolved.has(p.line.key)?'撤销核对':'标记人工已核对'}</button></div></article>)}{!activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).length&&<div className="stage-empty"><span>✓</span><strong>{activePriced.length?'当前没有待核对行':'暂无物料'}</strong><button className="btn" onClick={()=>goToStage(2)}>打开物料表</button></div>}</section>}
+      {<section className="panel stage-checks"><div className="stage-check-filters"><FilterTabs label="条件检查筛选" value={checkFilter} onChange={setCheckFilter} items={[{value:'pending',label:'待核对',count:activePriced.filter(p=>!resolved.has(p.line.key)).length},{value:'all',label:'全部',count:activePriced.length}]} /></div>{activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).map(p=><article className="stage-check-row" key={p.line.key}><div><b>{p.line.partNumber||'件号待补'}</b><span>{p.line.quantity} {p.line.uom}</span></div><div className="stage-check-findings">{p.ruleIssues?.length?p.ruleIssues.map(issue=><span className="check-finding" key={issue}><span className="check-finding-mark" aria-hidden="true">!</span><span>{issue}</span></span>):yellowReasons(p).length?yellowReasons(p).map(f=><span className="check-finding" key={f}><span className="check-finding-mark" aria-hidden="true">!</span><span>{FLAG_PLAIN[f]}</span></span>):<span className="check-neutral">规则未发现阻断项 · 待人工核对</span>}</div><div className="stage-check-actions"><button className="btn" onClick={()=>{goToStage(2);setOpen(p.line.key)}}>查看物料</button><button className="btn" disabled={persistencePending} onClick={()=>toggleResolved(p.line.key)}>{resolved.has(p.line.key)?'撤销核对':'标记人工已核对'}</button></div></article>)}{!activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).length&&<div className="stage-empty"><span>✓</span><strong>{activePriced.length?'当前没有待核对行':'暂无物料'}</strong><button className="btn" onClick={()=>goToStage(2)}>打开物料表</button></div>}</section>}
 
       </section>
       <section className="workflow-section" data-current={stage===5} id="inquiry-stage-5" tabIndex={-1} data-inquiry-stage="5" aria-labelledby="inquiry-stage-title-5">
@@ -892,6 +897,8 @@ export function WorkbenchPage({
         <div className="export-checklist"><div><span>物料信息</span><b>{invalidLines.length ? `${invalidLines.length} 行待补全` : `${activePriced.length} 行已完整`}</b><button className="btn" onClick={()=>goToStage(2)}>核对物料</button></div><div><span>人工核对</span><b>{activePriced.filter(p=>!resolved.has(p.line.key)).length} 行待核对</b><button className="btn" onClick={()=>goToStage(4)}>检查条件</button></div><div><span>报价单价</span><b>{activePriced.filter(p=>!validUnitPrice(confirmOf(p))).length} 行待定价</b><button className="btn" onClick={()=>goToStage(5)}>查看草稿</button></div></div>
         {invalidLines.length > 0 && <div role="alert" className="check-box">有 {invalidLines.length} 行缺少件号、单位或大于零的数量，请展开该行并修改。</div>}
         {exportError&&<div role="alert" className="check-box">{exportError}</div>}
+        {persistenceError&&<div role="alert" className="check-box">{persistenceError} <button className="btn" onClick={onRetryQuote}>{persistenceConflict?'载入服务端版本':'重试保存'}</button></div>}
+        {persistencePending&&!persistenceError&&<div role="status">正在保存询价审核…</div>}
         {exportBusy&&<div role="status">正在保存审核快照…</div>}
         {exportReceipt&&exported&&<Badge text={`已生成文件 · 审核快照 ${exportReceipt}`} tone="green" />}
         <div className="export-row" style={{ marginTop: 14 }}>
