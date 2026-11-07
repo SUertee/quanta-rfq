@@ -468,3 +468,24 @@ html:has(dialog[open]) { overflow:hidden; }
 
 .assistant-capsule.grows-right .assistant-orb { left:0;right:auto; }
 .assistant-capsule.grows-right input { left:66px;width:calc(100% - 80px); }
+
+/* Composer actions reuse the paste/drop parsing pipeline. */
+.chat-upload-actions { display:flex;align-items:center;gap:6px;padding-top:6px; }
+.chat-upload-actions button { min-height:32px;padding:5px 10px;border:0;border-radius:8px;background:transparent;color:var(--ink-2);font:inherit;font-size:14px;cursor:pointer; }
+.chat-upload-actions button:hover { background:var(--hal-nav-selected);color:var(--ink); }
+.chat-upload-actions button:disabled { opacity:.45;cursor:default; }
+/* History opens in normal page flow and shares the same structural edges. */
+.layout-reference.mode-agent .agent-mode-host { grid-template-rows:auto minmax(0,1fr); }
+.mode-agent .ai-conversation-tools { display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:0; }
+.ai-conversation-tools>.chat-new { justify-self:start;min-height:56px; }
+.ai-conversation-tools>.chat-history-open { grid-column:2;justify-self:end; }
+.chat-history-panel { --history-max:min(360px,40dvh);grid-column:1 / -1;max-height:var(--history-max);min-height:0;overflow:hidden;border-bottom:1px solid var(--line);animation:chat-history-flow 280ms cubic-bezier(.2,.8,.2,1); }
+.mode-agent .chat-history-panel .ai-conversation-list { display:flex;flex-direction:column;padding:0 0 12px;border:0;max-height:var(--history-max);position:static;overflow:hidden; }
+.mode-agent .chat-history-panel .chat-history-search { position:static;width:100%;margin:4px 0 10px;flex-shrink:0; }
+.mode-agent .chat-history-panel .chat-history-filters { flex-shrink:0; }
+.mode-agent .chat-history-panel nav { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;overflow:auto;min-height:0;overscroll-behavior:contain;padding-bottom:8px; }
+.mode-agent .chat-history-panel .conversation-list-row { flex:none;min-width:0; }
+.mode-agent .chat-history-panel nav .conversation-list-row>button:first-child { width:100%;min-width:0;max-width:none; }
+@keyframes chat-history-flow { from { max-height:0;opacity:0; } to { max-height:var(--history-max);opacity:1; } }
+@media(max-width:700px) { .mode-agent .chat-history-panel nav { grid-template-columns:minmax(0,1fr); } }
+@media(prefers-reduced-motion:reduce) { .chat-history-panel { animation:none; } }
