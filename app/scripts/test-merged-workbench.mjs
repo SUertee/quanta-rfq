@@ -31,3 +31,8 @@ for(const patch of [{stockQty:0},{uom:'BOX'},{stockCondition:'OH'},{partNumber:'
  assert.ok(priceLine(moqDemand,stockDataset({...cost,...patch})).flags.includes('MOQ_SHORTAGE'),'nonmatching or insufficient stock cannot suppress supplier MOQ');
 }
 console.log('PASS: supplier MOQ stays candidate-specific when exact internal stock covers demand');
+
+assert.ok(!priceLine(moqDemand,stockDataset({...cost,stockQty:10})).flags.includes('MOQ_SHORTAGE'),'stock exactly at demand covers MOQ');
+assert.ok(priceLine(moqDemand,stockDataset({...cost,stockQty:9})).flags.includes('MOQ_SHORTAGE'),'stock one below demand retains MOQ');
+assert.ok(priceLine({...moqDemand,condition:''},stockDataset({...cost,stockCondition:''})).flags.includes('MOQ_SHORTAGE'),'two missing conditions are not a confirmed stock match');
+assert.ok(priceLine({...moqDemand,uom:''},stockDataset({...cost,uom:''})).flags.includes('MOQ_SHORTAGE'),'two missing units are not a confirmed stock match');

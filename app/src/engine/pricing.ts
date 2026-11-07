@@ -150,7 +150,7 @@ export function priceLine(line: InquiryLine, ds: Dataset, opts: PriceOpts = {}):
     flags.add('NO_MATCH'); // 成本表命中但无外部资源价
   }
   // Supplier purchasing MOQ does not block fulfillment from matching internal stock.
-  const stockCoversQuantity = cost && cost.partNumber === line.partNumber &&
+  const stockCoversQuantity = cost && line.uom && line.condition && cost.partNumber === line.partNumber &&
     cost.uom === line.uom && cost.stockCondition === line.condition &&
     line.quantity > 0 && cost.stockQty >= line.quantity;
   if (stockCoversQuantity) flags.delete('MOQ_SHORTAGE');
