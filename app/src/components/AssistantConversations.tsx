@@ -1,4 +1,3 @@
-import {Modal} from './Modal';
 import {MessageRail} from './MessageRail';
 import {useChatScroll} from '../engine/useChatScroll';
 import {appFetch as fetch} from '../engine/appUrl';
@@ -67,10 +66,14 @@ export function ConversationList({tasks,selected,onSelect,onNew}:{tasks:TaskSumm
  </article>)}{!records.length&&<p className="history-empty">{query.trim()?'没有匹配的对话':archived&&complete?'暂无归档对话':'暂无历史对话'}</p>}</nav>;
  const search=<input className="history-search" aria-label="搜索对话" placeholder="搜索对话或询价" value={query} onChange={e=>setQuery(e.target.value)}/>;
  return <div className="ai-conversation-tools" ref={tools} onKeyDown={event=>{if(event.key==='Escape'&&historyOpen){event.preventDefault();setHistoryOpen(false);trigger.current?.focus();}}}>
-  <button ref={trigger} className="chat-history-open btn" aria-expanded={historyOpen} aria-controls="chat-history-panel" onClick={()=>{setHistoryOpen(!historyOpen);setQuery('');}}>历史对话</button>
+  <button ref={trigger} className="chat-history-open btn" aria-expanded={historyOpen} aria-controls="chat-history-panel" onClick={()=>{setHistoryOpen(!historyOpen);setFullHistory(false);setArchived(false);setQuery('');}}>历史对话</button>
   <button className="chat-new" onClick={()=>{setArchived(false);setQuery('');setHistoryOpen(false);onNew();}}>新建对话 <span aria-hidden="true">＋</span></button>
-  {historyOpen&&<section id="chat-history-panel" className="history-popover" aria-label="最近对话">{search}{recordList(false)}<button className="history-view-all" onClick={()=>{setHistoryOpen(false);setArchived(false);setFullHistory(true);}}>查看全部历史 <span aria-hidden="true">↗</span></button></section>}
-  {fullHistory&&<Modal title="全部历史对话" className="history-browser" onClose={()=>setFullHistory(false)}><div className="history-browser-tools">{search}<div className="history-filters"><button className="btn" aria-pressed={!archived} onClick={()=>setArchived(false)}>最近</button><button className="btn" aria-pressed={archived} onClick={()=>setArchived(true)}>已归档</button></div></div>{recordList(true)}</Modal>}
+  {historyOpen&&<section id="chat-history-panel" className={`history-popover ${fullHistory?'is-expanded':''}`} aria-label="历史对话">
+    {search}
+    {fullHistory&&<div className="history-filters"><button className="btn" aria-pressed={!archived} onClick={()=>setArchived(false)}>最近</button><button className="btn" aria-pressed={archived} onClick={()=>setArchived(true)}>已归档</button></div>}
+    {recordList(fullHistory)}
+    <button className="history-view-all" aria-expanded={fullHistory} onClick={()=>{setArchived(false);setFullHistory(!fullHistory);}}>{fullHistory?'收起全部历史':'查看全部历史'} <span aria-hidden="true">{fullHistory?'−':'＋'}</span></button>
+  </section>}
  </div>;
 }
 export function ConversationTaskLink({tasks,taskKey,onLink}:{tasks:TaskSummary[];taskKey?:string;onLink:(key:string)=>void}){
