@@ -1,3 +1,4 @@
+import {fmtMoney} from '../engine/amount';
 import {readChatStream,readAgentStream} from '../engine/chatStream';
 import {useChatScroll} from '../engine/useChatScroll';
 import {appFetch as fetch} from '../engine/appUrl';
@@ -153,7 +154,25 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
         const result=turn.result, stale=turn.basis!==basis;
         return <article key={i} className={`rfq-chat-turn ${turn.role}`}>{turn.role==='assistant'&&<div className="rfq-chat-speaker">Quanta{stale&&<span>旧询价记录</span>}</div>}{result&&<ExecutionSteps events={result.events} lines={result.draft.lines} mode={result.draft.mode}/>}<div className="rfq-chat-text">{turn.attachments&&<div className="chat-attachment-strip">{turn.attachments.map(file=><ChatAttachmentPreview key={file.id} attachment={file}/>)}</div>}<ChatMarkdown text={(result && /生成.{0,8}(报价|草稿)/.test(session.turns[i-1]?.content || '') ? result.summary : turn.content)} /></div>
           {result && <>{result.draft.lines.length>0 && result.draft.mode!=='analysis' && !embedded && <button className="rfq-chat-output" disabled={stale} onClick={openDraft}><span>▤</span><strong>{result.draft.mode==='analysis'?'缺口清单':'报价草稿'} · {result.draft.lines.length} 行</strong><small>{stale?'旧记录':'查看当前草稿 →'}</small></button>}
-            {embedded && result.draft.mode!=='analysis' && result.draft.lines.length>0 && <div className="copilot-results"><div className="copilot-result-title">报价建议 <span>{result.draft.lines.length} 行 · {stale?'已过期':'待确认'}</span></div>{result.draft.lines.map((line,j)=><div className="copilot-price-card" key={j}><div><strong>{line.partNumber || '缺件号'}</strong><small>{line.quantity} {line.uom}</small><b>{money(line.suggestedPrice)}</b></div><section className="copilot-line-evidence"><p>内部成本 {money(line.cost)}</p><p>{line.source ? '来源：内部库存成本' : '未取得成本依据'}</p>{line.issues.map((issue,k)=><p key={k}>{issue}</p>)}</section>{line.suggestedPrice!=null && <button className="btn" disabled={stale || !onApplyPrice || priceBook[line.key]===line.suggestedPrice} onClick={()=>onApplyPrice?.(line,line.suggestedPrice!)}>{priceBook[line.key]===line.suggestedPrice?'已填入单价':'接受建议单价'}</button>}</div>)}<button className="btn" disabled={stale} onClick={()=>onOpenTask(task.source)}>返回工作台核对</button></div>}
+            {embedded && result.draft.mode!=='analysis' && result.draft.lines.length>0 && <section className="copilot-results" aria-label="报价建议">
+              <header className="copilot-result-title"><strong>报价建议</strong><span>{result.draft.lines.length} 项物料</span></header>
+              {result.draft.lines.map((line,j)=>{
+                const applied=priceBook[line.key]===line.suggestedPrice&&line.suggestedPrice!=null;
+                return <article className="copilot-price-card" key={`${line.key}-${j}`}>
+                  <header className="quote-line-top">
+                    <div><strong className="quote-part">{line.partNumber||'缺件号'}</strong><span className="quote-quantity">{line.quantity} {line.uom||'单位待补'}</span></div>
+                    <div className="quote-unit-price"><span>建议单价</span><b>{fmtMoney(line.suggestedPrice,line.currency)||'待补依据'}</b></div>
+                  </header>
+                  <dl className="quote-cost-basis"><div><dt>内部成本</dt><dd>{fmtMoney(line.cost,line.currency)||'待补充'}</dd></div><div><dt>报价依据</dt><dd>{line.source?'内部库存成本':'尚未匹配'}</dd></div></dl>
+                  {line.issues.length>0&&<ul className="quote-line-issues">{line.issues.map((issue,k)=><li key={k}>{issue}</li>)}</ul>}
+                  <footer className="quote-line-actions">
+                    <span className={`quote-price-state ${stale?'stale':applied?'applied':'pending'}`}>{stale?'需重新核对':applied?'✓ 已填入单价':line.suggestedPrice==null?'缺少报价依据':'待核对'}</span>
+                    {line.suggestedPrice!=null&&!applied&&<button className="btn" disabled={stale||!onApplyPrice} onClick={()=>onApplyPrice?.(line,line.suggestedPrice!)}>接受建议单价</button>}
+                  </footer>
+                </article>;
+              })}
+              <footer className="quote-card-footer"><button className="btn" disabled={stale} onClick={()=>onOpenTask(task.source)}>返回工作台核对</button></footer>
+            </section>}
             {result.draft.mode==='analysis' && result.draft.lines.length>0 && <section className="rfq-chat-artifact"><header><strong>缺口清单</strong><span>{result.draft.lines.length} 行</span></header><div className="rfq-chat-table"><table><thead><tr><th>物料</th><th>数量</th><th>内部成本</th><th>待核对事项</th></tr></thead><tbody>{result.draft.lines.map((line,j)=><tr key={j}><td>{line.partNumber || '缺件号'}</td><td>{line.quantity} {line.uom}</td><td>{money(line.cost)}</td><td>{line.issues.length?line.issues.join('；'):'未发现额外成本缺口，业务条件仍待人工核对'}</td></tr>)}</tbody></table></div></section>}
           </>}
         </article>;
@@ -162,7 +181,7 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
       {session.error && <div className="rfq-chat-error" role="alert">{session.progressEvents?.length?<ExecutionSteps events={session.progressEvents}/>:null}{session.error}</div>}
 
     </div>
-    <MessageRail container={chatScroll.containerRef} turns={session.turns}/>
+    {(!embedded||expanded||docked)&&<MessageRail container={chatScroll.containerRef} turns={session.turns}/>}
     <footer className="rfq-chat-footer"><div className="rfq-chat-composer"><ChatFiles showPicker key={attachmentEpoch} disabled={session.state==='running'} onChange={setAttachments} excerptLimit={1400} onRead={setAttachmentContext}/><textarea aria-label="给智能体的指令" placeholder="输入消息…" maxLength={2000} value={session.input} disabled={session.state==='running'} onChange={e=>patch(sessionKey,{input:e.target.value})} onCompositionStart={()=>{composing.current=true;}} onCompositionEnd={()=>{composing.current=false;}} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&!composing.current&&e.keyCode!==229){e.preventDefault();void run();}}} />{session.state==='running' ? <button className="stop-btn" onClick={stop}>停止</button> : <button aria-label="发送消息" className="send-btn" disabled={(!session.input.trim()&&!attachments.length)||attachments.some(f=>f.status==='reading')||!current.lines.length} onClick={()=>run()}>↑</button>}</div></footer>
   </section><aside className="rfq-current-draft" ref={draftAside} tabIndex={-1} aria-label="当前报价草稿">{draftPanel}</aside>{drawerOpen&&<div className="rfq-draft-overlay" onClick={()=>setDrawerOpen(false)}><aside className="rfq-draft-drawer" role="dialog" aria-modal="true" aria-label="报价草稿" tabIndex={-1} onKeyDown={e=>{if(e.key==='Escape')setDrawerOpen(false);}} onClick={e=>e.stopPropagation()}><button autoFocus className="rfq-drawer-close" onClick={()=>setDrawerOpen(false)}>关闭 ×</button>{draftPanel}</aside></div>}</div>;
 }

@@ -866,3 +866,32 @@ html:has(.layout-reference),body:has(.layout-reference) { height:100%;overflow:h
  .layout-reference .task-record-open { display:block;min-height:0;margin:0;padding:0;line-height:1.5;text-align:left; }
  .layout-reference .task-record-open b { display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 }
+
+/* Quote suggestion cards share the same structure in the floating and docked chat. */
+.layout-reference .copilot-results { margin-top:12px;border:1px solid var(--line);border-radius:var(--radius-surface);background:var(--panel);overflow:hidden; }
+.layout-reference .copilot-result-title { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:14px 18px;border-bottom:1px solid var(--line);background:transparent; }
+.layout-reference .copilot-result-title strong { font-size:15px;font-weight:600; }
+.layout-reference .copilot-result-title>span { float:none;font-size:13px;color:var(--ink-2); }
+.layout-reference .copilot-price-card { padding:18px;border-bottom:1px solid var(--line); }
+.layout-reference .quote-line-top { display:flex;align-items:flex-start;justify-content:space-between;gap:20px;margin:0 0 16px; }
+.layout-reference .quote-line-top>div { display:flex;flex-direction:column;gap:6px;min-width:0; }
+.layout-reference .copilot-price-card .quote-part { font-size:17px;font-weight:600;line-height:1.4;overflow-wrap:anywhere; }
+.layout-reference .quote-quantity,.layout-reference .quote-unit-price>span { font-size:13px;color:var(--ink-2); }
+.layout-reference .quote-line-top .quote-unit-price { flex-shrink:0;align-items:flex-end;text-align:right; }
+.layout-reference .quote-unit-price b { font-size:21px;font-weight:600;line-height:1.3;font-variant-numeric:tabular-nums; }
+.layout-reference .quote-cost-basis { display:flex;align-items:flex-start;flex-wrap:wrap;gap:12px 32px;padding:0;margin:0; }
+.layout-reference .quote-cost-basis>div { display:flex;align-items:baseline;gap:8px;min-width:0; }
+.layout-reference .quote-cost-basis dt { color:var(--ink-2);font-size:13px; }
+.layout-reference .quote-cost-basis dd { margin:0;color:var(--ink);font-size:14px;font-variant-numeric:tabular-nums; }
+.layout-reference .quote-line-issues { display:grid;gap:5px;margin:12px 0 0;padding-left:18px;color:var(--amber,var(--ink-2));font-size:14px;line-height:1.5; }
+.layout-reference .quote-line-actions { display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px;min-height:32px; }
+.layout-reference .quote-price-state { font-size:13px;color:var(--ink-2); }
+.layout-reference .quote-price-state.applied { color:var(--green,var(--ink));font-weight:500; }
+.layout-reference .quote-price-state.stale,.layout-reference .quote-price-state.pending { color:var(--ink-2); }
+.layout-reference .copilot-price-card .btn { width:auto;min-height:36px;padding:7px 14px;font-size:14px; }
+.layout-reference .quote-card-footer { display:flex;justify-content:flex-end;gap:12px;padding:12px 18px;background:var(--hal-head); }
+.layout-reference .quote-card-footer .btn { margin:0;min-height:36px;padding:7px 14px;font-size:14px; }
+.layout-reference .quote-line-actions .btn:focus-visible,.layout-reference .quote-card-footer .btn:focus-visible { outline:2px solid var(--hal-accent);outline-offset:3px; }
+@media(hover:hover) { .layout-reference .quote-line-actions .btn:not(:disabled):hover,.layout-reference .quote-card-footer .btn:not(:disabled):hover { background:var(--hal-nav-selected); } }
+.layout-reference .quote-line-actions .btn:not(:disabled):active,.layout-reference .quote-card-footer .btn:not(:disabled):active { transform:translateY(1px); }
+@media(max-width:550px) { .layout-reference .quote-line-top { gap:12px; }.layout-reference .quote-unit-price b { font-size:19px; }.layout-reference .copilot-price-card { padding:16px; }.layout-reference .quote-cost-basis { gap:10px 20px; } }
