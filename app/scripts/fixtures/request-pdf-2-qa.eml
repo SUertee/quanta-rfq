@@ -1,0 +1,12 @@
+Subject: Request PDF 2 QA export
+From: qa@example.test
+
+以下询价行由随邮件 Quote.pdf 文本层提取，未提供的价格和件状留空。
+RFQ No.	Part Number	Description	Quantity	Unit of Measure
+RFQ-1847	CPL-501	FILTER ELEMENT, CABIN	2	Each
+RFQ-1847	CPL-502	VALVE SEAL, SYSTEM A	5	Each
+RFQ-1847	CPL-503	MOUNTING PAD, SENSOR	2	Each
+RFQ-1847	CPL-504	HOSE CLAMP, SYSTEM B	2	Each
+RFQ-1847	CPL-505	CONNECTOR SEAL, NAV	3	Each
+RFQ-1847	CPL-506	RETAINER, PANEL UNIT	4	Each
+RFQ-1847	CPL-507	BRACKET PAD, UNIT C	4	Each

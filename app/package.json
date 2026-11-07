@@ -1,0 +1,60 @@
+{
+  "name": "quanta-rfq",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "server": "node server/index.mjs",
+    "convert:data": "node scripts/convert-data.mjs",
+    "test:agent": "node scripts/test-agent-mvp.mjs",
+    "test:merge": "node scripts/test-merged-workbench.mjs",
+    "test:intake": "node scripts/test-intake.mjs",
+    "test:workflow": "node scripts/test-workflow.mjs",
+    "test:agent-audit": "node scripts/test-agent-audit.mjs",
+    "test:agent-scope": "node scripts/test-agent-scope.mjs",
+    "test:quote-receipt": "node scripts/test-quote-receipt.mjs",
+    "test:agent-ui": "node scripts/verify-agent-ui.mjs",
+    "test:run-audit": "node scripts/test-run-audit.mjs",
+    "test": "node scripts/test-all.mjs",
+    "check:secrets": "python3 ../scripts/check_secrets.py --history",
+    "test:chat-files": "node scripts/test-chat-files.mjs",
+    "test:chat-previews": "node scripts/test-chat-previews.mjs",
+    "test:chat-stream": "node scripts/test-chat-stream.mjs",
+    "test:conversations": "node scripts/test-conversations.mjs",
+    "test:floating-assistant": "node scripts/test-floating-assistant.mjs",
+    "test:stage-navigation": "node scripts/test-stage-navigation.mjs"
+  },
+  "dependencies": {
+    "@langchain/openai": "^1.8.0",
+    "csv-parse": "^7.0.3",
+    "exceljs": "^4.4.0",
+    "langchain": "^1.6.1",
+    "mailparser": "^3.14.2",
+    "pdfjs-dist": "^6.5.438",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1",
+    "sql.js": "^1.15.2",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.3",
+    "esbuild": "^0.25.12",
+    "typescript": "~5.6.3",
+    "vite": "^6.4.5"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "overrides": {
+    "exceljs": {
+      "uuid": "^11.1.0"
+    }
+  }
+}

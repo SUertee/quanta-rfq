@@ -1,0 +1,10 @@
+import assert from 'node:assert/strict';
+import {readChatFiles} from '../server/chat-files.mjs';
+import {decodeFile} from '../server/intake-parser.mjs';
+const f=(name,text)=>({name,mime:'text/plain',base64:Buffer.from(text).toString('base64')});
+const result=await readChatFiles({files:[f('询价.txt','PN AN3-5A 10 EA'),f('未知.bin','binary')]});
+assert.equal(result.files[0].text,'PN AN3-5A 10 EA');assert.match(result.files[1].error,/不支持/);
+const long=await readChatFiles({files:[f('长文.md','a'.repeat(13000))]});assert.equal(long.files[0].text.length,12000);assert.equal(long.files[0].truncated,true);
+const image=await decodeFile('image.png',Buffer.from('test'));assert.equal(image.kind,'image');assert.equal(image.needsOcr,true);
+await assert.rejects(()=>readChatFiles({files:[]}));
+console.log('PASS: text parsing, unsupported format errors, explicit excerpt flag, image OCR routing and input validation');

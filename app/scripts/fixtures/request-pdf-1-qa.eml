@@ -1,0 +1,12 @@
+Subject: Request PDF 1 QA export
+From: qa@example.test
+
+以下询价行由随邮件 Quote.pdf 文本层提取，未提供的价格和件状留空。
+RFQ No.	Part Number	Description	Quantity	Unit of Measure
+RFQ-0930	GSK-001	GASKET, RADIO ALT	2	Each
+RFQ-0930	GSK-002	GASKET, DME/ATC	5	Each
+RFQ-0930	GSK-003	GASKET, SENSOR BOTTOM	2	Each
+RFQ-0930	GSK-004	GASKET, SENSOR TOP	2	Each
+RFQ-0930	GSK-005	GASKET, NAVIGATION	3	Each
+RFQ-0930	GSK-006	MOUNTING GASKET, UNIT A	4	Each
+RFQ-0930	GSK-007	GASKET, UNIT B	4	Each

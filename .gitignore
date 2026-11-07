@@ -1,0 +1,29 @@
+# Dependencies / generated output
+**/node_modules/
+**/dist/
+**/coverage/
+**/*.tsbuildinfo
+**/*.log
+**/.DS_Store
+**/.finesse/
+# Credentials: only the empty template is versioned
+.env
+.env.*
+**/.env
+**/.env.*
+!**/.env.example
+**/API key.txt
+**/*.pem
+**/*.key
+**/*credentials*.json
+# Local business records, uploads, exports and backups
+**/*.sqlite*
+**/*.db
+**/*.bak
+**/*.tmp
+**/uploads/
+**/exports/
+**/logs/
+**/*.zip
+**/*.7z
+docs/verification/

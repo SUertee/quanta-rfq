@@ -1,0 +1,25 @@
+import { build } from 'esbuild';
+import assert from 'node:assert/strict';
+const built = await build({ entryPoints: ['src/engine/export.ts'], bundle: true, write: false, platform: 'node', format: 'esm' });
+const api = await import(`data:text/javascript;base64,${Buffer.from(built.outputFiles[0].text).toString('base64')}`);
+let blob;
+globalThis.document = { body: { appendChild() {} }, createElement: () => ({ click() {}, remove() {} }) };
+URL.createObjectURL = (value) => { blob = value; return 'blob:test'; };
+globalThis.setTimeout = () => 0;
+const row = { line: { key:'qa', partNumber:'PN-2004', description:'PIN', quantity:2, uom:'EA', condition:'FN', customer:'QA customer' }, flags:['MOQ_SHORTAGE'], candidates:[{row:{moq:25},flags:[]}], matchLevel:1 };
+const ctx = { taskLabel:'QA end-to-end', priceBook:{qa:19.99}, policy:{freightChargeCny:0}, company:{name:'QA supplier',warrantyNew:'12',warrantyOh:'6',validityDays:'30'}, resolved:new Set(['qa']),skipped:new Set(),manualCost:{} };
+api.exportCustomerHtml([row],ctx);
+const html = await blob.text();
+assert.ok(html.includes('19.99'));
+assert.ok(html.includes('499.75'));
+assert.ok(html.includes('PN-2004'));
+assert.ok(html.includes('QA supplier'));
+assert.equal(api.orderTotalOf([row],ctx),499.75);
+api.exportInternalCsv([row],ctx);
+const csv=await blob.text();
+assert.ok(csv.includes('19.99'));
+assert.ok(csv.includes('499.75'));
+console.log('PASS: customer HTML and internal CSV retain edited price 19.99, MOQ 25, total 499.75.');
+
+const internalStock={...row,cost:{partNumber:'PN-2004',uom:'EA',stockCondition:'FN',stockQty:10}};
+assert.equal(api.quoteQtyOf(internalStock).qty,2,'supplier MOQ must not increase internal-stock fulfilment');

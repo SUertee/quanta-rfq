@@ -1,0 +1,20 @@
+{
+  "_说明": "这是 ground truth 格式示例（评测页不会读取本文件）。人工标注两案例后，另存为 ground-truth-case1.json / ground-truth-case2.json，lines 为该邮件全部 122 行的期望结构化结果；flags 可选，标该行期望触发的标黄码。",
+  "caseId": "case1",
+  "inputKind": "dirty",
+  "emailId": "case1-dirty",
+  "lines": [
+    {
+      "partNumber": "PN-0001",
+      "description": "WASHER 垫片",
+      "quantity": 8,
+      "uom": "EA",
+      "condition": "FN",
+      "mpn": "PN-0001",
+      "manualPn": "PN-0001",
+      "productScope": "一般询价",
+      "dueDate": "2026-09-15 10:00",
+      "flags": ["NO_MATCH"]
+    }
+  ]
+}
