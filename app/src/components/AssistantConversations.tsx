@@ -39,7 +39,7 @@ export function PlatformChat({standalone=false,docked=false,onDock,onNewInquiry,
 export function ConversationList({tasks,selected,onSelect,onNew}:{tasks:TaskSummary[];selected:string;onSelect:(key:string)=>void;onNew:()=>void}){
  const [sessions,setSessions]=useState(()=>readStored<Record<string,Session>>('rfq-chat-v1',{}));
  const [meta,setMeta]=useState(conversationMeta),[query,setQuery]=useState(''),[archived,setArchived]=useState(false);
- const [historyOpen,setHistoryOpen]=useState(false),[fullHistory,setFullHistory]=useState(false);
+ const [historyOpen,setHistoryOpen]=useState(false);
  const tools=useRef<HTMLDivElement>(null),trigger=useRef<HTMLButtonElement>(null);
  useEffect(()=>{
   const reload=()=>{setSessions(readStored('rfq-chat-v1',{}));setMeta(conversationMeta());};
@@ -53,26 +53,26 @@ export function ConversationList({tasks,selected,onSelect,onNew}:{tasks:TaskSumm
   return()=>document.removeEventListener('pointerdown',outside);
  },[historyOpen]);
  const keys=[...new Set([...Object.keys(sessions),...Object.keys(meta)])];
- const records=keys.filter(key=>sessions[key]?.turns?.some(t=>t.role==='user')&&!!meta[key]?.archived===(fullHistory&&archived)).sort((a,b)=>(sessions[b]?.turns.slice(-1)[0]?.createdAt||meta[b]?.createdAt||'').localeCompare(sessions[a]?.turns.slice(-1)[0]?.createdAt||meta[a]?.createdAt||'')).map(key=>{
+ const records=keys.filter(key=>sessions[key]?.turns?.some(t=>t.role==='user')&&!!meta[key]?.archived===archived).sort((a,b)=>(sessions[b]?.turns.slice(-1)[0]?.createdAt||meta[b]?.createdAt||'').localeCompare(sessions[a]?.turns.slice(-1)[0]?.createdAt||meta[a]?.createdAt||'')).map(key=>{
   const turns=sessions[key]?.turns||[];
   const task=tasks.find(t=>Object.prototype.hasOwnProperty.call(meta[key]||{},'taskKey')?t.key===meta[key]?.taskKey:key===t.key||key.startsWith(t.key+':line:'));
   const title=turns.find(t=>t.role==='user')?.content.split('\n')[0]||'文件询价';
   return {key,title,task,search:[title,task?.title,...turns.map(t=>t.content)].join(' ').toLowerCase()};
  }).filter(record=>record.search.includes(query.trim().toLowerCase()));
- const choose=(key:string)=>{onSelect(key);setHistoryOpen(false);setFullHistory(false);trigger.current?.focus();};
- const recordList=(complete:boolean)=><nav className="history-records" aria-label={complete?'全部历史会话':'最近历史会话'}>{(complete?records:records.slice(0,5)).map(record=><article className="history-record" key={record.key}>
+ const choose=(key:string)=>{onSelect(key);setHistoryOpen(false);trigger.current?.focus();};
+ const recordList=()=><nav className="history-records" aria-label="历史会话">{records.map(record=><article className="history-record" key={record.key}>
   <button className={selected===record.key?'active':''} disabled={!record.key.startsWith('chat:')&&record.key!=='__no_task__'&&!record.task} onClick={()=>choose(record.key)}><strong title={record.title}>{record.title}</strong>{record.task&&<span title={record.task.title}>{record.task.title}</span>}</button>
-  {complete&&<button className="history-archive" onClick={()=>updateConversation(record.key,{archived:!archived})} aria-label={`${archived?'恢复':'归档'}对话 ${record.title}`}>{archived?'恢复':'归档'}</button>}
- </article>)}{!records.length&&<p className="history-empty">{query.trim()?'没有匹配的对话':archived&&complete?'暂无归档对话':'暂无历史对话'}</p>}</nav>;
+  <button className="history-archive" onClick={()=>updateConversation(record.key,{archived:!archived})} aria-label={`${archived?'恢复':'归档'}对话 ${record.title}`}>{archived?'恢复':'归档'}</button>
+ </article>)}{!records.length&&<p className="history-empty">{query.trim()?'没有匹配的对话':archived?'暂无归档对话':'暂无历史对话'}</p>}</nav>;
  const search=<input className="history-search" aria-label="搜索对话" placeholder="搜索对话或询价" value={query} onChange={e=>setQuery(e.target.value)}/>;
  return <div className="ai-conversation-tools" ref={tools} onKeyDown={event=>{if(event.key==='Escape'&&historyOpen){event.preventDefault();setHistoryOpen(false);trigger.current?.focus();}}}>
-  <button ref={trigger} className="chat-history-open btn" aria-expanded={historyOpen} aria-controls="chat-history-panel" onClick={()=>{setHistoryOpen(!historyOpen);setFullHistory(false);setArchived(false);setQuery('');}}>历史对话</button>
+  <button ref={trigger} className="chat-history-open btn" aria-expanded={historyOpen} aria-controls="chat-history-panel" onClick={()=>{setHistoryOpen(!historyOpen);setArchived(false);setQuery('');}}>历史对话</button>
   <button className="chat-new" onClick={()=>{setArchived(false);setQuery('');setHistoryOpen(false);onNew();}}>新建对话 <span aria-hidden="true">＋</span></button>
-  {historyOpen&&<section id="chat-history-panel" className={`history-popover ${fullHistory?'is-expanded':''}`} aria-label="历史对话">
+  {historyOpen&&<section id="chat-history-panel" className="history-popover" aria-label="历史对话">
     {search}
-    {fullHistory&&<div className="history-filters"><button className="btn" aria-pressed={!archived} onClick={()=>setArchived(false)}>最近</button><button className="btn" aria-pressed={archived} onClick={()=>setArchived(true)}>已归档</button></div>}
-    {recordList(fullHistory)}
-    <button className="history-view-all" aria-expanded={fullHistory} onClick={()=>{setArchived(false);setFullHistory(!fullHistory);}}>{fullHistory?'收起全部历史':'查看全部历史'} <span aria-hidden="true">{fullHistory?'−':'＋'}</span></button>
+    <div className="history-filters"><button className="btn" aria-pressed={!archived} onClick={()=>setArchived(false)}>最近</button><button className="btn" aria-pressed={archived} onClick={()=>setArchived(true)}>已归档</button></div>
+    {recordList()}
+
   </section>}
  </div>;
 }

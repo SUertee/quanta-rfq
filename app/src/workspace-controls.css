@@ -922,31 +922,27 @@ html:has(.layout-reference),body:has(.layout-reference) { height:100%;overflow:h
 .history-popover { position:absolute;left:0;top:calc(100% + 8px);z-index:20;box-sizing:border-box;width:min(360px,100%);padding:12px;border:1px solid var(--line);border-radius:var(--radius-surface);background:var(--panel);box-shadow:0 16px 40px -16px rgba(11,29,58,.25); }
 .history-search { box-sizing:border-box;width:100%;height:42px;min-width:0;padding:9px 12px;margin:0;border:1px solid var(--line);border-radius:var(--radius-control);background:var(--hal-head);font:inherit;font-size:14px;color:var(--ink); }
 .history-records { display:flex;flex-direction:column;gap:4px;min-height:0;overflow-y:auto;overscroll-behavior:contain; }
-.history-popover .history-records { max-height:min(300px,42dvh);margin:10px 0; }
 .history-record { display:flex;align-items:center;gap:8px;min-width:0;flex-shrink:0; }
 .history-record>button:first-child { display:flex;flex-direction:column;justify-content:center;gap:4px;flex:1;min-width:0;min-height:52px;padding:10px 12px;border:0;border-radius:var(--radius-control);background:transparent;color:var(--ink);text-align:left;font:inherit;cursor:pointer; }
 .history-record strong,.history-record span { display:block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .history-record strong { font-size:14px;font-weight:500;line-height:1.5; }
 .history-record span { font-size:13px;line-height:1.4;color:var(--ink-2); }
 .history-record>button.active { background:var(--hal-nav-selected); }
-.history-view-all { display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:40px;padding:10px 12px;border:0;border-top:1px solid var(--line);background:transparent;color:var(--ink);font:inherit;font-size:14px;cursor:pointer; }
 .history-filters { display:flex;gap:6px; }
 .history-filters .btn { min-height:40px;padding:8px 12px;white-space:nowrap;font-size:14px; }
 .history-filters .btn[aria-pressed=true] { background:var(--hal-nav-selected);color:var(--ink); }
 .history-archive { flex-shrink:0;padding:8px 12px;border:0;border-radius:var(--radius-control);background:transparent;color:var(--ink-2);font:inherit;font-size:14px;cursor:pointer; }
 .history-empty { margin:16px 12px;color:var(--ink-2);font-size:14px; }
-.history-record button:focus-visible,.history-view-all:focus-visible,.history-search:focus-visible { outline:2px solid var(--hal-accent);outline-offset:2px; }
-@media(hover:hover) { .history-record button:not(:disabled):hover,.history-view-all:hover { background:var(--hal-hover); } }
+.history-record button:focus-visible,.history-search:focus-visible { outline:2px solid var(--hal-accent);outline-offset:2px; }
+@media(hover:hover) { .history-record button:not(:disabled):hover { background:var(--hal-hover); } }
 @media(max-width:550px) { .history-popover { width:min(360px,100%); } }
 
 .floating-assistant-panel.is-closing { pointer-events:none;overflow:hidden;transform-origin:0 0;animation:assistant-anchor-reveal 260ms cubic-bezier(.22,.8,.28,1) reverse both; }
 @media(prefers-reduced-motion:reduce) { .floating-assistant-panel.is-closing { animation:none; } }
 
-/* Complete history expands vertically inside the same anchored panel. */
+/* Every history entry uses one complete, independently scrolling list. */
 .history-popover { display:flex;flex-direction:column;max-height:calc(100dvh - 200px); }
-.history-popover>.history-search,.history-popover>.history-filters,.history-popover>.history-view-all { flex-shrink:0; }
+.history-popover>.history-search,.history-popover>.history-filters { flex-shrink:0; }
 .history-popover>.history-filters { margin-top:10px; }
-.history-popover .history-records { flex:0 1 auto;max-height:min(260px,36dvh);transition:max-height 200ms ease; }
-.history-popover.is-expanded .history-records { max-height:min(440px,58dvh); }
 @media(max-width:850px) { .history-popover { max-height:calc(100dvh - 260px); } }
-@media(prefers-reduced-motion:reduce) { .history-popover .history-records { transition:none; } }
+.history-popover .history-records { flex:0 1 auto;max-height:min(420px,52dvh);margin:10px 0 0;overflow-y:auto;scrollbar-width:thin; }
