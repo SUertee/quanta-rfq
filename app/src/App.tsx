@@ -1,4 +1,4 @@
-import {appFetch as fetch} from './engine/appUrl';
+import {appFetch as fetch,appUrl} from './engine/appUrl';
 import {conversationMeta,newConversation} from './engine/conversations';
 import {PlatformChat,ConversationList} from './components/AssistantConversations';
 import {FloatingAssistant} from './components/FloatingAssistant';
@@ -173,11 +173,8 @@ export default function App() {
     <div className={`layout layout-reference mode-${mode} view-${view}`}>
       <aside className="sidebar">
         <button className="brand" aria-label="返回询价任务" onClick={()=>{setMode('workbench');setView('home');setAssistantOpen(false);}}>
-          <div className="brand-mark"><span>Q</span></div>
-          <div>
-            <div className="brand-name">Quanta 报价台</div>
-            <div className="brand-sub">RFQ WORKSPACE</div>
-          </div>
+          <img className="quanta-wordmark" src={appUrl('images/brand/quanta-logo-light.svg')} alt="Quanta" width="136" height="43" />
+          <span className="brand-product">报价台</span>
         </button>
         <nav aria-label="主要导航">
           <button className={`nav-item ${mode === 'workbench' && (view === 'home' || view === 'workbench') ? 'active' : ''}`} onClick={() => { setMode('workbench'); setView('home'); }}>
