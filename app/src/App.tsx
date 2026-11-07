@@ -141,7 +141,7 @@ export default function App() {
   if (err) return <div className="boot">数据载入失败：{err}</div>;
   if (!dsx2) return <div className="boot">正在载入…</div>;
 
-  const openTask = (s: Source) => { if(activeChat&&conversationMeta()[activeChat]?.taskKey!==sourceKey(s))setActiveChat(null); setSource(s); setView('workbench'); setMode('workbench'); setAgentLineKey(null); setAssistantOpen(false); };
+  const openTask = (s: Source) => { if(activeChat&&conversationMeta()[activeChat]?.taskKey!==sourceKey(s))setActiveChat(null); setSource(s); setView('workbench'); setMode('workbench'); setAgentLineKey(null); setAssistantOpen(false); setAssistantDocked(false); };
   const applyLlmRows = (rows: RawRow[]) => {
     if (source?.kind === 'email') { setSource({ ...source, llmRows: rows }); setTaskRows((old) => ({ ...old, [source.id]: rows })); }
   };
@@ -175,21 +175,21 @@ export default function App() {
   return (
     <div className={`layout layout-reference mode-${mode} view-${view} ${assistantDocked && assistantOpen && mode==='workbench' ? 'assistant-docked' : ''}`}>
       <aside className="sidebar">
-        <button className="brand" aria-label="返回询价任务" onClick={()=>{setMode('workbench');setView('home');setAssistantOpen(false);}}>
+        <button className="brand" aria-label="返回询价任务" onClick={()=>{setMode('workbench');setView('home');setAssistantOpen(false);setAssistantDocked(false);}}>
           <img className="quanta-wordmark" src={appUrl('images/brand/quanta-logo-light.svg')} alt="Quanta" width="136" height="43" />
         </button>
         <nav aria-label="主要导航">
-          <button className={`nav-item ${mode === 'workbench' && (view === 'home' || view === 'workbench') ? 'active' : ''}`} onClick={() => { setMode('workbench'); setView('home'); }}>
+          <button className={`nav-item ${mode === 'workbench' && (view === 'home' || view === 'workbench') ? 'active' : ''}`} onClick={() => { setMode('workbench'); setView('home'); setAssistantOpen(false); setAssistantDocked(false); }}>
             <span className="nav-label">询价任务</span>
           </button>
-          <button className={`nav-item ${mode === 'workbench' && view === 'inspect' ? 'active' : ''}`} onClick={() => { setMode('workbench'); setView('inspect'); }}>
+          <button className={`nav-item ${mode === 'workbench' && view === 'inspect' ? 'active' : ''}`} onClick={() => { setMode('workbench'); setView('inspect'); setAssistantOpen(false); setAssistantDocked(false); }}>
             <span className="nav-label">异常巡检</span>
           </button>
-          <button className={`nav-item ${mode === 'workbench' && view === 'inventory' ? 'active' : ''}`} onClick={() => { setMode('workbench'); setView('inventory'); }}>
+          <button className={`nav-item ${mode === 'workbench' && view === 'inventory' ? 'active' : ''}`} onClick={() => { setMode('workbench'); setView('inventory'); setAssistantOpen(false); setAssistantDocked(false); }}>
             <span className="nav-label">库存与成本</span>
           </button>
 
-          <button className={`nav-item ${mode==='agent'?'active':''}`} onClick={()=>{setMode('agent');setAssistantOpen(true);}}><span className="nav-label">AI 对话</span></button>
+          <button className={`nav-item ${mode==='agent'?'active':''}`} onClick={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}}><span className="nav-label">AI 对话</span></button>
         </nav>
         <div className="sidebar-foot">
           <AccountMenu name={userName} onProfile={()=>setProfileOpen(true)} onBusiness={()=>{setSettingsSection('pricing');setSettingsOpen(true);}} onModels={()=>{setSettingsSection('services');setSettingsOpen(true);}} />
@@ -200,11 +200,11 @@ export default function App() {
 
 
         <FloatingAssistant onSend={text=>{setQuickMessage({id:Date.now(),text});setAssistantOpen(true);}} open={assistantOpen} expanded={mode==='agent'} docked={assistantDocked && assistantOpen && mode==='workbench'} onOpen={()=>setAssistantOpen(true)} onCollapse={()=>{setAssistantOpen(false);setAssistantDocked(false);setMode('workbench');}}>
-        <div className={mode === 'agent' ? "agent-mode-host" : "embedded-agent-host"} hidden={mode !== 'agent' && !assistantOpen}>
+        <div className={mode === 'agent' ? "agent-mode-host" : "embedded-agent-host"}>
           {mode==='agent'&&<ConversationList tasks={tasks} selected={activeChat||(source?sourceKey(source)+(agentLineKey?':line:'+agentLineKey:''):'__no_task__')} onNew={()=>{const key=newConversation();if(key){setActiveChat(key);setSource(null);setAgentLineKey(null);}}} onSelect={(key)=>{setQuickMessage(null);setActiveChat(key.startsWith('chat:')?key:null);const linked=conversationMeta()[key]?.taskKey;if(key.startsWith('chat:')||Object.prototype.hasOwnProperty.call(conversationMeta()[key]||{},'taskKey')){setActiveChat(key);const linkedTask=tasks.find(t=>t.key===linked);setSource(linkedTask?.source||null);setAgentLineKey(null);return;}if(key==='__no_task__'){setSource(null);setAgentLineKey(null);return;}const task=tasks.find(t=>key===t.key||key.startsWith(t.key+':line:'));if(task){setSource(task.source);setAgentLineKey(key.startsWith(task.key+':line:')?key.slice(task.key.length+6):null);}}} />}
-          {!source && <PlatformChat onNewInquiry={()=>{setMode('workbench');setView('home');setImportRequested(true);}} standalone={mode==='agent'} docked={assistantDocked} onDock={()=>setAssistantDocked(value=>!value)} key={activeChat||'__no_task__'} conversationKey={activeChat||'__no_task__'} onQuickHandled={()=>setQuickMessage(null)} quickMessage={quickMessage} onClose={()=>{setMode('workbench');setAssistantOpen(false);setAssistantDocked(false);}} onHistory={()=>{setMode('agent');setAssistantOpen(true);}} />}
+          {!source && <PlatformChat onNewInquiry={()=>{setMode('workbench');setView('home');setImportRequested(true);setAssistantOpen(false);setAssistantDocked(false);}} standalone={mode==='agent'} docked={assistantDocked} onDock={()=>setAssistantDocked(value=>!value)} key={activeChat||'__no_task__'} conversationKey={activeChat||'__no_task__'} onQuickHandled={()=>setQuickMessage(null)} quickMessage={quickMessage} onClose={()=>{setMode('workbench');setAssistantOpen(false);setAssistantDocked(false);}} onHistory={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}} />}
           {source&&<div className="copilot-body"><AgentPage key={(activeChat||'')+sourceKey(source)+(agentLineKey||'')}
-            sessionOverride={activeChat||undefined} onQuickHandled={()=>setQuickMessage(null)} quickMessage={source?quickMessage:null} onHistory={()=>{setMode('agent');setAssistantOpen(true);}} embedded expanded={mode === 'agent'} docked={assistantDocked} selectedLineKey={agentLineKey}
+            sessionOverride={activeChat||undefined} onQuickHandled={()=>setQuickMessage(null)} quickMessage={source?quickMessage:null} onHistory={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}} embedded expanded={mode === 'agent'} docked={assistantDocked} selectedLineKey={agentLineKey}
             onClearLine={() => setAgentLineKey(null)}
             onClose={() => { setMode('workbench'); setAssistantOpen(false); setAssistantDocked(false); }}
             onExpand={() => { setAssistantOpen(true); setMode('workbench'); setAssistantDocked(mode==='agent'?false:!assistantDocked); }}
@@ -215,7 +215,7 @@ export default function App() {
               setPriceBook(old => ({ ...old, [line.key]: Math.round(price * 100) / 100 }));
               fetch('/api/review', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:current.lines[0]?.rfqId || current.label,pn:line.partNumber,action:'接受Agent建议单价',detail:`单价 ${price} CNY；业务风险未自动核销`,operator:userName})}).catch(() => {});
             }}
-            onNewInquiry={() => { setMode('workbench'); setView('home'); setImportRequested(true); }}
+            onNewInquiry={() => { setMode('workbench'); setView('home'); setImportRequested(true); setAssistantOpen(false); setAssistantDocked(false); }}
             onSelectTask={(s) => { setSource(s); setAgentLineKey(null); }}
             addedLines={addedLines} tasks={tasks} ds={dsx2} policy={policyFull} activeSource={source} lineEdits={lineEdits}
             priceBook={priceBook} setPriceBook={setPriceBook}

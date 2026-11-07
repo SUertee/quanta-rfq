@@ -5,7 +5,7 @@ import ts from 'typescript';
 const source=ts.transpileModule(fs.readFileSync('src/components/FloatingAssistant.tsx','utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
 const slots=[],effects=[],storage=new Map();let cursor=0,collapsed=0,opened=0;
 const props={open:true,expanded:false,children:{originalConversation:true},onOpen(){opened++;props.open=true},onCollapse(){collapsed++;props.open=false}};
-const context={exports:{},innerWidth:800,innerHeight:700,localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)},addEventListener(){},removeEventListener(){},require:n=>n==='react'?{useState:v=>{const i=cursor++;if(!(i in slots))slots[i]=typeof v==='function'?v():v;return[slots[i],x=>slots[i]=x]},useRef:v=>{const i=cursor++;return slots[i]??=( {current:v})},useEffect:f=>effects.push(f)}:{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})}};
+const context={exports:{},innerWidth:800,innerHeight:700,localStorage:{getItem:k=>storage.get(k)||null,setItem:(k,v)=>storage.set(k,v)},addEventListener(){},removeEventListener(){},require:n=>n==='react'?{useState:v=>{const i=cursor++;if(!(i in slots))slots[i]=typeof v==='function'?v():v;return[slots[i],x=>slots[i]=x]},useRef:v=>{const i=cursor++;return slots[i]??=( {current:v})},useEffect:f=>effects.push(f),useLayoutEffect:f=>effects.push(f)}:{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})}};
 vm.runInNewContext(source,context);
 const render=()=>{cursor=0;return context.exports.FloatingAssistant(props)};
 let tree=render();const capture={setPointerCapture(){},hasPointerCapture(){return true},releasePointerCapture(){}};
@@ -58,3 +58,6 @@ assert.equal(tree.props.children[0].props.style.width,624,'desktop dock occupies
 assert.equal(tree.props.children[0].props.style.left,956,'desktop dock aligns to workspace right edge');
 
 const bottomPoint=context.exports.clampFloatingPoint({x:790,y:699},800,700);assert.ok(bottomPoint.y+76<=688,'bottom placement keeps the orb inside the popup with padding');
+
+assert.ok(appSource.includes("setMode('agent');setAssistantOpen(false);setAssistantDocked(false);"),'full-page chat must not set the floating assistant open');
+assert.match(css,/is-closing[^}]*reverse both/,'close animation reverses the same anchor reveal');
