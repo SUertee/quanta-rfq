@@ -272,17 +272,11 @@ export function IntakeRecord({
           {pane === "evidence" && (
             <>
               <div className="intake-evidence-toolbar">
-                <button className="btn" onClick={()=>setSupplierImportOpen(true)}>导入供应商报价</button>
-                <span>
-                  {matched} 行有匹配依据 · {lines.length - matched} 行待补充
-                </span>
-                <button
-                  className="btn"
-                  disabled={busy}
-                  onClick={() => void load(true)}
-                >
-                  {busy ? "查询中…" : "刷新依据"}
-                </button>
+                <span>{matched} 行有匹配依据 · {lines.length - matched} 行待补充</span>
+                <div className="intake-evidence-actions">
+                  <button className="btn" onClick={()=>setSupplierImportOpen(true)}>导入供应商报价</button>
+                  <button className="btn" disabled={busy} onClick={()=>void load(true)}>{busy?'查询中…':'刷新依据'}</button>
+                </div>
               </div>
               {line&&selectedBases[`intake-${batchId}-${line.lineNo}`]&&onSelectBasis&&<div className="evidence-selection"><span>{resourceResult?.selected?'已指定报价依据':'已选依据待重新确认'}</span><button type="button" className="btn" disabled={selectionDisabled} onClick={()=>onSelectBasis(`intake-${batchId}-${line.lineNo}`,null)}>恢复自动选择</button></div>}
               <div className="intake-evidence-layout">

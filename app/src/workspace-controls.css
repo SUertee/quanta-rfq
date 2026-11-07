@@ -1043,3 +1043,7 @@ tr:hover .material-reference-name>.reference-cite,.material-reference-name:focus
 .supplier-import-footer { flex-shrink:0; }
 .supplier-field-grid input { box-sizing:border-box;padding:10px 14px;border:1px solid var(--line);border-radius:var(--field-radius);background:var(--hal-head);color:var(--ink);font:inherit; }
 .supplier-import-issues { color:var(--ink);line-height:1.7; }
+
+.intake-evidence-toolbar { flex-wrap:wrap; }
+.intake-evidence-toolbar>span { flex:1 1 200px; }
+.intake-evidence-actions { display:flex;gap:12px;flex-wrap:wrap;max-width:100%; }
