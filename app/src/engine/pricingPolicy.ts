@@ -95,11 +95,7 @@ export function suggestPrice(p: PricedLine, policy: PricingPolicy, manualCost?: 
 }
 
 /** 向客户收取的运费：免运费门槛 → 最低运费 → 设定值；空单不收 */
-export function freightChargeFor(itemsTotal: number, policy: PricingPolicy): number {
-  if (itemsTotal <= 0) return 0;
-  if (policy.freeFreightOverCny > 0 && itemsTotal >= policy.freeFreightOverCny) return 0;
-  return Math.max(policy.freightChargeCny || 0, policy.minFreightCny || 0);
-}
+export {freightChargeFor} from '../../shared/rfq-rules.mjs';
 
 /** 建议确认价由可用依据和定价规则计算，缺依据时保持空值 */
 export function defaultConfirmPrice(s: PriceSuggestion): number | undefined {

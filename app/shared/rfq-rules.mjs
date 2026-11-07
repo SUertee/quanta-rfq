@@ -108,3 +108,10 @@ export function calculateQuotePrice(cost,line,policy={}) {
   return {costBase,target:positive(rawTarget)&&rounded(rawTarget)>0?rounded(rawTarget):undefined,
     floor:costBase!=null&&floorRate>=0&&floorRate<1?rounded(costBase*premium/(1-floorRate)):undefined,aogApplied,bulkApplied};
 }
+
+/** Customer freight is calculated once for previews and receipt validation. */
+export function freightChargeFor(itemsTotal,policy={}) {
+  if(itemsTotal<=0)return 0;
+  if(policy.freeFreightOverCny>0&&itemsTotal>=policy.freeFreightOverCny)return 0;
+  return Math.max(policy.freightChargeCny||0,policy.minFreightCny||0);
+}

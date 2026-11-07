@@ -1,3 +1,5 @@
+import {useQuoteSignature} from '../engine/useQuoteSignature';
+import {QuoteSignature,SignaturePreview} from '../components/QuoteSignature';
 import {citeReference,dragReference,type ChatReference} from '../engine/chatReferences';
 import {appFetch as fetch} from '../engine/appUrl';
 import {useStageNavigation} from '../engine/useStageNavigation';
@@ -347,10 +349,16 @@ export function WorkbenchPage({
     taskLabel: label, priceBook, policy, company: getCompany(), resolved, skipped,
     manualCost: estCost,
   };
-  const currentReceiptContent=JSON.stringify({schemaVersion:2,policy,lines:priced.map(p=>({
+  const unsignedReceiptContent=JSON.stringify({schemaVersion:2,policy,company:getCompany(),manualCost:estCost,lines:priced.map(p=>({
     key:p.line.key,pn:p.line.partNumber,desc:p.line.description,requestedQty:p.line.quantity,qty:quoteQtyOf(p).qty,
-    uom:p.line.uom,condition:p.line.condition,price:priceBook[p.line.key]??null,skipped:skipped.has(p.line.key),reviewed:resolved.has(p.line.key),flags:p.flags,
+    uom:p.line.uom,condition:p.line.condition,requirement:p.line.requirement,needByDate:p.line.needByDate||'',dueDate:p.line.dueDate,ruleVersion:p.ruleVersion,basisId:p.basisId,basisResource:p.basisResource,price:priceBook[p.line.key]??null,skipped:skipped.has(p.line.key),reviewed:resolved.has(p.line.key),flags:p.flags,
   }))});
+  const quoteSignature=useQuoteSignature(taskKey,unsignedReceiptContent);
+  const [signatureOpen,setSignatureOpen]=useState(false);
+  const currentReceiptContent=quoteSignature.signature?JSON.stringify({...JSON.parse(unsignedReceiptContent),signature:quoteSignature.signature}):unsignedReceiptContent;
+  exportCtx.signature=quoteSignature.signature;
+  const liveReceiptContent=useRef(currentReceiptContent);
+  liveReceiptContent.current=currentReceiptContent;
   useEffect(()=>{
     let active=true;
     if(exportedBasis.current!==currentReceiptContent){setExported(false);setExportReceipt(null);}
@@ -377,6 +385,7 @@ export function WorkbenchPage({
     setExportBusy(true);setExportError('');
     try{
       const id=await postSnapshot(kind);
+      if(!live.current||liveReceiptContent.current!==currentReceiptContent)throw new Error('报价已变化，请重新核对后导出');
       if(kind==='内部版')exportInternalCsv(priced,exportCtx);else exportCustomerHtml(priced,exportCtx);
       logAction('全部',`导出${kind}`,`合计 ${orderTotal}；审核快照 ${id}`);onOp('export');exportedBasis.current=currentReceiptContent;setExportReceipt(id);setExported(true);
     }catch(error){setExportError(error instanceof Error?error.message:'导出失败，请重试');}
@@ -819,7 +828,7 @@ export function WorkbenchPage({
               <div>整单合计：{fmtMoney(Math.round(orderTotal * 100) / 100)}（大写：{toChineseUpper(Math.round(orderTotal * 100) / 100)}）</div>
               {overCap && <div className="margin-low">整单金额超过审批上限 {fmtMoney(policy.orderCapCny)}，请主管审批后再导出。</div>}
             </div>
-            <div className="sign-line">授权签字：________________（您终审后签署，系统不会替您发送）</div>
+            <div className="sign-line">{quoteSignature.signature&&<SignaturePreview signature={quoteSignature.signature}/>}</div>
           </div>
         )}
 
@@ -877,6 +886,9 @@ export function WorkbenchPage({
       <section className="workflow-section" data-current={stage===6} id="inquiry-stage-6" tabIndex={-1} data-inquiry-stage="6" aria-labelledby="inquiry-stage-title-6">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-6">{stageItems[5].label}</h2></header>
       <section className="panel stage-export">
+        <div className="quote-signature-row"><div className="quote-signature-identity"><b>报价签名</b>{quoteSignature.signature?<><SignaturePreview signature={quoteSignature.signature}/><span>{quoteSignature.signature.signer}</span></>:<span>尚未签名</span>}</div><div className="quote-signature-actions">{quoteSignature.signature&&<button className="btn" onClick={quoteSignature.clear}>清除签名</button>}<button className="btn" disabled={!quoteSignature.basis||!stageExportable} onClick={()=>setSignatureOpen(true)}>{quoteSignature.signature?'重新签名':'手写签名'}</button></div></div>
+        {quoteSignature.error&&<div role="alert" className="check-box">{quoteSignature.error}</div>}
+        {signatureOpen&&quoteSignature.basis&&<QuoteSignature key={quoteSignature.basis} basis={quoteSignature.basis} signer={getCompany().operator} onClose={()=>setSignatureOpen(false)} onSave={signature=>{quoteSignature.save(signature);setSignatureOpen(false);}}/>}
         <div className="export-checklist"><div><span>物料信息</span><b>{invalidLines.length ? `${invalidLines.length} 行待补全` : `${activePriced.length} 行已完整`}</b><button className="btn" onClick={()=>goToStage(2)}>核对物料</button></div><div><span>人工核对</span><b>{activePriced.filter(p=>!resolved.has(p.line.key)).length} 行待核对</b><button className="btn" onClick={()=>goToStage(4)}>检查条件</button></div><div><span>报价单价</span><b>{activePriced.filter(p=>!validUnitPrice(confirmOf(p))).length} 行待定价</b><button className="btn" onClick={()=>goToStage(5)}>查看草稿</button></div></div>
         {invalidLines.length > 0 && <div role="alert" className="check-box">有 {invalidLines.length} 行缺少件号、单位或大于零的数量，请展开该行并修改。</div>}
         {exportError&&<div role="alert" className="check-box">{exportError}</div>}

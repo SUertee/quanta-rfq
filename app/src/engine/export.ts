@@ -1,3 +1,4 @@
+import {signatureSvg,type QuoteSignature} from '../../shared/signature.mjs';
 // B5/B13 文件导出：内部版 CSV（Excel 直接打开）+ 客户版 HTML（可打印/另存 PDF）+ 供应商询价单 CSV。
 // 不引第三方库；均为 UTF-8 BOM 文本，Excel 打开不乱码。
 import type { PricedLine } from '../types';
@@ -10,6 +11,7 @@ import { validUnitPrice } from './quoteValidation';
 import { FLAG_PLAIN } from '../plain';
 
 export interface ExportCtx {
+  signature?:QuoteSignature|null;
   taskLabel: string;
   priceBook: Record<string, number>;
   policy: PricingPolicy;
@@ -142,6 +144,7 @@ th{background:#f0f3f9}
 .sum{margin:14px 0;font-weight:600;line-height:2}
 .foot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px 24px;font-size:13px;margin-top:28px}
 .no-print{margin:20px auto;text-align:center}
+.quote-signature{display:inline-flex;align-items:center;gap:12px}.quote-signature svg{width:210px;height:60px}
 @media print{.no-print{display:none}body{margin:0}}
 </style></head><body>
 <h1>报 价 单</h1>
@@ -167,7 +170,7 @@ ${pending.length ? `
   <span>质保期：新件 ${esc(c.warrantyNew)} 个月 / 翻修件 ${esc(c.warrantyOh)} 个月</span>
   <span>报价有效期：${esc(c.validityDays)} 天</span>
 </div>
-<div class="foot"><span>供方盖章：________</span><span>授权签字：________</span></div>
+<div class="foot"><span>供方盖章：________</span><span class="quote-signature">授权签字：${ctx.signature?`${signatureSvg(ctx.signature)}<b>${esc(ctx.signature.signer)}</b>`:'________'}</span></div>
 <div class="no-print"><button onclick="window.print()">打印 / 另存为 PDF</button></div>
 </body></html>`;
 

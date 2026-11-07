@@ -1338,3 +1338,18 @@ tr.clickable:hover td { background:var(--hal-hover); }
 
 .material-table td:nth-child(2) { white-space:normal;overflow-wrap:anywhere; }
 .material-header-actions { flex-wrap:wrap;justify-content:flex-end; }
+
+/* Quote confirmation uses the same dialog, input and button tokens as the workbench. */
+.signature-dialog{width:min(720px,calc(100vw - 32px))}
+.signature-dialog-body{padding:24px;display:grid;gap:20px}
+.signature-name{display:grid;gap:8px;color:var(--ink,#102440)}
+.signature-name input{width:100%;box-sizing:border-box;min-height:48px;padding:10px 14px;border:1px solid var(--line,#dce2eb);border-radius:12px;background:var(--surface,#fff);font:inherit;color:inherit}
+.signature-pad{display:block;width:100%;height:180px;border:1px solid var(--line,#dce2eb);border-radius:16px;background:#f8faff;touch-action:none;user-select:none;cursor:crosshair;color:#102440}
+.signature-placeholder{fill:#6a7c95;font-size:18px;pointer-events:none}
+.signature-dialog-actions{display:flex;justify-content:flex-end;gap:12px;padding:0 24px 24px}
+.signature-dialog-actions .btn:first-child{margin-right:auto}
+.quote-signature-row{display:flex;align-items:center;gap:20px;justify-content:space-between;padding:20px 0}
+.quote-signature-identity{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.signature-preview{display:block;width:210px;height:60px;color:#102440}
+.quote-signature-actions{display:flex;gap:10px;flex-wrap:wrap}
+@media(max-width:600px){.signature-dialog-body{padding:16px}.signature-dialog-actions{padding:0 16px 16px;gap:8px}.quote-signature-row{align-items:flex-start;flex-direction:column;gap:12px}.signature-pad{height:180px}.signature-preview{width:180px}}

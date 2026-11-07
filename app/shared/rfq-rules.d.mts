@@ -12,3 +12,4 @@ export function evaluateQuoteLine(line:RuleLine,resources:RuleEvidence[],policy?
 export function calculateQuotePrice(cost:number|null|undefined,line:RuleLine,policy?:RulePolicy):{costBase:number|undefined;target:number|undefined;floor:number|undefined;aogApplied:boolean;bulkApplied:boolean};
 
 export function matchResources(partNumber:unknown,costs?:RuleResource[],prices?:(RuleResource & {id:string})[]):RuleEvidence[];
+export function freightChargeFor(itemsTotal:number,policy?:{freightChargeCny?:number;minFreightCny?:number;freeFreightOverCny?:number}):number;
