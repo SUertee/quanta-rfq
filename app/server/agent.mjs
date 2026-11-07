@@ -105,7 +105,7 @@ export async function runAgent(value,costs,options={}) {
  try {
   validateAgentInput(value);
   if(options.signal?.aborted)throw new Error('cancelled');
-  const result=await executeAgent(value,costs,{...options,onAuditEvent:event=>store.appendEvent(runId,event)});
+  const result=await executeAgent(value,costs,{...options,onAuditEvent:event=>{store.appendEvent(runId,event);options.onAuditEvent?.(event);}});
   if(options.signal?.aborted)throw new Error('cancelled');
   store.finishRun(runId,{status:'completed',resultFingerprint:hash(result.draft),result:{lineCount:result.draft.lines.length,pricedCount:result.draft.lines.filter(l=>Number.isFinite(l.suggestedPrice)).length,issueCount:result.draft.lines.filter(l=>l.issues.length).length,mode:result.draft.mode}});
   return {...result,runId};

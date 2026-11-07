@@ -774,3 +774,17 @@ html:has(.layout-reference),body:has(.layout-reference) { height:100%;overflow:h
  .layout-reference .task-record-open { min-height:28px;padding:0; }
  .layout-reference .task-record-meta { justify-content:space-between; }
 }
+
+/* Account surfaces open from their trigger, while page navigation stays stationary. */
+.account-menu-panel { transform-origin:calc(100% - 20px) -12px;animation:account-bubble-open 220ms cubic-bezier(.2,.8,.2,1); }
+@keyframes account-bubble-open { from { opacity:0;transform:scale(.82); } to { opacity:1;transform:scale(1); } }
+.app-dialog[open],.settings-dialog[open] { transform-origin:center;animation:dialog-bubble-open 300ms cubic-bezier(.2,.8,.2,1); }
+@keyframes dialog-bubble-open { from { opacity:0;transform:translate(var(--dialog-start-x,0),var(--dialog-start-y,0)) scale(.12); } to { opacity:1;transform:translate(0,0) scale(1); } }
+.layout-reference .rfq-chat-turn.user,.layout-reference .rfq-chat-turn.assistant { padding:0;border:0;background:transparent; }
+.layout-reference .rfq-chat-turn.user { width:fit-content;max-width:80%;margin-left:auto;margin-right:16px;color:var(--ink); }
+.mode-agent .platform-chat-messages .rfq-chat-turn.user { max-width:80%; }
+.layout-reference .rfq-chat-turn.user .rfq-chat-text { padding:14px 18px;border:1px solid rgba(91,124,240,.16);border-radius:16px;background:var(--hal-nav-selected);color:var(--ink); }
+.layout-reference .rfq-chat-turn.user .chat-markdown { color:var(--ink); }
+.layout-reference .rfq-chat-turn.assistant .rfq-chat-text { padding:16px 18px;border:1px solid var(--line);border-radius:16px;background:var(--panel);color:var(--ink); }
+.layout-reference .rfq-chat-speaker { margin:0 0 8px 4px;color:var(--ink);font-size:14px; }
+@media(prefers-reduced-motion:reduce) { .account-menu-panel,.app-dialog[open],.settings-dialog[open] { animation:none; } }

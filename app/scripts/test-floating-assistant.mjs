@@ -56,3 +56,5 @@ assert.ok(appSource.includes("setAssistantDocked(mode==='agent'?false:!assistant
 context.innerWidth=1600;props.docked=true;tree=render();
 assert.equal(tree.props.children[0].props.style.width,624,'desktop dock occupies 40% of workspace');
 assert.equal(tree.props.children[0].props.style.left,956,'desktop dock aligns to workspace right edge');
+
+const bottomPoint=context.exports.clampFloatingPoint({x:790,y:699},800,700);assert.ok(bottomPoint.y+76<=688,'bottom placement keeps the orb inside the popup with padding');

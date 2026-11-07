@@ -1,3 +1,4 @@
+import {captureDialogOrigin} from '../engine/dialogMotion';
 import {useEffect,useRef,useState} from 'react';
 
 export function AccountMenu({name,onProfile,onBusiness,onModels}:{name:string;onProfile:()=>void;onBusiness:()=>void;onModels:()=>void}) {
@@ -20,6 +21,6 @@ export function AccountMenu({name,onProfile,onBusiness,onModels}:{name:string;on
   if(next<0)return;event.preventDefault();if(!open)setOpen(true);else buttons[next]?.focus();
  }}>
   <button ref={trigger} className="avatar" aria-label="账户菜单" aria-haspopup="menu" aria-expanded={open} onClick={()=>setOpen(value=>!value)}>{name.slice(0,1)||'我'}</button>
-  {open&&<div className="account-menu-panel" role="menu" aria-label="账户设置">{items.map(item=><button key={item.label} type="button" role="menuitem" onClick={()=>{setOpen(false);trigger.current?.focus();item.action();}}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={item.path}/></svg>{item.label}</button>)}</div>}
+  {open&&<div className="account-menu-panel" role="menu" aria-label="账户设置">{items.map(item=><button key={item.label} type="button" role="menuitem" onClick={()=>{captureDialogOrigin(trigger.current);setOpen(false);trigger.current?.focus();item.action();}}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={item.path}/></svg>{item.label}</button>)}</div>}
  </div>;
 }

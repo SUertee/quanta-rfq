@@ -1,3 +1,4 @@
+import {readChatStream,readAgentStream} from '../engine/chatStream';
 import {useChatScroll} from '../engine/useChatScroll';
 import {appFetch as fetch} from '../engine/appUrl';
 import {ChatAttachmentPreview} from '../components/ChatAttachmentPreview';
@@ -18,7 +19,7 @@ import { RunAuditReceipt } from '../components/RunAuditReceipt';
 type DraftLine = { key: string; partNumber: string; quantity: number; uom?: string; cost?: number; suggestedPrice?: number; currency: string; source?: string; issues: string[] };
 type AgentResult = { runId: string; status: 'needs_review'; summary: string; answer?: string; model: string; draft: { lines: DraftLine[]; questions: string[]; mode?: string; limitations?: string[] }; events: { tool: string; state: string; detail: string }[] };
 type Turn = { attachments?:ChatAttachment[]; createdAt?:string; role: 'user' | 'assistant'; content: string; basis: string; result?: AgentResult; elapsed?: number };
-type Session = { state: 'idle' | 'running' | 'failed' | 'stopped'; input: string; turns: Turn[]; error?: string };
+type Session = { state: 'idle' | 'running' | 'failed' | 'stopped'; input: string; turns: Turn[]; error?: string; progress?:string };
 const fresh = (): Session => ({ state: 'idle', input: '', turns: [] });
 const money = (v?: number) => v == null ? '—' : `¥${v.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`;
 
@@ -60,7 +61,7 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
   const patch = (key: string, value: Partial<Session>) => setSessions(old => ({ ...old, [key]: { ...(old[key] ?? fresh()), ...value } }));
   const append = (key: string, turn: Turn) => setSessions(old => { const s = old[key] ?? fresh(); return { ...old, [key]: { ...s, turns: [...s.turns, {...turn,createdAt:new Date().toISOString()}] } }; });
   useEffect(() => {
-    setSessions(old => Object.fromEntries(Object.entries(old).map(([key,s]) => [key,s.state === 'running' ? {...s,state:'stopped',error:'上次执行已中断，可以继续提问。'} : s])));
+    setSessions(old=>{const saved=old[sessionKey];return saved?.state==='running'?{...old,[sessionKey]:{...saved,state:'stopped',error:'上次执行已中断，已保留部分回复，可以继续提问。'}}:old;});
     return () => { generation.current++; request.current?.abort(); };
   }, []);
   useEffect(() => {
@@ -86,14 +87,26 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
     const id = ++generation.current;
     const controller = new AbortController(); request.current = controller;
     const started = performance.now();
-    const history = session.turns.filter(t => t.basis === basis).slice(-6).map(t => ({role:t.role,content:t.content.slice(0,2000)}));
+    const history = session.turns.filter(t => t.basis === basis && t.content.trim()).slice(-6).map(t => ({role:t.role,content:t.content.slice(0,2000)}));
     append(sessionKey, {role:'user',content:instruction,basis,attachments});setAttachments([]);setAttachmentEpoch(n=>n+1);
-    patch(sessionKey,{state:'running',input:'',error:undefined});
+    patch(sessionKey,{state:'running',input:'',error:undefined,progress:undefined});
     try {
+      const greeting = /^(你好|您好|嗨|hello\b|hi\b|你能做什么|你可以做什么|你能帮我|你是谁|介绍一下你|谢谢|感谢)/i.test(instruction);
+      const requestsWork = /(生成|计算|核对|检查|查询|分析|报价草稿|单价|库存)/.test(instruction);
+      if(greeting&&!requestsWork&&!attachments.length&&!attachmentContext){
+        append(sessionKey,{role:'assistant',content:'',basis});
+        const response=await fetch('/api/assistant/chat',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({instruction,history,inquiryTitle:task.title.slice(0,300)})});
+        await readChatStream(response,content=>{
+          if(id!==generation.current||latestBasis.current!==basis)return;
+          setSessions(old=>{const saved=old[sessionKey];if(!saved)return old;const turns=[...saved.turns];const last=turns.length-1;if(turns[last]?.role!=='assistant')return old;turns[last]={...turns[last],content};return {...old,[sessionKey]:{...saved,turns}};});
+        });
+        if(id===generation.current)patch(sessionKey,{state:'idle'});
+        return;
+      }
       // Legacy field named margin stores markup rate (cost-based), matching Settings.
-      const response = await fetch('/api/agent/run', {method:'POST',headers:{'Content-Type':'application/json'},signal:controller.signal,body:JSON.stringify({instruction,history,context:attachmentContext,inquiryId:current.email?.intakeBatchId,lines:current.lines.map(l => ({key:l.key,partNumber:l.partNumber || '',description:l.description,quantity:l.quantity,uom:l.uom,condition:l.condition,urgency:l.urgency})),policy:{markupRate:policy.margin,aogPremium:policy.aogPremium,bulkDiscount:policy.bulkDiscount,bulkQty:policy.bulkQty}})});
-      const data = await response.json();
-      if (!response.ok) throw new Error(data.error || `请求失败 (${response.status})`);
+      const response = await fetch('/api/agent/run', {method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({instruction,history,context:attachmentContext,inquiryId:current.email?.intakeBatchId,lines:current.lines.map(l => ({key:l.key,partNumber:l.partNumber || '',description:l.description,quantity:l.quantity,uom:l.uom,condition:l.condition,urgency:l.urgency})),policy:{markupRate:policy.margin,aogPremium:policy.aogPremium,bulkDiscount:policy.bulkDiscount,bulkQty:policy.bulkQty}})});
+      const data = await readAgentStream<AgentResult>(response,(tool,state)=>{if(id!==generation.current)return;const labels:Record<string,string>={read_inquiry:'读取询价',lookup_costs:'查询报价依据',build_quote_draft:'形成报价草稿'};patch(sessionKey,{progress:`${labels[tool]||'处理询价'}${state==='done'?'已完成':state==='started'?'…':'待处理'}`});});
+      if (!response.ok) throw new Error(`请求失败 (${response.status})`);
       if (id !== generation.current) return;
       if (latestBasis.current !== basis) throw new Error('询价或策略已修改，本轮结果未采用。请重新提问。');
       if (!data.draft || !Array.isArray(data.draft.lines) || !Array.isArray(data.events)) throw new Error('服务返回不完整，请重试。');
@@ -130,7 +143,7 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
       {!session.turns.length && <div className="rfq-chat-welcome">{expanded&&<h1>处理这份询价</h1>}{!embedded&&<span className="rfq-chat-avatar">Q</span>}{!embedded&&<h2>{embedded ? (selectedLineKey ? '一起核对这行物料' : '这份询价，交给我核对') : '这份询价，先帮你做什么？'}</h2>}<div className="rfq-chat-suggestions">{embedded&&selectedLineKey&&<button disabled={session.state==='running'} onClick={onClearLine}>处理整单</button>}<button onClick={() => run('仅使用已有内部成本生成报价草稿，缺少依据的行保留缺口，不估价。')}>生成报价草稿 ↗</button><button onClick={() => run('只检查询价和成本缺口，不生成价格。')}>检查缺失信息 ↗</button></div></div>}
       {session.turns.map((turn,i) => {
         const result=turn.result, stale=turn.basis!==basis;
-        return <article key={i} className={`rfq-chat-turn ${turn.role}`}><div className="rfq-chat-speaker">{turn.role==='user' ? '你' : 'Quanta'}{stale && <span>旧询价记录</span>}</div><div className="rfq-chat-text">{turn.attachments&&<div className="chat-attachment-strip">{turn.attachments.map(file=><ChatAttachmentPreview key={file.id} attachment={file}/>)}</div>}<ChatMarkdown text={(result && /生成.{0,8}(报价|草稿)/.test(session.turns[i-1]?.content || '') ? result.summary : turn.content)} /></div>
+        return <article key={i} className={`rfq-chat-turn ${turn.role}`}>{turn.role==='assistant'&&<div className="rfq-chat-speaker">Quanta{stale&&<span>旧询价记录</span>}</div>}<div className="rfq-chat-text">{turn.attachments&&<div className="chat-attachment-strip">{turn.attachments.map(file=><ChatAttachmentPreview key={file.id} attachment={file}/>)}</div>}<ChatMarkdown text={(result && /生成.{0,8}(报价|草稿)/.test(session.turns[i-1]?.content || '') ? result.summary : turn.content)} /></div>
           {result && <>{result.draft.lines.length>0 && result.draft.mode!=='analysis' && !embedded && <button className="rfq-chat-output" disabled={stale} onClick={openDraft}><span>▤</span><strong>{result.draft.mode==='analysis'?'缺口清单':'报价草稿'} · {result.draft.lines.length} 行</strong><small>{stale?'旧记录':'查看当前草稿 →'}</small></button>}
             {embedded && result.draft.mode!=='analysis' && result.draft.lines.length>0 && <div className="copilot-results"><div className="copilot-result-title">报价建议 <span>{result.draft.lines.length} 行 · {stale?'已过期':'待确认'}</span></div>{result.draft.lines.map((line,j)=><div className="copilot-price-card" key={j}><div><strong>{line.partNumber || '缺件号'}</strong><small>{line.quantity} {line.uom}</small><b>{money(line.suggestedPrice)}</b></div><section className="copilot-line-evidence"><p>内部成本 {money(line.cost)}</p><p>{line.source ? '来源：内部库存成本' : '未取得成本依据'}</p>{line.issues.map((issue,k)=><p key={k}>{issue}</p>)}</section>{line.suggestedPrice!=null && <button className="btn" disabled={stale || !onApplyPrice || priceBook[line.key]===line.suggestedPrice} onClick={()=>onApplyPrice?.(line,line.suggestedPrice!)}>{priceBook[line.key]===line.suggestedPrice?'已填入单价':'接受建议单价'}</button>}</div>)}<button className="btn" disabled={stale} onClick={()=>onOpenTask(task.source)}>返回工作台核对</button></div>}
             {result.draft.mode==='analysis' && result.draft.lines.length>0 && <section className="rfq-chat-artifact"><header><strong>缺口清单</strong><span>{result.draft.lines.length} 行</span></header><div className="rfq-chat-table"><table><thead><tr><th>物料</th><th>数量</th><th>内部成本</th><th>待核对事项</th></tr></thead><tbody>{result.draft.lines.map((line,j)=><tr key={j}><td>{line.partNumber || '缺件号'}</td><td>{line.quantity} {line.uom}</td><td>{money(line.cost)}</td><td>{line.issues.length?line.issues.join('；'):'未发现额外成本缺口，业务条件仍待人工核对'}</td></tr>)}</tbody></table></div></section>}
@@ -139,7 +152,7 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
           </>}
         </article>;
       })}
-      {session.state==='running' && <div className="rfq-chat-thinking" role="status"><span className="pulse" /> 正在核对…</div>}
+      {session.state==='running' && <div className="rfq-chat-thinking" role="status"><span className="pulse" /> {session.progress||'正在处理…'}</div>}
       {session.error && <div className="rfq-chat-error" role="alert">{session.error}{session.state==='failed' && <section><header>连接配置</header>Agent 使用服务端 app/.env.local；修改后需重启后端。</section>}</div>}
 
     </div>

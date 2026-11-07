@@ -222,9 +222,17 @@ http.createServer(async (req, res) => {
       const controller = new AbortController();
       res.on('close', () => { if (!res.writableEnded) controller.abort(); });
       const timer = setTimeout(() => controller.abort(), 90000);
-      try { res.end(JSON.stringify(await runAgent(input, allRows().cost, { signal: controller.signal, resources, audit:{store:agentAudit,actorId:'local-user',inquiryId} }))); }
-      catch (error) { if (!res.destroyed && !res.writableEnded) { if (!res.headersSent) res.writeHead(502); res.end(JSON.stringify({error:'Agent 执行失败或超时，未写入任何报价；请检查模型工具调用能力后重试',runId:error.auditRunId||null})); } }
-      finally { clearTimeout(timer); }
+      const streaming=req.headers.accept?.includes('application/x-ndjson');
+      const write=event=>{if(!res.destroyed&&!res.writableEnded)res.write(JSON.stringify(event)+'\n');};
+      if(streaming){res.setHeader('Content-Type','application/x-ndjson; charset=utf-8');res.setHeader('Cache-Control','no-cache, no-transform');res.setHeader('X-Accel-Buffering','no');res.flushHeaders();}
+      try {
+        const result=await runAgent(input,allRows().cost,{signal:controller.signal,resources,audit:{store:agentAudit,actorId:'local-user',inquiryId},onAuditEvent:streaming?event=>write({type:'progress',tool:event.tool,state:event.state}):undefined});
+        if(streaming){write({type:'done',result});res.end();}else res.end(JSON.stringify(result));
+      } catch(error) {
+        const failure={error:'Agent 执行失败或超时，请检查模型工具调用能力后重试',runId:error.auditRunId||null};
+        if(streaming){write({type:'error',...failure});if(!res.writableEnded)res.end();}
+        else if(!res.destroyed&&!res.writableEnded){if(!res.headersSent)res.writeHead(502);res.end(JSON.stringify(failure));}
+      } finally {clearTimeout(timer);}
       return;
     }  else if (req.method === 'GET' && (url.pathname === '/' || url.pathname === '/api')) {
       const { cost, customFields } = allRows();

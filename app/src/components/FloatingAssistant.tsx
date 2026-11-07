@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState,type CSSProperties,type ReactNode,type PointerEvent as ReactPointerEvent} from 'react';
 type Point={x:number;y:number};
-export const clampFloatingPoint=(p:Point,w:number,h:number):Point=>({x:Math.max(12,Math.min(p.x,Math.max(12,w-64))),y:Math.max(12,Math.min(p.y,Math.max(12,h-64)))});
+export const clampFloatingPoint=(p:Point,w:number,h:number):Point=>({x:Math.max(12,Math.min(p.x,Math.max(12,w-64))),y:Math.max(12,Math.min(p.y,Math.max(12,h-88)))});
 const key='rfq-assistant-position-v1';
 export function FloatingAssistant({open,expanded,docked=false,onOpen,onCollapse,onSend,children}:{open:boolean;expanded:boolean;docked?:boolean;onOpen:()=>void;onCollapse:()=>void;onSend?:(text:string)=>void;children:ReactNode}){
  const initial=()=>{try{const p=JSON.parse(localStorage.getItem(key)||'null');if(p&&Number.isFinite(p.x)&&Number.isFinite(p.y))return clampFloatingPoint(p,innerWidth,innerHeight);}catch{}return clampFloatingPoint({x:innerWidth-76,y:innerHeight-76},innerWidth,innerHeight);};

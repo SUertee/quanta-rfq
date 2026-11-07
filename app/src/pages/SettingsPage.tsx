@@ -1,3 +1,4 @@
+import {showAnchoredDialog} from '../engine/dialogMotion';
 import {appFetch as fetch} from '../engine/appUrl';
 import { useEffect, useRef, useState } from 'react';
 import { Badge } from '../components/ui';
@@ -85,7 +86,7 @@ export function SettingsPage({
 
   const dirty = JSON.stringify([ai, company, policy]) !== baseline;
   const close = () => dirty ? setConfirmClose(true) : onClose();
-  useEffect(() => { dialog.current?.showModal(); }, []);
+  useEffect(() => { showAnchoredDialog(dialog.current); }, []);
   useEffect(() => { if (confirmClose) closePrompt.current?.scrollIntoView({ block: 'start' }); }, [confirmClose]);
 
   useEffect(() => {
