@@ -492,5 +492,4 @@ html:has(dialog[open]) { overflow:hidden; }
 
 /* Quanta option 02 geometric lockup. Asset outlines keep lettering consistent. */
 .layout-reference .sidebar .quanta-wordmark { display:block;width:136px;height:43px;object-fit:contain;flex-shrink:0; }
-.layout-reference .sidebar .brand-product { font:inherit;font-size:15px;font-weight:500;white-space:nowrap;color:var(--ink); }
-@media(max-width:860px) { .layout-reference .sidebar .quanta-wordmark { width:118px;height:37px; }.layout-reference .sidebar .brand-product { font-size:14px; } }
+@media(max-width:860px) { .layout-reference .sidebar .quanta-wordmark { width:118px;height:37px; } }
