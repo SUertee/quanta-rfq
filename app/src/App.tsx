@@ -1,3 +1,4 @@
+import {appFetch as fetch,appUrl} from './engine/appUrl';
 import {conversationMeta,newConversation,updateConversation} from './engine/conversations';
 import {PlatformChat,ConversationList,ConversationTaskLink} from './components/AssistantConversations';
 import {FloatingAssistant} from './components/FloatingAssistant';
@@ -171,7 +172,7 @@ export default function App() {
   return (
     <div className={`layout layout-reference mode-${mode} view-${view}`}>
       <aside className="sidebar">
-        <a className="brand" href="/quanta.html" aria-label="Quanta 首页" style={{textDecoration:'none',color:'inherit'}}>
+        <a className="brand" href={appUrl('quanta.html')} aria-label="Quanta 首页" style={{textDecoration:'none',color:'inherit'}}>
           <div className="brand-mark"><span>Q</span></div>
           <div>
             <div className="brand-name">Quanta 报价台</div>

@@ -1,3 +1,4 @@
+import {appFetch as fetch} from './appUrl';
 import type { EmailSample } from "../types";
 import type { RawRow } from "./parse";
 export interface IntakeBatch {

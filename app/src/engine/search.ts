@@ -1,3 +1,4 @@
+import {appFetch as fetch} from './appUrl';
 // 联网搜索（腾讯元宝搜索 WSA · SearchPro 接口）。
 // 用途：非标品市场估价的取证；搜索结果只做估价参考并附来源链接，不直接进报价。
 import { getAiConfig } from './config';

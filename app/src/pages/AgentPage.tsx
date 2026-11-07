@@ -1,3 +1,4 @@
+import {appFetch as fetch} from '../engine/appUrl';
 import {ChatAttachmentPreview} from '../components/ChatAttachmentPreview';
 import type {ChatAttachment} from '../engine/chatAttachments';
 import {ChatMarkdown} from '../components/ChatMarkdown';

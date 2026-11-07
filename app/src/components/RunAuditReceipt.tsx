@@ -1,3 +1,4 @@
+import {appFetch as fetch} from '../engine/appUrl';
 import { useEffect, useRef, useState } from 'react';
 
 type AuditEvent = { tool?: string; state?: string; detail?: string; createdAt?: string; durationMs?: number; arguments?: unknown; result?: unknown };

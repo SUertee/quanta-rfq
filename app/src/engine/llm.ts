@@ -1,3 +1,4 @@
+import {appFetch as fetch} from './appUrl';
 // LLM 接入层（B1）：MOI Genesis，OpenAI 兼容协议。
 // 分工纪律（15 号文档 §4）：LLM 只做"理解"——语义归一、异常兜底、采购要求解读；
 // 产出必须过 schema 校验才允许进入结构化行，不直接落库；算账一律在规则引擎。

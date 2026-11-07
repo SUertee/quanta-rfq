@@ -1,3 +1,4 @@
+import {appFetch as fetch} from './appUrl';
 // OXR（SoMark 开源文档解析，免费 API）：扫描件/复杂版面 PDF → 阅读顺序文本（表格转 Tab 行）。
 // 协议：POST {base}/parse/sync，multipart：file + api_key + output_formats=markdown,json
 // 返回 data.result.outputs.json.pages[].blocks[]: {type, content, format}

@@ -5,6 +5,7 @@ export default defineConfig(({ mode }) => {
  const env = loadEnv(mode, process.cwd(), '');
  const llmBase = env.RFQ_LLM_BASE_URL || 'https://token.moi.matrixorigin.cn/v1';
  return {
+  base: env.RFQ_BASE_PATH || '/',
   plugins: [react()],
   server: {
     port: 5176,

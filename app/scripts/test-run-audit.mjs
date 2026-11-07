@@ -6,7 +6,7 @@ const compiled = ts.transpileModule(fs.readFileSync(new URL('../src/components/R
 function harness() {
   const refs = [], calls = []; let cursor = 0, tree;
   const state = initial => { const index = cursor++; refs[index] ??= {current: initial}; return [refs[index].current, value => { refs[index].current = value; }]; };
-  const modules = { react: { useState: state, useRef: value => refs[cursor++] ??= {current: value}, useEffect() {} }, 'react/jsx-runtime': {jsx: (type, props) => ({type, props}), jsxs: (type, props) => ({type, props})} };
+  const modules = {'../engine/appUrl':{appFetch:(...args)=>context.fetch(...args)}, react: { useState: state, useRef: value => refs[cursor++] ??= {current: value}, useEffect() {} }, 'react/jsx-runtime': {jsx: (type, props) => ({type, props}), jsxs: (type, props) => ({type, props})} };
   const context = { exports: {}, require: name => modules[name], AbortController, encodeURIComponent, fetch: (url, options) => new Promise(resolve => calls.push({url, options, resolve})) };
   vm.runInNewContext(compiled, context);
   const render = () => { cursor = 0; tree = context.exports.RunAuditReceipt({runId: 'run/qa'}); };

@@ -1,0 +1,2 @@
+import {spawnSync} from 'node:child_process';
+for(const [script,env] of [['scripts/test-base-path.mjs',{}],['node_modules/vite/bin/vite.js',{RFQ_BASE_PATH:'/quanta-rfq/'}],['scripts/test-production.mjs',{TEST_BASE_PATH:'/quanta-rfq/'}]]){const args=script.includes('vite.js')?[script,'build']:[script];const result=spawnSync(process.execPath,args,{env:{...process.env,...env},stdio:'inherit'});if(result.status!==0)process.exit(result.status||1);}

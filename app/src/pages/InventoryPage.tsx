@@ -1,3 +1,4 @@
+import {appFetch as fetch} from '../engine/appUrl';
 import { useRef, useState } from 'react';
 import type { Dataset } from '../data';
 import type { CostRow } from '../types';

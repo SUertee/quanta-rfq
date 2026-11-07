@@ -1,3 +1,4 @@
+import {appFetch as fetch,appUrl} from '../engine/appUrl';
 import { useEffect, useState } from "react";
 import type { IntakeBatch } from "../engine/intake";
 type Pane = "files" | "issues" | "evidence";
@@ -163,7 +164,7 @@ export function IntakeRecord({
               {record.files.map((f) => (
                 <a
                   className="intake-file"
-                  href={"/api/files/" + encodeURIComponent(f.id) + "/raw"}
+                  href={appUrl("/api/files/" + encodeURIComponent(f.id) + "/raw")}
                   key={f.id}
                   download
                 >

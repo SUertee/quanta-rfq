@@ -23,3 +23,5 @@ jobs:
         working-directory: app
       - run: npm run test:production
         working-directory: app
+      - run: npm run test:subpath
+        working-directory: app

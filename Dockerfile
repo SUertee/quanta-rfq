@@ -3,11 +3,13 @@ WORKDIR /app
 COPY app/package*.json ./
 RUN npm ci
 COPY app/ ./
+ARG RFQ_BASE_PATH=/quanta-rfq/
+ENV RFQ_BASE_PATH=$RFQ_BASE_PATH
 RUN npm run build && npm prune --omit=dev
 
 FROM node:22-bookworm-slim
 WORKDIR /app
-ENV NODE_ENV=production RFQ_WEB_HOST=0.0.0.0 RFQ_WEB_PORT=3000 RFQ_DB_PATH=/data/inventory.sqlite
+ENV RFQ_BASE_PATH=/quanta-rfq/ NODE_ENV=production RFQ_WEB_HOST=0.0.0.0 RFQ_WEB_PORT=3000 RFQ_DB_PATH=/data/inventory.sqlite
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build --chown=node:node /app/public/data ./public/data

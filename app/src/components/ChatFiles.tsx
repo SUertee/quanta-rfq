@@ -1,3 +1,4 @@
+import {appFetch as fetch} from '../engine/appUrl';
 import {useEffect,useRef,useState} from 'react';
 import {saveChatFile,type ChatAttachment} from '../engine/chatAttachments';
 import {ChatAttachmentPreview} from './ChatAttachmentPreview';

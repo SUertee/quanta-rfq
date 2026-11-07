@@ -57,4 +57,4 @@ git config core.hooksPath .githooks
 
 ## 服务器运行
 
-生产静态服务和API入口使用 `npm start`，需配置访问凭据与来源白名单。Docker与myserver发布/回滚说明见 [部署说明](deploy/README.md)。本地开发继续使用 `npm run server` 和 `npm run dev`。
+线上地址为 `https://projects.suertexu.com/quanta-rfq/?workspace=1`，按项目子路径隔离。生产静态服务和API入口使用 `npm start`，需配置访问凭据与来源白名单。Docker与myserver发布/回滚说明见 [部署说明](deploy/README.md)。本地开发继续使用 `npm run server` 和 `npm run dev`。

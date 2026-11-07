@@ -35,3 +35,9 @@ Caddy域名块指向 `quanta-rfq:3000`，设置 `flush_interval -1` 以透传流
 回滚：将 `shared/release.env` 指回上一镜像，将current链接切回上一发布目录，再执行相同compose up命令。不要执行 `down -v`，否则会删除业务数据库。迁移前另行备份数据库；跨数据库结构版本不能仅靠旧镜像保证数据回滚。
 
 访问凭据不记录在本文件，也不放进Caddyfile或镜像。浏览器对话/预览文件仍是浏览器本机存储，与服务器SQLite业务任务的持久化边界不同。
+
+## 项目子路径
+
+访问地址为 `https://projects.suertexu.com/quanta-rfq/?workspace=1`。域名根目录用于项目入口。镜像构建与生产服务均使用 `RFQ_BASE_PATH=/quanta-rfq/`，前端所有项目内请求与链接通过统一URL函数添加前缀。Caddy使用 `handle /quanta-rfq/*` 保留前缀转发，由生产服务去除前缀后路由；不能再使用 `handle_path` 重复去除。`/quanta-rfq` 返回308到带斜杠地址。容器内部 `/healthz` 用于健康检查，根域名的 `/api`、`/assets` 不再归RFQ所有。
+
+更换路径需要同步重建镜像与调整代理，不能只修改域名路由。独立数据库卷、密钥和访问凭据保持不变。子路径生产测试包括HTML资源路径、真实静态资源/API200及根API不可达。

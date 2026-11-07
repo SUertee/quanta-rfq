@@ -6,6 +6,7 @@ import {resolve,extname,sep} from 'node:path';
 import {createHash,timingSafeEqual} from 'node:crypto';
 import {getRuntimeConfig} from './runtime-config.mjs';
 const host=process.env.RFQ_WEB_HOST||'127.0.0.1',port=Number(process.env.RFQ_WEB_PORT||3000);
+const base=process.env.RFQ_BASE_PATH||'/';
 const user=process.env.RFQ_ACCESS_USER,password=process.env.RFQ_ACCESS_PASSWORD;
 if(!user||!password||password.length<16)throw Error('Production requires RFQ_ACCESS_USER and RFQ_ACCESS_PASSWORD (16+ characters)');
 const expected=createHash('sha256').update('Basic '+Buffer.from(user+':'+password).toString('base64')).digest();
@@ -21,6 +22,11 @@ function proxy(req,res,target,authorization){
 http.createServer(async(req,res)=>{
  res.setHeader('X-Content-Type-Options','nosniff');res.setHeader('Referrer-Policy','same-origin');res.setHeader('X-Frame-Options','SAMEORIGIN');
  let url;try{url=new URL(req.url,'http://localhost');if(url.pathname.split('/').some(part=>decodeURIComponent(part).startsWith('.'))){res.writeHead(404);res.end();return;}}catch{res.writeHead(400);res.end();return;}
+ if(base!=='/'&&url.pathname!=='/healthz'){
+  if(url.pathname===base.replace(/\/$/,'')){res.writeHead(308,{Location:base+url.search});res.end();return;}
+  if(!url.pathname.startsWith(base)){res.writeHead(404);res.end();return;}
+  url.pathname='/'+url.pathname.slice(base.length);
+ }
  if(url.pathname==='/healthz'){
   try{const r=await fetch(`http://127.0.0.1:${process.env.RFQ_PORT||3004}/api/agents`,{signal:AbortSignal.timeout(2000)});res.writeHead(r.ok?200:503,{'Content-Type':'application/json'});res.end(JSON.stringify({ok:r.ok}));}catch{res.writeHead(503);res.end('{"ok":false}');}return;
  }
@@ -29,7 +35,7 @@ http.createServer(async(req,res)=>{
  if(origin&&!origins.has(origin)){res.writeHead(403);res.end('Origin not allowed');return;}
  const actual=createHash('sha256').update(req.headers.authorization||'').digest();
  if(!timingSafeEqual(actual,expected)){res.writeHead(401,{'WWW-Authenticate':'Basic realm="Quanta RFQ", charset="UTF-8"','Cache-Control':'no-store'});res.end('Authentication required');return;}
- if(url.pathname.startsWith('/api/')){proxy(req,res,new URL(req.url,`http://127.0.0.1:${process.env.RFQ_PORT||3004}`));return;}
+ if(url.pathname.startsWith('/api/')){proxy(req,res,new URL(url.pathname+url.search,`http://127.0.0.1:${process.env.RFQ_PORT||3004}`));return;}
  if(url.pathname.startsWith('/llm/')){if(!runtime.model){res.writeHead(503);res.end('Model is not configured');return;}const target=new URL(runtime.model.baseURL.replace(/\/$/,'')+url.pathname.slice(4)+url.search);proxy(req,res,target,runtime.model.apiKey);return;}
  if(url.pathname.startsWith('/oxr/')){res.writeHead(503);res.end('Use the server-side document intake API for OCR');return;}
  if(req.method!=='GET'&&req.method!=='HEAD'){res.writeHead(405);res.end();return;}

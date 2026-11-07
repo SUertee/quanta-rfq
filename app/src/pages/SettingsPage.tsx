@@ -1,3 +1,4 @@
+import {appFetch as fetch} from '../engine/appUrl';
 import { useEffect, useRef, useState } from 'react';
 import { Badge } from '../components/ui';
 import type { PricingPolicy } from '../engine/pricingPolicy';
