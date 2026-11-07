@@ -4,7 +4,7 @@ import type { Dataset } from '../data';
 import type { CostRow } from '../types';
 import { fmtMoney } from '../engine/amount';
 import { applyMapping, INV_FIELDS, readSheetFile, type ImportSheet } from '../engine/import';
-import { Badge, FilterTabs } from '../components/ui';
+import { Badge, FilterTabs, RecordToolbar, RecordPagination } from '../components/ui';
 import { MappingDialog } from '../components/MappingDialog';
 
 const NUMERIC = new Set(['stockQty', 'stdCost', 'avgCost', 'lastPurchasePrice']);
@@ -155,11 +155,7 @@ export function InventoryPage({
   return (
     <div className="page-inventory">
       <div className="page-heading"><div><h1>库存与成本</h1></div></div>
-      <div className="inventory-controls"><FilterTabs label="库存筛选" value={stockFilter} onChange={value=>{setStockFilter(value);setPage(1)}} items={[{value:'all',label:'全部物料',count:ds.cost.length},{value:'zero',label:'零库存',count:ds.cost.filter(c=>(backend?c.stockQty:(overrides[c.partNumber]??c.stockQty))===0).length}]} />{!backend&&<Badge text="演示数据" tone="amber" />}</div>
-
-      <div className="panel">
-        <div className="inventory-toolbar">
-          <input className="search-input" aria-label="搜索库存物料" placeholder="搜索物料" value={q} onChange={(e) => {setQ(e.target.value);setPage(1);}} />
+      <RecordToolbar filters={<FilterTabs label="库存筛选" value={stockFilter} onChange={value=>{setStockFilter(value);setPage(1)}} items={[{value:'all',label:'全部物料',count:ds.cost.length},{value:'zero',label:'零库存',count:ds.cost.filter(c=>(backend?c.stockQty:(overrides[c.partNumber]??c.stockQty))===0).length}]} />}>          <input className="search-input" aria-label="搜索库存物料" placeholder="搜索物料" value={q} onChange={(e) => {setQ(e.target.value);setPage(1);}} />
           {backend && (
             <>
               <button className="btn primary" onClick={() => setAddOpen(!addOpen)}>+ 添加物料</button>
@@ -169,7 +165,8 @@ export function InventoryPage({
             </>
           )}
           {!backend && changed > 0 && <button className="btn" onClick={onReset}>全部还原</button>}
-        </div>
+</RecordToolbar>
+      <div className="panel">
         {deleteTarget && <div className="check-box" role="alert"><p>确认删除物料 {deleteTarget}？删除后不能撤销。</p><div className="toolbar"><button className="btn" disabled={saving} onClick={() => setDeleteTarget(null)}>取消删除</button><button className="btn" disabled={saving} onClick={confirmDelete}>确认删除物料</button></div></div>}
         {err && <div className="hint limitation">{err}</div>}
 
@@ -209,7 +206,7 @@ export function InventoryPage({
             </tbody>
           </table>
         </div>
-        <div className="table-pagination"><span /><div><button aria-label="上一页库存" disabled={page<=1} onClick={()=>setPage(p=>p-1)}>←</button><span>{Math.min(page,Math.max(1,Math.ceil(rows.length/20)))} / {Math.max(1,Math.ceil(rows.length/20))}</span><button aria-label="下一页库存" disabled={page>=Math.ceil(rows.length/20)} onClick={()=>setPage(p=>p+1)}>→</button></div></div>
+        <RecordPagination total={rows.length} page={page} onChange={setPage} label="库存"/>
       </div>
 
       {sheet && (

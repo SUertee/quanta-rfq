@@ -6,7 +6,7 @@ import { linesOf } from '../task';
 import { isYellow, priceAll } from '../engine/pricing';
 import { suggestPrice, type PricingPolicy } from '../engine/pricingPolicy';
 import { FLAG_PLAIN } from '../plain';
-import { Badge, DataTable, FilterTabs } from '../components/ui';
+import { Badge, DataTable, FilterTabs, RecordToolbar } from '../components/ui';
 import type { Source } from '../App';
 
 type IssueType = '过期价' | '缺证书' | '毛利不足' | '未命中' | '待报价滞留' | '未核对' | '未定价';
@@ -86,9 +86,8 @@ export function InspectPage({
   return (
     <div className="page-inspect">
       <div className="page-heading"><div><h1>异常巡检</h1></div></div>
-      <div className="issue-strip"><FilterTabs label="风险类型筛选" value={filter} onChange={value=>setFilter(value===filter?'':value)} items={[{value:'',label:'全部事项',count:rows.length},...ISSUE_ORDER.map(t=>({value:t,label:t,count:counts.get(t)??0}))]} /></div>
+      <RecordToolbar filters={<FilterTabs label="风险类型筛选" value={filter} onChange={value=>setFilter(value===filter?'':value)} items={[{value:'',label:'全部事项',count:rows.length},...ISSUE_ORDER.map(t=>({value:t,label:t,count:counts.get(t)??0}))]} />}><input className="search-input" aria-label="搜索风险物料" placeholder="搜索件号、询价、描述…" value={query} onChange={e=>setQuery(e.target.value)} /></RecordToolbar>
       <div className="panel">
-        <div className="list-toolbar"><strong>风险明细</strong><input className="search-input" aria-label="搜索风险物料" placeholder="搜索件号、询价、描述…" value={query} onChange={e=>setQuery(e.target.value)} /></div>
         <DataTable
           rows={shown}
           rowKey={(r) => r.key}

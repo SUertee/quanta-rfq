@@ -32,6 +32,18 @@ export function FilterTabs<T extends string>({ label, value, items, onChange }: 
   return <div className="filter-tabs unified-tabs" role="group" aria-label={label}>{items.map(item => <button type="button" key={item.value} aria-pressed={value === item.value} className={value === item.value ? 'active' : ''} onClick={() => onChange(item.value)}><span>{item.label}</span>{item.count !== undefined && <span className="tab-count">{item.count}</span>}</button>)}</div>;
 }
 
+/** One toolbar and footer contract for all record workspaces. */
+export function RecordToolbar({filters,children}:{filters:ReactNode;children:ReactNode}) {
+  return <div className="record-toolbar"><div className="record-filters">{filters}</div><div className="record-tools">{children}</div></div>;
+}
+
+export function RecordPagination({total,page,pageSize=20,onChange,label=''}:{total:number;page:number;pageSize?:number;onChange:(page:number)=>void;label?:string}) {
+  const pages=Math.max(1,Math.ceil(total/pageSize));
+  const current=Math.min(page,pages);
+  const start=(current-1)*pageSize;
+  return <div className="table-pagination"><span>{total?`${start+1}–${Math.min(start+pageSize,total)}`:'0'} / {total} 条</span><div><button aria-label={`上一页${label}`} disabled={current<=1} onClick={()=>onChange(current-1)}>←</button><span>{current} / {pages}</span><button aria-label={`下一页${label}`} disabled={current>=pages} onClick={()=>onChange(current+1)}>→</button></div></div>;
+}
+
 export interface Col<T> {
   title: string;
   render: (r: T, i: number) => ReactNode;
@@ -76,6 +88,6 @@ export function DataTable<T>({
           )}
         </tbody>
       </table>
-    </div>{mobileRender&&<div className="responsive-record-list">{rows.slice(offset,offset+pageSize).map((row,i)=><div key={rowKey?rowKey(row):offset+i}>{mobileRender(row,offset+i)}</div>)}{!rows.length&&<div className="empty-cell">暂无数据</div>}</div>}<div className="table-pagination"><span>{rows.length ? `${offset+1}–${Math.min(offset+pageSize,rows.length)}` : '0'} / {rows.length} 条</span><div><button aria-label="上一页" disabled={currentPage<=1} onClick={()=>setPage(p=>p-1)}>←</button><span>{currentPage} / {pages}</span><button aria-label="下一页" disabled={currentPage>=pages} onClick={()=>setPage(p=>p+1)}>→</button></div></div></div>
+    </div>{mobileRender&&<div className="responsive-record-list">{rows.slice(offset,offset+pageSize).map((row,i)=><div key={rowKey?rowKey(row):offset+i}>{mobileRender(row,offset+i)}</div>)}{!rows.length&&<div className="empty-cell">暂无数据</div>}</div>}<RecordPagination total={rows.length} page={currentPage} pageSize={pageSize} onChange={setPage}/></div>
   );
 }

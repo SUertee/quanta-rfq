@@ -14,12 +14,13 @@ import type { Source } from '../App';
 import type { EstCost, InquiryLine } from '../types';
 import type { PricingPolicy } from '../engine/pricingPolicy';
 import { isYellow, priceAll } from '../engine/pricing';
-import { RunAuditReceipt } from '../components/RunAuditReceipt';
+import {ExecutionSteps} from '../components/ExecutionSteps';
+import {MessageRail} from '../components/MessageRail';
 
 type DraftLine = { key: string; partNumber: string; quantity: number; uom?: string; cost?: number; suggestedPrice?: number; currency: string; source?: string; issues: string[] };
 type AgentResult = { runId: string; status: 'needs_review'; summary: string; answer?: string; model: string; draft: { lines: DraftLine[]; questions: string[]; mode?: string; limitations?: string[] }; events: { tool: string; state: string; detail: string }[] };
 type Turn = { attachments?:ChatAttachment[]; createdAt?:string; role: 'user' | 'assistant'; content: string; basis: string; result?: AgentResult; elapsed?: number };
-type Session = { state: 'idle' | 'running' | 'failed' | 'stopped'; input: string; turns: Turn[]; error?: string; progress?:string };
+type Session = { state: 'idle' | 'running' | 'failed' | 'stopped'; input: string; turns: Turn[]; error?: string; progressEvents?:{tool:string;state:string}[] };
 const fresh = (): Session => ({ state: 'idle', input: '', turns: [] });
 const money = (v?: number) => v == null ? '—' : `¥${v.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`;
 
@@ -89,7 +90,7 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
     const started = performance.now();
     const history = session.turns.filter(t => t.basis === basis && t.content.trim()).slice(-6).map(t => ({role:t.role,content:t.content.slice(0,2000)}));
     append(sessionKey, {role:'user',content:instruction,basis,attachments});setAttachments([]);setAttachmentEpoch(n=>n+1);
-    patch(sessionKey,{state:'running',input:'',error:undefined,progress:undefined});
+    patch(sessionKey,{state:'running',input:'',error:undefined,progressEvents:[]});
     try {
       const greeting = /^(你好|您好|嗨|hello\b|hi\b|你能做什么|你可以做什么|你能帮我|你是谁|介绍一下你|谢谢|感谢)/i.test(instruction);
       const requestsWork = /(生成|计算|核对|检查|查询|分析|报价草稿|单价|库存)/.test(instruction);
@@ -105,7 +106,14 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
       }
       // Legacy field named margin stores markup rate (cost-based), matching Settings.
       const response = await fetch('/api/agent/run', {method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({instruction,history,context:attachmentContext,inquiryId:current.email?.intakeBatchId,lines:current.lines.map(l => ({key:l.key,partNumber:l.partNumber || '',description:l.description,quantity:l.quantity,uom:l.uom,condition:l.condition,urgency:l.urgency})),policy:{markupRate:policy.margin,aogPremium:policy.aogPremium,bulkDiscount:policy.bulkDiscount,bulkQty:policy.bulkQty}})});
-      const data = await readAgentStream<AgentResult>(response,(tool,state)=>{if(id!==generation.current)return;const labels:Record<string,string>={read_inquiry:'读取询价',lookup_costs:'查询报价依据',build_quote_draft:'形成报价草稿'};patch(sessionKey,{progress:`${labels[tool]||'处理询价'}${state==='done'?'已完成':state==='started'?'…':'待处理'}`});});
+      const data = await readAgentStream<AgentResult>(response,(tool,state)=>{
+        if(id!==generation.current)return;
+        setSessions(old=>{
+          const saved=old[sessionKey];
+          if(!saved)return old;
+          return {...old,[sessionKey]:{...saved,progressEvents:[...(saved.progressEvents||[]),{tool,state}]}};
+        });
+      });
       if (!response.ok) throw new Error(`请求失败 (${response.status})`);
       if (id !== generation.current) return;
       if (latestBasis.current !== basis) throw new Error('询价或策略已修改，本轮结果未采用。请重新提问。');
@@ -133,7 +141,7 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
   const latestTurn = [...session.turns].reverse().find(t=>t.role==='assistant'&&t.basis===basis&&t.result&&t.result.draft.mode!=='analysis'&&t.result.draft.lines.length>0);
   const latestResult=latestTurn?.result;
   const draftPanel = <><div className="rfq-draft-heading"><div><span>当前报价</span><h2>报价草稿</h2></div><span className="rfq-draft-status">待人工核对</span></div>
-    {latestResult ? <><div className="rfq-draft-totals"><span>已形成建议价 <b>{latestResult.draft.lines.filter(l=>l.suggestedPrice!=null).length}/{latestResult.draft.lines.length} 行</b></span><strong>{latestResult.draft.lines.some(l=>l.suggestedPrice!=null) ? money(latestResult.draft.lines.reduce((n,l)=>n+(l.suggestedPrice??0)*l.quantity,0)) : '待补成本依据'}</strong><small>已定价行小计 · 不含运费</small></div><div className="rfq-draft-scroll">{latestResult.draft.lines.map((line,i)=><article className="rfq-current-line" key={`${line.key}-${i}`}><header><span><b>{line.partNumber || '缺件号'}</b><small>{line.quantity} {line.uom || '单位待补'}</small></span><strong>{line.suggestedPrice==null?'待补依据':money(line.suggestedPrice)}</strong></header><p>内部成本：{money(line.cost)}</p><p>来源：{line.source || '未取得依据'}</p>{line.issues.map((issue,j)=><p className="rfq-line-issue" key={j}>{issue}</p>)}</article>)}{latestResult.draft.questions.length>0&&<section className="rfq-chat-evidence"><header>待补充事项 · {latestResult.draft.questions.length}</header><ul>{latestResult.draft.questions.map((q,i)=><li key={i}>{q}</li>)}</ul></section>}</div><button className="btn primary" onClick={()=>{setDrawerOpen(false);if(task)onOpenTask(task.source);}}>逐行核对与导出</button></> : <div className="rfq-draft-placeholder"><span>▤</span><h3>还没有报价草稿</h3><button className="btn primary" onClick={()=>run('仅使用已有内部成本生成报价草稿，缺依据的行留空。')}>生成报价草稿</button></div>}
+    {latestResult ? <><div className="rfq-draft-totals"><span>已形成建议价 <b>{latestResult.draft.lines.filter(l=>l.suggestedPrice!=null).length}/{latestResult.draft.lines.length} 行</b></span><strong>{latestResult.draft.lines.some(l=>l.suggestedPrice!=null) ? money(latestResult.draft.lines.reduce((n,l)=>n+(l.suggestedPrice??0)*l.quantity,0)) : '待补成本依据'}</strong><small>已定价行小计 · 不含运费</small></div><div className="rfq-draft-scroll">{latestResult.draft.lines.map((line,i)=><article className="rfq-current-line" key={`${line.key}-${i}`}><header><span><b>{line.partNumber || '缺件号'}</b><small>{line.quantity} {line.uom || '单位待补'}</small></span><strong>{line.suggestedPrice==null?'待补依据':money(line.suggestedPrice)}</strong></header><p>内部成本：{money(line.cost)}</p><p>来源：{line.source || '未取得依据'}</p>{line.issues.map((issue,j)=><p className="rfq-line-issue" key={j}>{issue}</p>)}</article>)}</div><button className="btn primary" onClick={()=>{setDrawerOpen(false);if(task)onOpenTask(task.source);}}>逐行核对与导出</button></> : <div className="rfq-draft-placeholder"><span>▤</span><h3>还没有报价草稿</h3><button className="btn primary" onClick={()=>run('仅使用已有内部成本生成报价草稿，缺依据的行留空。')}>生成报价草稿</button></div>}
     <p className="rfq-draft-footnote">{task&&isDemo(task)?'当前询价使用演示样例。':'本地导入的询价。'} 草稿不会自动写入最终报价。</p></>;
   if (task && current && !current.lines.length) return <div className="agent-empty"><h2>当前范围暂无可报价物料</h2><button className="btn" onClick={onClearLine}>切回整单</button><button className="btn" onClick={onClose}>收起助手</button></div>;
   if (!task || !current) return <div className="agent-empty"><h2>从一份询价开始</h2><button className="btn primary" onClick={onNewInquiry}>上传询价</button></div>;
@@ -143,19 +151,18 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
       {!session.turns.length && <div className="rfq-chat-welcome">{expanded&&<h1>处理这份询价</h1>}{!embedded&&<span className="rfq-chat-avatar">Q</span>}{!embedded&&<h2>{embedded ? (selectedLineKey ? '一起核对这行物料' : '这份询价，交给我核对') : '这份询价，先帮你做什么？'}</h2>}<div className="rfq-chat-suggestions">{embedded&&selectedLineKey&&<button disabled={session.state==='running'} onClick={onClearLine}>处理整单</button>}<button onClick={() => run('仅使用已有内部成本生成报价草稿，缺少依据的行保留缺口，不估价。')}>生成报价草稿 ↗</button><button onClick={() => run('只检查询价和成本缺口，不生成价格。')}>检查缺失信息 ↗</button></div></div>}
       {session.turns.map((turn,i) => {
         const result=turn.result, stale=turn.basis!==basis;
-        return <article key={i} className={`rfq-chat-turn ${turn.role}`}>{turn.role==='assistant'&&<div className="rfq-chat-speaker">Quanta{stale&&<span>旧询价记录</span>}</div>}<div className="rfq-chat-text">{turn.attachments&&<div className="chat-attachment-strip">{turn.attachments.map(file=><ChatAttachmentPreview key={file.id} attachment={file}/>)}</div>}<ChatMarkdown text={(result && /生成.{0,8}(报价|草稿)/.test(session.turns[i-1]?.content || '') ? result.summary : turn.content)} /></div>
+        return <article key={i} className={`rfq-chat-turn ${turn.role}`}>{turn.role==='assistant'&&<div className="rfq-chat-speaker">Quanta{stale&&<span>旧询价记录</span>}</div>}{result&&<ExecutionSteps events={result.events} lines={result.draft.lines} mode={result.draft.mode}/>}<div className="rfq-chat-text">{turn.attachments&&<div className="chat-attachment-strip">{turn.attachments.map(file=><ChatAttachmentPreview key={file.id} attachment={file}/>)}</div>}<ChatMarkdown text={(result && /生成.{0,8}(报价|草稿)/.test(session.turns[i-1]?.content || '') ? result.summary : turn.content)} /></div>
           {result && <>{result.draft.lines.length>0 && result.draft.mode!=='analysis' && !embedded && <button className="rfq-chat-output" disabled={stale} onClick={openDraft}><span>▤</span><strong>{result.draft.mode==='analysis'?'缺口清单':'报价草稿'} · {result.draft.lines.length} 行</strong><small>{stale?'旧记录':'查看当前草稿 →'}</small></button>}
             {embedded && result.draft.mode!=='analysis' && result.draft.lines.length>0 && <div className="copilot-results"><div className="copilot-result-title">报价建议 <span>{result.draft.lines.length} 行 · {stale?'已过期':'待确认'}</span></div>{result.draft.lines.map((line,j)=><div className="copilot-price-card" key={j}><div><strong>{line.partNumber || '缺件号'}</strong><small>{line.quantity} {line.uom}</small><b>{money(line.suggestedPrice)}</b></div><section className="copilot-line-evidence"><p>内部成本 {money(line.cost)}</p><p>{line.source ? '来源：内部库存成本' : '未取得成本依据'}</p>{line.issues.map((issue,k)=><p key={k}>{issue}</p>)}</section>{line.suggestedPrice!=null && <button className="btn" disabled={stale || !onApplyPrice || priceBook[line.key]===line.suggestedPrice} onClick={()=>onApplyPrice?.(line,line.suggestedPrice!)}>{priceBook[line.key]===line.suggestedPrice?'已填入单价':'接受建议单价'}</button>}</div>)}<button className="btn" disabled={stale} onClick={()=>onOpenTask(task.source)}>返回工作台核对</button></div>}
             {result.draft.mode==='analysis' && result.draft.lines.length>0 && <section className="rfq-chat-artifact"><header><strong>缺口清单</strong><span>{result.draft.lines.length} 行</span></header><div className="rfq-chat-table"><table><thead><tr><th>物料</th><th>数量</th><th>内部成本</th><th>待核对事项</th></tr></thead><tbody>{result.draft.lines.map((line,j)=><tr key={j}><td>{line.partNumber || '缺件号'}</td><td>{line.quantity} {line.uom}</td><td>{money(line.cost)}</td><td>{line.issues.length?line.issues.join('；'):'未发现额外成本缺口，业务条件仍待人工核对'}</td></tr>)}</tbody></table></div></section>}
-            {result.draft.questions.length>0 && <section className="rfq-chat-evidence"><header>待补充事项 · {result.draft.questions.length}</header><ul>{result.draft.questions.map((q,j) => <li key={j}>{q}</li>)}</ul></section>}
-            <RunAuditReceipt key={result.runId} runId={result.runId} />
           </>}
         </article>;
       })}
-      {session.state==='running' && <div className="rfq-chat-thinking" role="status"><span className="pulse" /> {session.progress||'正在处理…'}</div>}
-      {session.error && <div className="rfq-chat-error" role="alert">{session.error}{session.state==='failed' && <section><header>连接配置</header>Agent 使用服务端 app/.env.local；修改后需重启后端。</section>}</div>}
+      {session.state==='running' && <div className="rfq-chat-thinking" role="status">{session.progressEvents?.length?<ExecutionSteps events={session.progressEvents} running/>:<span>正在回复…</span>}</div>}
+      {session.error && <div className="rfq-chat-error" role="alert">{session.progressEvents?.length?<ExecutionSteps events={session.progressEvents}/>:null}{session.error}</div>}
 
     </div>
+    <MessageRail container={chatScroll.containerRef} turns={session.turns}/>
     <footer className="rfq-chat-footer"><div className="rfq-chat-composer"><ChatFiles showPicker key={attachmentEpoch} disabled={session.state==='running'} onChange={setAttachments} excerptLimit={1400} onRead={setAttachmentContext}/><textarea aria-label="给智能体的指令" placeholder="输入消息…" maxLength={2000} value={session.input} disabled={session.state==='running'} onChange={e=>patch(sessionKey,{input:e.target.value})} onCompositionStart={()=>{composing.current=true;}} onCompositionEnd={()=>{composing.current=false;}} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&!composing.current&&e.keyCode!==229){e.preventDefault();void run();}}} />{session.state==='running' ? <button className="stop-btn" onClick={stop}>停止</button> : <button aria-label="发送消息" className="send-btn" disabled={(!session.input.trim()&&!attachments.length)||attachments.some(f=>f.status==='reading')||!current.lines.length} onClick={()=>run()}>↑</button>}</div></footer>
   </section><aside className="rfq-current-draft" ref={draftAside} tabIndex={-1} aria-label="当前报价草稿">{draftPanel}</aside>{drawerOpen&&<div className="rfq-draft-overlay" onClick={()=>setDrawerOpen(false)}><aside className="rfq-draft-drawer" role="dialog" aria-modal="true" aria-label="报价草稿" tabIndex={-1} onKeyDown={e=>{if(e.key==='Escape')setDrawerOpen(false);}} onClick={e=>e.stopPropagation()}><button autoFocus className="rfq-drawer-close" onClick={()=>setDrawerOpen(false)}>关闭 ×</button>{draftPanel}</aside></div>}</div>;
 }

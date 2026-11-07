@@ -788,3 +788,81 @@ html:has(.layout-reference),body:has(.layout-reference) { height:100%;overflow:h
 .layout-reference .rfq-chat-turn.assistant .rfq-chat-text { padding:16px 18px;border:1px solid var(--line);border-radius:16px;background:var(--panel);color:var(--ink); }
 .layout-reference .rfq-chat-speaker { margin:0 0 8px 4px;color:var(--ink);font-size:14px; }
 @media(prefers-reduced-motion:reduce) { .account-menu-panel,.app-dialog[open],.settings-dialog[open] { animation:none; } }
+
+/* Record workspace contract: centered navigation, shared controls and a bounded grid. */
+.layout.layout-reference .sidebar { display:grid;grid-template-columns:160px minmax(0,1fr) 160px;grid-template-areas:none;align-items:center;gap:12px;padding:10px 20px; }
+.layout-reference .sidebar .brand,.layout-reference .sidebar nav,.layout-reference .sidebar-foot { grid-area:auto; }
+.layout-reference .sidebar .brand { justify-self:start; }
+.layout-reference .sidebar-foot { justify-self:end;padding:0; }
+.layout.layout-reference .sidebar nav { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));justify-self:center;align-items:center;width:min(100%,520px);gap:4px;padding:0; }
+.layout.layout-reference .sidebar .nav-item { display:flex;align-items:center;justify-content:center;gap:6px;width:100%;height:44px;min-width:0;padding:0 8px;font-size:15px;line-height:1.4;text-align:center;white-space:nowrap; }
+.layout-reference .sidebar .nav-count { margin:0;font-size:12px; }
+.layout-reference .page-home,.layout-reference .page-inspect,.layout-reference .page-inventory { padding-top:0;gap:0; }
+.layout-reference .page-home .home-overview,.layout-reference .page-inspect>.page-heading,.layout-reference .page-inventory>.page-heading { box-sizing:border-box;display:flex;align-items:center;justify-content:space-between;flex:0 0 144px;height:144px;margin:0;padding:20px 0; }
+.layout-reference .page-home .home-overview .page-heading { margin:0; }
+.layout-reference .home-overview .task-metrics { width:50%; }
+.layout-reference .home-overview .task-metrics>div { padding:8px 20px; }
+.layout-reference .home-overview .task-metrics b { font-size:36px; }
+.layout-reference .record-toolbar { display:flex;flex-direction:column;flex:0 0 auto;gap:12px;min-width:0;margin:0 0 16px; }
+.layout-reference .record-filters { display:flex;align-items:center;min-width:0;height:44px;overflow:auto;scrollbar-width:thin; }
+.layout-reference .record-filters .filter-tabs { display:flex;flex-wrap:nowrap;gap:8px; }
+.layout-reference .record-filters .filter-tabs>button { display:flex;align-items:center;justify-content:center;flex:0 0 auto;min-height:42px;padding:8px 14px;white-space:nowrap; }
+.layout-reference .record-tools { display:flex;align-items:center;gap:10px;min-height:44px;min-width:0; }
+.layout-reference .record-tools .search-input { width:min(280px,100%);min-width:100px;flex:0 1 280px;margin:0 auto 0 0;min-height:44px; }
+.layout-reference .record-tools>.btn { flex:0 0 auto;min-height:44px;white-space:nowrap; }
+.layout-reference .record-tools .inquiry-create { width:auto;height:44px;min-width:112px;flex:0 0 auto;padding:8px 18px;border-radius:var(--radius-control);font-size:15px; }
+.layout-reference .page-home>.panel,.layout-reference .page-inspect>.panel,.layout-reference .page-inventory>.panel { border:1px solid var(--line);border-radius:var(--radius-surface); }
+.layout-reference .page-home .table-pagination,.layout-reference .page-inspect .table-pagination,.layout-reference .page-inventory .table-pagination { display:flex;align-items:center;justify-content:space-between;box-sizing:border-box;height:68px;min-height:68px;padding:12px 18px;gap:12px;border-top:1px solid var(--line);background:var(--panel);font-size:14px; }
+.layout-reference .table-pagination>div { display:flex;align-items:center;gap:14px;white-space:nowrap; }
+.layout-reference .table-pagination button { display:grid;place-items:center;width:36px;height:36px;padding:0; }
+.layout-reference .page-home .table-wrap,.layout-reference .page-inspect .table-wrap,.layout-reference .page-inventory .table-wrap { scrollbar-width:thin; }
+.rfq-chat,.platform-chat { position:relative; }
+.rfq-chat-messages,.platform-chat-messages { scrollbar-width:none; }
+.rfq-chat-messages::-webkit-scrollbar,.platform-chat-messages::-webkit-scrollbar { display:none; }
+.message-rail { position:absolute;right:5px;top:90px;bottom:190px;width:22px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;z-index:3;max-height:calc(100% - 280px); }
+.message-rail>button { position:relative;display:grid;place-items:center;flex:0 1 18px;min-height:4px;width:22px;padding:0;border:0;background:transparent;cursor:pointer; }
+.message-rail-mark { display:block;width:4px;height:4px;background:var(--ink-2);opacity:.3;border-radius:50%;transition:width 150ms,opacity 150ms; }
+.message-rail>button.active .message-rail-mark,.message-rail>button:hover .message-rail-mark { width:14px;border-radius:2px;opacity:1; }
+.message-rail-preview { display:none;position:absolute;right:26px;top:50%;transform:translateY(-50%);width:220px;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:0 8px 24px -12px rgba(11,29,58,.25);text-align:left;font-size:14px;line-height:1.5;color:var(--ink);pointer-events:none; }
+.message-rail>button:hover .message-rail-preview,.message-rail>button:focus-visible .message-rail-preview { display:block; }
+.execution-steps { display:grid;gap:12px;margin:16px 0;padding:0;list-style:none; }
+.execution-steps li { display:flex;align-items:flex-start;gap:10px;color:var(--ink-2);font-size:14px; }
+.execution-steps li>span { display:grid;place-items:center;flex:0 0 22px;height:22px;border:1px solid var(--line);border-radius:50%;color:var(--ink); }
+.execution-steps li[data-state=done]>span { color:var(--teal,var(--ink)); }
+.execution-steps strong { display:block;font-weight:500;color:var(--ink); }
+.execution-steps p { margin:3px 0 0;line-height:1.5; }
+@media(max-width:850px) {
+ .layout.layout-reference .sidebar { grid-template-columns:minmax(0,1fr) auto;grid-template-areas:'brand account' 'nav nav';gap:10px;padding:12px 16px;border-radius:24px; }
+ .layout-reference .sidebar .brand { grid-area:brand; }
+ .layout-reference .sidebar-foot { grid-area:account; }
+ .layout.layout-reference .sidebar nav { grid-area:nav;width:100%;max-width:520px; }
+ .layout-reference .page-home .home-overview,.layout-reference .page-inspect>.page-heading,.layout-reference .page-inventory>.page-heading { flex-basis:120px;height:120px;padding:12px 0; }
+ .layout-reference .home-overview .task-metrics { width:56%; }
+ .layout-reference .home-overview .task-metrics>div { padding:6px 10px; }
+ .layout-reference .home-overview .task-metrics b { font-size:28px; }
+}
+@media(max-width:550px) {
+ .layout.layout-reference .sidebar .nav-item { font-size:13px;padding:0 4px;gap:3px; }
+ .layout-reference .sidebar .nav-count { font-size:10px; }
+ .layout-reference .page-home .home-overview { flex-direction:row;gap:12px; }
+ .layout-reference .home-overview h1 { font-size:24px; }
+ .layout-reference .home-overview .task-metrics { width:56%; }
+ .layout-reference .home-overview .task-metrics>div { padding:4px 6px; }
+ .layout-reference .home-overview .task-metrics span { font-size:12px; }
+ .layout-reference .home-overview .task-metrics small { display:none; }
+ .layout-reference .home-overview .task-metrics b { font-size:24px; }
+ .layout-reference .record-tools { flex-wrap:wrap; }
+ .layout-reference .record-tools .search-input { flex:1 1 140px;width:auto; }
+ .layout-reference .record-tools>.btn { padding-inline:12px;font-size:13px; }
+ .layout-reference .page-home .table-pagination,.layout-reference .page-inspect .table-pagination,.layout-reference .page-inventory .table-pagination { height:60px;min-height:60px;padding:10px 12px;font-size:12px; }
+ .layout-reference .table-pagination>div { gap:8px; }
+}
+.layout-reference .record-toolbar { display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center; }
+.layout-reference .record-tools .search-input { margin-left:0;margin-right:0; }
+@media(max-width:1000px) { .layout-reference .record-toolbar { grid-template-columns:minmax(0,1fr); }.layout-reference .record-tools .search-input { margin-right:auto; } }
+@media(max-width:550px) {
+ .layout-reference .sidebar .nav-count { display:none; }
+ .layout-reference .task-record-card { display:grid;grid-template-rows:24px minmax(24px,1fr) 28px;gap:8px;box-sizing:border-box;min-height:140px;height:140px;padding:14px; }
+ .layout-reference .task-record-open { display:block;min-height:0;margin:0;padding:0;line-height:1.5;text-align:left; }
+ .layout-reference .task-record-open b { display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+}
