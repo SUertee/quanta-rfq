@@ -618,3 +618,15 @@ html:has(dialog[open]) { overflow:hidden; }
 .layout-reference .btn.inquiry-back { display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;min-height:42px;padding:0;margin:0;border-radius:50%; }
 .layout-reference .inquiry-page-head h1 { margin:0;font-size:28px;line-height:1.35; }
 @media(max-width:650px) { .layout-reference .inquiry-page-head>div { gap:12px; } .layout-reference .inquiry-page-head h1 { font-size:22px; } }
+
+/* Keep inquiry actions compact without forcing a full-width search row. */
+.layout-reference .page-home>.inquiry-records { border-top:0; }
+.layout-reference .page-home .inquiry-records .list-toolbar { display:flex;flex-wrap:wrap;align-items:center;gap:12px;border-bottom:0; }
+.layout-reference .page-home .inquiry-records .filter-tabs { flex:0 0 auto; }
+.layout-reference .page-home .inquiry-records .search-input { width:240px;max-width:100%;min-width:0;flex:0 1 240px;min-height:42px;margin-left:auto; }
+.layout-reference .page-home .inquiry-create { display:grid;place-items:center;flex:0 0 42px;width:42px;height:42px;min-height:42px;padding:0;border-radius:50%;font-size:26px;line-height:1; }
+@media(max-width:700px) {
+ .layout-reference .page-home .inquiry-records .list-toolbar { display:grid;grid-template-columns:minmax(0,240px) 42px;justify-content:start;gap:12px; }
+ .layout-reference .page-home .inquiry-records .filter-tabs { grid-column:1 / -1;max-width:100%; }
+ .layout-reference .page-home .inquiry-records .search-input { width:100%;margin:0; }
+}

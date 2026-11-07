@@ -53,7 +53,7 @@ export function HomePage({
       </section>
 
       <div className="panel inquiry-records" role="region" aria-label="询价记录">
-        <div className="list-toolbar"><FilterTabs label="任务状态筛选" value={statusFilter} onChange={setStatusFilter} items={[{value:'all',label:'全部任务'},{value:'review',label:'待核对'},{value:'ready',label:'待核价'}]} /><input className="search-input" aria-label="搜索询价" placeholder="搜索询价编号、客户…" value={query} onChange={e=>setQuery(e.target.value)} /><button className="btn primary inquiry-create" onClick={()=>setShowNew(true)}>新建询价</button>{deletedCount>0&&<button className="btn" onClick={onRestore}>恢复已删除（{deletedCount}）</button>}</div>
+        <div className="list-toolbar"><FilterTabs label="任务状态筛选" value={statusFilter} onChange={setStatusFilter} items={[{value:'all',label:'全部任务'},{value:'review',label:'待核对'},{value:'ready',label:'待核价'}]} /><input className="search-input" aria-label="搜索询价" placeholder="搜索询价编号、客户…" value={query} onChange={e=>setQuery(e.target.value)} /><button className="btn primary inquiry-create" aria-label="新建询价" title="新建询价" onClick={()=>setShowNew(true)}>+</button>{deletedCount>0&&<button className="btn" onClick={onRestore}>恢复已删除（{deletedCount}）</button>}</div>
         <DataTable
           rows={filteredTasks}
           mobileRender={t=><article className="task-record-card">
