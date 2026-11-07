@@ -13,7 +13,7 @@ for(const hash of ['','#hero','#statement','#split']){
  const page=open(hash);assert.equal(page.history.scrollRestoration,'manual');assert.equal(page.location.hash,'');assert.equal(page.calls.length,1);assert.equal(page.calls[0].top,0);assert.equal(page.calls[0].behavior,'instant');
  if(hash){assert.equal(page.replacements[0].url,'/quanta-rfq/quanta.html?ref=test');assert.equal(page.replacements[0].state.entry,'qa');}
  page.events.pageshow({persisted:false});page.frames.shift()();assert.equal(page.calls.length,3);
- page.location.hash='#statement';page.events.pageshow({persisted:true});page.frames.shift()();assert.equal(page.calls.length,5);assert.equal(page.location.hash,'');
+ page.location.hash='#statement';page.events.pageshow({persisted:true});page.frames.shift()();assert.equal(page.calls.length,5);assert.equal(page.location.hash,'');page.location.hash='#split';page.events.hashchange();assert.equal(page.calls.length,6);assert.equal(page.location.hash,'');
 }
 for(const reduced of [false,true]){
  const page=open('',reduced);let prevented=false;const event={button:0,target:{closest:()=>({getAttribute:()=>'#statement'})},preventDefault(){prevented=true;}};
