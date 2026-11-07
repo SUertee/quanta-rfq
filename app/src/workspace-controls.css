@@ -308,3 +308,13 @@
 .ai-conversation-list nav .conversation-archive { opacity:0; }
 .conversation-list-row:hover .conversation-archive,.conversation-list-row:focus-within .conversation-archive { opacity:1; }
 @media(hover:none) { .ai-conversation-list nav .conversation-archive { opacity:1; } }
+
+/* Expanded launcher must expose the input, not only the send arrow. */
+.assistant-capsule.is-wide input { opacity:1;visibility:visible;pointer-events:auto;transition:opacity 120ms ease 80ms; }
+
+/* Hidden panels must not be resurrected by more specific flex/grid display rules. */
+.layout-reference [hidden] { display:none!important; }
+
+/* Native modal previews/settings must not scroll the page behind them. */
+html:has(dialog[open]) { overflow:hidden; }
+.settings-body,.chat-file-preview-body { overscroll-behavior:contain; }

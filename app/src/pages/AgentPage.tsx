@@ -1,3 +1,4 @@
+import {useChatScroll} from '../engine/useChatScroll';
 import {appFetch as fetch} from '../engine/appUrl';
 import {ChatAttachmentPreview} from '../components/ChatAttachmentPreview';
 import type {ChatAttachment} from '../engine/chatAttachments';
@@ -53,7 +54,7 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
   const generation = useRef(0);
   const busy = useRef(false);
   const composing = useRef(false);
-  const bottom = useRef<HTMLDivElement | null>(null);
+  const chatScroll=useChatScroll(session.turns);
   const draftAside = useRef<HTMLElement | null>(null);
   const openDraft = () => { if (typeof window !== 'undefined' && window.matchMedia('(min-width: 1481px)').matches) { draftAside.current?.focus(); } else { setDrawerOpen(true); } };
   const patch = (key: string, value: Partial<Session>) => setSessions(old => ({ ...old, [key]: { ...(old[key] ?? fresh()), ...value } }));
@@ -62,7 +63,6 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
     setSessions(old => Object.fromEntries(Object.entries(old).map(([key,s]) => [key,s.state === 'running' ? {...s,state:'stopped',error:'上次执行已中断，可以继续提问。'} : s])));
     return () => { generation.current++; request.current?.abort(); };
   }, []);
-  useEffect(() => { bottom.current?.scrollIntoView({ behavior: 'auto', block: 'end' }); }, [taskKey, session.turns.length, session.state]);
   useEffect(() => {
     if (!activeSource || busy.current) return;
     const selected = tasks.find(t => t.source.kind === activeSource.kind && (t.source.kind === 'email' ? activeSource.kind === 'email' && t.source.id === activeSource.id : activeSource.kind === 'kanban' && t.source.rfqId === activeSource.rfqId));
@@ -82,7 +82,7 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
   const run = async (preset?: string) => {
     const instruction = (preset ?? (session.input || (attachments.length?'请核对附件与当前询价；附件中未读取的信息保持待补充，不编造价格。':''))).trim();
     if (!task || !current?.lines.length || busy.current || attachments.some(f=>f.status==='reading') || !instruction) return;
-    busy.current = true;
+    busy.current = true;chatScroll.follow.current=true;
     const id = ++generation.current;
     const controller = new AbortController(); request.current = controller;
     const started = performance.now();
@@ -126,7 +126,7 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
   if (!task || !current) return <div className="agent-empty"><h2>从一份询价开始</h2><button className="btn primary" onClick={onNewInquiry}>上传询价</button></div>;
   return <div className={`rfq-hybrid ${embedded ? 'rfq-embedded' : ''}`}><aside className="rfq-inquiry-rail"><div className="rfq-queue-heading"><h2>询价队列</h2><span>{tasks.length}</span></div><button className="btn primary rfq-upload" disabled={session.state==='running'} onClick={onNewInquiry}>＋ 上传询价</button><label className="rfq-queue-search"><span>查找询价</span><input aria-label="查找询价" placeholder="搜索客户或询价" value={queueFilter} onChange={e=>setQueueFilter(e.target.value)} /></label><div className="rfq-queue-list">{tasks.filter(t=>`${t.title} ${t.customer}`.toLowerCase().includes(queueFilter.toLowerCase())).map(t=><button className={`rfq-inquiry-item ${taskKey===t.key?'selected':''}`} disabled={session.state==='running'} key={t.key} onClick={()=>selectTask(t.key)}><span className="rfq-item-meta">{isDemo(t)?'演示样例':'本地导入'}<small>{t.total} 行</small></span><strong>{t.title}</strong><span>{t.customer || '客户待补'}</span><small className={t.checkCount?'rfq-queue-warning':''}>{t.checkCount ? `${t.checkCount} 行待核对` : '待确认报价'}</small></button>)}</div><button className="rfq-demo-button" disabled={!demo||session.state==='running'} onClick={()=>demo&&selectTask(demo.key)}>使用演示样例 ↗</button></aside><section className="rfq-chat" aria-label="报价智能体对话">
     {embedded ? <><header className="copilot-header"><div><span className="copilot-mark">Q</span><div><strong>报价助手</strong>{session.state==='running'&&<small>正在核对…</small>}</div></div><div><button className="copilot-icon" aria-label="对话记录" onClick={onHistory}>☷</button><button className="copilot-icon" aria-label={expanded?'恢复浮窗':'放大对话'} onClick={onExpand}>{expanded?'↙':'↗'}</button><button className="copilot-icon" aria-label="收起报价助手" onClick={onClose}>−</button></div></header></> : <header className="rfq-chat-head"><label>询价<select aria-label="切换询价任务" value={taskKey} disabled={session.state === 'running'} onChange={e => {const t=tasks.find(t => t.key===e.target.value);if(t&&!busy.current){setSelectedKey(t.key);onSelectTask(t.source);}}}>{tasks.map(t => <option key={t.key} value={t.key}>{t.title}</option>)}</select></label><span>{current.lines.length} 行 · {pending} 行待核对</span><button className="btn rfq-mobile-upload" disabled={session.state==='running'} onClick={onNewInquiry}>上传询价</button><button className="btn rfq-draft-toggle" aria-expanded={drawerOpen} onClick={openDraft}>报价草稿</button><button className="btn rfq-workbench-link" onClick={() => onOpenTask(task.source)}>打开工作台</button>{selectedLineKey && <button className="btn" disabled={session.state==='running'} onClick={onClearLine}>切回整单</button>}</header>}
-    <div className="rfq-chat-messages" role="log" aria-live="polite">
+    <div className="rfq-chat-messages" ref={chatScroll.containerRef} onScroll={chatScroll.onScroll} role="log" aria-live="polite">
       {!session.turns.length && <div className="rfq-chat-welcome">{!embedded&&<span className="rfq-chat-avatar">Q</span>}{!embedded&&<h2>{embedded ? (selectedLineKey ? '一起核对这行物料' : '这份询价，交给我核对') : '这份询价，先帮你做什么？'}</h2>}<div className="rfq-chat-suggestions">{embedded&&selectedLineKey&&<button disabled={session.state==='running'} onClick={onClearLine}>处理整单</button>}<button onClick={() => run('仅使用已有内部成本生成报价草稿，缺少依据的行保留缺口，不估价。')}>生成报价草稿 ↗</button><button onClick={() => run('只检查询价和成本缺口，不生成价格。')}>检查缺失信息 ↗</button></div></div>}
       {session.turns.map((turn,i) => {
         const result=turn.result, stale=turn.basis!==basis;
@@ -141,7 +141,7 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
       })}
       {session.state==='running' && <div className="rfq-chat-thinking" role="status"><span className="pulse" /> 正在核对…</div>}
       {session.error && <div className="rfq-chat-error" role="alert">{session.error}{session.state==='failed' && <section><header>连接配置</header>Agent 使用服务端 app/.env.local；修改后需重启后端。</section>}</div>}
-      <div ref={bottom} />
+
     </div>
     <footer className="rfq-chat-footer"><div className="rfq-chat-composer"><ChatFiles key={attachmentEpoch} disabled={session.state==='running'} onChange={setAttachments} excerptLimit={1400} onRead={setAttachmentContext}/><textarea aria-label="给智能体的指令" placeholder="输入消息…" maxLength={2000} value={session.input} disabled={session.state==='running'} onChange={e=>patch(sessionKey,{input:e.target.value})} onCompositionStart={()=>{composing.current=true;}} onCompositionEnd={()=>{composing.current=false;}} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&!composing.current&&e.keyCode!==229){e.preventDefault();void run();}}} />{session.state==='running' ? <button className="stop-btn" onClick={stop}>停止</button> : <button className="send-btn" disabled={(!session.input.trim()&&!attachments.length)||attachments.some(f=>f.status==='reading')||!current.lines.length} onClick={()=>run()}>发送 ↑</button>}</div></footer>
   </section><aside className="rfq-current-draft" ref={draftAside} tabIndex={-1} aria-label="当前报价草稿">{draftPanel}</aside>{drawerOpen&&<div className="rfq-draft-overlay" onClick={()=>setDrawerOpen(false)}><aside className="rfq-draft-drawer" role="dialog" aria-modal="true" aria-label="报价草稿" tabIndex={-1} onKeyDown={e=>{if(e.key==='Escape')setDrawerOpen(false);}} onClick={e=>e.stopPropagation()}><button autoFocus className="rfq-drawer-close" onClick={()=>setDrawerOpen(false)}>关闭 ×</button>{draftPanel}</aside></div>}</div>;

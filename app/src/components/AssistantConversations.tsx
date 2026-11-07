@@ -1,3 +1,4 @@
+import {useChatScroll} from '../engine/useChatScroll';
 import {appFetch as fetch} from '../engine/appUrl';
 import {ChatAttachmentPreview} from './ChatAttachmentPreview';
 import type {ChatAttachment} from '../engine/chatAttachments';
@@ -14,12 +15,13 @@ export function PlatformChat({conversationKey='__no_task__',quickMessage,onQuick
  const [sessions,setSessions]=useStoredState<Record<string,Session>>('rfq-chat-v1',{});
  const [attachments,setAttachments]=useState<ChatAttachment[]>([]),[attachmentEpoch,setAttachmentEpoch]=useState(0);
  const [input,setInput]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');
- const seen=useRef<number|null>(null),request=useRef<AbortController|null>(null),pending=useRef(false),bottom=useRef<HTMLDivElement>(null);
+ const seen=useRef<number|null>(null),request=useRef<AbortController|null>(null),pending=useRef(false),composing=useRef(false);
  useEffect(()=>{window.dispatchEvent(new Event('rfq-chat-updated'));},[sessions]);
  const turns=sessions[conversationKey]?.turns||[];
+ const chatScroll=useChatScroll(turns);
  const append=(turn:Turn)=>setSessions(old=>({...old,[conversationKey]:{...old[conversationKey],turns:[...(old[conversationKey]?.turns||[]),{...turn,createdAt:new Date().toISOString()}]}}));
  const send=async(text=input)=>{
-  if((!text.trim()&&!attachments.length)||attachments.some(f=>f.status==='reading')||pending.current)return;pending.current=true;setBusy(true);setError('');setInput('');
+  if((!text.trim()&&!attachments.length)||attachments.some(f=>f.status==='reading')||pending.current)return;pending.current=true;chatScroll.follow.current=true;setBusy(true);setError('');setInput('');
   const controller=new AbortController();request.current=controller;
   append({role:'user',content:text.trim(),attachments});setAttachments([]);setAttachmentEpoch(n=>n+1);append({role:'assistant',content:''});
   try{
@@ -30,8 +32,7 @@ export function PlatformChat({conversationKey='__no_task__',quickMessage,onQuick
  };
  useEffect(()=>{if(quickMessage&&seen.current!==quickMessage.id){seen.current=quickMessage.id;onQuickHandled();void send(quickMessage.text);}},[quickMessage]);
  useEffect(()=>()=>request.current?.abort(),[]);
- useEffect(()=>{const node=bottom.current;node?.parentElement?.scrollTo({top:node.parentElement.scrollHeight});},[turns.length,busy]);
- return <section className="platform-chat"><header className="copilot-header"><strong>报价助手</strong><div><button className="copilot-icon" aria-label="对话记录" onClick={onHistory}>☷</button><button className="copilot-icon" aria-label="收起报价助手" onClick={onClose}>−</button></div></header><div className="platform-chat-messages">{!turns.length&&<button className="btn" onClick={()=>send('怎样从上传询价到生成报价单？')}>如何生成报价单？</button>}{turns.map((turn,i)=><article className={`rfq-chat-turn ${turn.role}`} key={i}><strong>{turn.role==='user'?'你':'Quanta'}</strong>{turn.attachments&&<div className="chat-attachment-strip">{turn.attachments.map(file=><ChatAttachmentPreview key={file.id} attachment={file}/>)}</div>}<ChatMarkdown text={turn.content}/></article>)}{busy&&<p role="status">正在回复…</p>}{error&&<p role="alert">{error}</p>}<div ref={bottom}/></div><form className="platform-chat-form" onSubmit={e=>{e.preventDefault();void send();}}><ChatFiles key={attachmentEpoch} disabled={busy} onChange={setAttachments} onRead={text=>setSessions(old=>({...old,[conversationKey]:{...old[conversationKey],turns:old[conversationKey]?.turns||[],context:text}}))}/><textarea rows={2} aria-label="向平台助手提问" placeholder="输入消息…" maxLength={2000} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing){e.preventDefault();void send();}}}/>{busy?<button type="button" className="btn" onClick={()=>{request.current?.abort();}}>停止</button>:<button aria-label="发送消息" className="btn primary" disabled={(!input.trim()&&!attachments.length)||attachments.some(f=>f.status==='reading')}>↑</button>}</form></section>;
+ return <section className="platform-chat"><header className="copilot-header"><strong>报价助手</strong><div><button className="copilot-icon" aria-label="对话记录" onClick={onHistory}>☷</button><button className="copilot-icon" aria-label="收起报价助手" onClick={onClose}>−</button></div></header><div className="platform-chat-messages" ref={chatScroll.containerRef} onScroll={chatScroll.onScroll}>{!turns.length&&<button className="btn" onClick={()=>send('怎样从上传询价到生成报价单？')}>如何生成报价单？</button>}{turns.map((turn,i)=><article className={`rfq-chat-turn ${turn.role}`} key={i}><strong>{turn.role==='user'?'你':'Quanta'}</strong>{turn.attachments&&<div className="chat-attachment-strip">{turn.attachments.map(file=><ChatAttachmentPreview key={file.id} attachment={file}/>)}</div>}<ChatMarkdown text={turn.content}/></article>)}{busy&&<p role="status">正在回复…</p>}{error&&<p role="alert">{error}</p>}</div><form className="platform-chat-form" onSubmit={e=>{e.preventDefault();void send();}}><ChatFiles key={attachmentEpoch} disabled={busy} onChange={setAttachments} onRead={text=>setSessions(old=>({...old,[conversationKey]:{...old[conversationKey],turns:old[conversationKey]?.turns||[],context:text}}))}/><textarea rows={2} aria-label="向平台助手提问" placeholder="输入消息…" maxLength={2000} onCompositionStart={()=>{composing.current=true;}} onCompositionEnd={()=>{composing.current=false;}} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&!composing.current&&e.keyCode!==229&&!e.repeat){e.preventDefault();void send();}}}/>{busy?<button type="button" className="btn" onClick={()=>{request.current?.abort();}}>停止</button>:<button aria-label="发送消息" className="btn primary" disabled={(!input.trim()&&!attachments.length)||attachments.some(f=>f.status==='reading')}>↑</button>}</form></section>;
 }
 export function ConversationList({tasks,selected,onSelect,onNew}:{tasks:TaskSummary[];selected:string;onSelect:(key:string)=>void;onNew:()=>void}){
  const [sessions,setSessions]=useState(()=>readStored<Record<string,Session>>('rfq-chat-v1',{}));
