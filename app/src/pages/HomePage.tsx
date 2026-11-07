@@ -79,7 +79,7 @@ export function HomePage({
       {showNew && <div className="modal-mask" onClick={()=>{if(!busy)setShowNew(false)}}><div className="modal" onClick={e=>e.stopPropagation()}>
         <div className="panel-title">新建询价</div>
         <button className="btn" disabled={busy} onClick={()=>fileRef.current?.click()}>选择文件</button>
-        <input ref={fileRef} type="file" multiple accept=".eml,.txt,.md,.csv,.xlsx,.pdf" style={{display:'none'}} onChange={e=>{setFiles(Array.from(e.target.files||[]));requestId.current=crypto.randomUUID();setErr('');}} />
+        <input ref={fileRef} type="file" multiple accept=".eml,.txt,.md,.csv,.xlsx,.pdf,.png,.jpg,.jpeg,.webp" style={{display:'none'}} onChange={e=>{setFiles(Array.from(e.target.files||[]));requestId.current=crypto.randomUUID();setErr('');}} />
         {files.length>0&&<ul>{files.map((f,i)=><li key={i}>{f.name}</li>)}</ul>}
         <textarea className="new-task-text" rows={8} aria-label="询价内容或补充要求" placeholder="粘贴询价内容或补充要求…" disabled={busy} value={text} onChange={e=>{setText(e.target.value);requestId.current=crypto.randomUUID()}} />
         {err&&<div role="alert" className="hint">{err}</div>}

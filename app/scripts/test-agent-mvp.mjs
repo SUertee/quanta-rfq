@@ -69,3 +69,18 @@ assert.equal(buildDraft({...marginInput,lines:[{...line,quantity:50}]},[{...cost
 assert.throws(()=>validateAgentInput({...input,policy:{marginRate:1}}));
 assert.throws(()=>validateAgentInput({...input,policy:{marginRate:-0.1}}));
 console.log('PASS: marginRate uses selling-price margin, overrides legacy markupRate, applies premium/discount before final cent rounding');
+
+const {default:initResourceSql}=await import('sql.js');
+const {createAgentAuditStore}=await import('../server/agent-audit-store.mjs');
+const ResourceSQL=await initResourceSql();
+const resourceDb=new ResourceSQL.Database();
+const resourceStore=createAgentAuditStore(resourceDb,()=>{});
+const resourceEvidence={one:[{id:'evidence-test',source:'inventory',source_key:'A',snapshot:{...cost,extra:{apiKey:'must-not-copy'}}}]};
+const resourceRun=await runAgent(input,[{...cost,lastPurchasePrice:999}],{modelOverride:new ScriptModel(calls),resources:resourceEvidence,audit:{store:resourceStore,inquiryId:'test'}});
+assert.equal(resourceRun.draft.lines[0].suggestedPrice,125,'pricing uses the same persisted inventory evidence as candidates');
+assert.equal(resourceRun.draft.lines[0].candidates[0].evidenceId,'evidence-test');
+const resourceAudit=resourceStore.getRun(resourceRun.runId);
+assert.equal(resourceAudit.resources.one[0].snapshot.lastPurchasePrice,100);
+assert.ok(!JSON.stringify(resourceAudit.resources).includes('must-not-copy'));
+assert.ok(!JSON.stringify(resourceRun.draft.lines[0].candidates).includes('must-not-copy'));
+console.log('PASS: candidate/pricing snapshot consistency, evidence identity, persisted resource audit and private-extra exclusion');

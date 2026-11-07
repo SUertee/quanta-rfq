@@ -12,6 +12,9 @@ export interface IntakeBatch {
   files: {
     id: string;
     name: string;
+    source: string;
+    file_type: string;
+    document_type: string;
     status: string;
     parent_id: string | null;
     error: string | null;
@@ -27,6 +30,10 @@ export interface IntakeBatch {
     id: string;
     contentId: string;
     method: string;
+    rawFields?: Record<string, unknown>;
+    fieldSources?: Record<string, { contentId: string | null; method: string; locator?: Record<string, unknown> }>;
+    normalizationVersion?: string;
+    rawFieldsStatus?: string;
   })[];
 }
 export function batchEmail(b: IntakeBatch): EmailSample {

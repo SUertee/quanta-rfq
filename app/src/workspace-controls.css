@@ -497,3 +497,13 @@ html:has(dialog[open]) { overflow:hidden; }
  .layout.layout-reference .sidebar .nav-item { flex:0 0 auto;font-size:14px;line-height:1.5;padding:10px 14px; }
  .layout-reference .sidebar .nav-count { font-size:12px; }
 }
+
+/* Source values and candidate checks stay visible alongside their evidence. */
+.normalization-values { overflow-x:auto;margin:16px 0;border:1px solid var(--line);border-radius:var(--radius-control); }
+.normalization-values table { width:100%;border-collapse:collapse;font-size:14px;text-align:left; }
+.normalization-values th,.normalization-values td { padding:10px 14px;border-bottom:1px solid var(--line);overflow-wrap:anywhere; }
+.normalization-values thead { background:var(--hal-hover); }
+.resource-checks { display:grid;gap:10px;margin:14px 0;font-size:14px; }
+.resource-checks>.badge { justify-self:start; }
+.resource-checks ul { margin:0;padding-left:20px;line-height:1.7; }
+.resource-checks>span { color:var(--ink-2);overflow-wrap:anywhere; }

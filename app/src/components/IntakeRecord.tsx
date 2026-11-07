@@ -6,8 +6,13 @@ type Evidence = {
   id: string;
   source: string;
   source_key: string;
-  snapshot: Record<string, unknown>;
+  matched_at?: string;
+  current_match?: { state: string; checks: { code: string; state: string; message: string }[]; asOf: string; ruleVersion: string };
+  snapshot: Record<string, unknown> & { match?: { state: string; checks: { code: string; state: string; message: string }[]; asOf: string; ruleVersion: string } };
 };
+const documentTypes: Record<string, string> = { customer_inquiry: '客户询价', supplier_quote: '供应商报价', inventory: '库存', certificate: '证书', unknown: '待分类' };
+const matchStates: Record<string, string> = { usable: '条件满足', needs_review: '待确认', conflict: '条件冲突' };
+const fieldLabels: Record<string, string> = { partNumber: '件号', quantity: '数量', uom: '单位', condition: '件状', dueDate: '需求日期', description: '描述', requirement: '要求', mpn: '制造商件号', priority: '优先级', manualPn: '手册件号', productScope: '产品范围' };
 const fileStates: Record<string, string> = {
   parsed: "已读取",
   needs_ocr: "待识别",
@@ -77,6 +82,11 @@ export function IntakeRecord({
   const line = lines.find((l) => l.id === selected) || lines[0];
   const content = record?.contents.find((c) => c.id === line?.contentId);
   const file = record?.files.find((f) => f.id === content?.file_id);
+  const changedFields = Object.entries(fieldLabels).filter(([key]) => {
+    if (line?.fieldSources?.[key]?.method === 'manual') return true;
+    const original = line?.rawFields?.[key];
+    return original != null && String(original) !== String((line as Record<string, unknown>)[key]);
+  });
   const evidence =
     (line as typeof line & { evidence?: Evidence[] })?.evidence || [];
   const toggle = (next: Pane) => setPane((old) => (old === next ? null : next));
@@ -174,7 +184,7 @@ export function IntakeRecord({
                   <span>
                     <b>{f.name}</b>
                     <small>
-                      {f.parent_id ? "邮件附件 · " : ""}
+                      {documentTypes[f.document_type] || "待分类"} · {f.file_type?.toUpperCase()} · {f.parent_id ? "邮件附件 · " : ""}
                       {fileStates[f.status] || f.status}
                       {f.error ? " · " + f.error : ""}
                     </small>
@@ -249,6 +259,24 @@ export function IntakeRecord({
                         </div>
                         <pre>{content?.text || "无原文"}</pre>
                       </section>
+                      {line.rawFieldsStatus === 'legacy_unknown' && <p>历史记录的原始字段值未保留，请核对原文。</p>}
+                      {changedFields.length > 0 && (
+                        <div className="normalization-values">
+                          <table>
+                            <thead><tr><th>字段</th><th>原始值</th><th>当前值</th></tr></thead>
+                            <tbody>{changedFields.map(([key, label]) => (
+                              <tr key={key}>
+                                <th>{label}</th>
+                                <td>{line.rawFields?.[key] == null ? '原文未提供' : value(line.rawFields[key])}</td>
+                                <td>
+                                  {value((line as Record<string, unknown>)[key])}
+                                  {line.fieldSources?.[key]?.method === 'manual' && <span className="badge">人工修改</span>}
+                                </td>
+                              </tr>
+                            ))}</tbody>
+                          </table>
+                        </div>
+                      )}
                       {evidence.length ? (
                         evidence.map((e) => (
                           <article className="evidence-card" key={e.id}>
@@ -256,8 +284,7 @@ export function IntakeRecord({
                               <strong>
                                 {e.source === "inventory"
                                   ? "内部库存与成本"
-                                  : value(e.snapshot.supplierName) ||
-                                    "供应商报价"}
+                                  : (e.snapshot.supplierName ? String(e.snapshot.supplierName) : "供应商报价")}
                               </strong>
                               <span>
                                 {e.snapshot.dataSource === "official_demo"
@@ -267,6 +294,15 @@ export function IntakeRecord({
                                     : "供应商报价"}
                               </span>
                             </header>
+                            {e.current_match && (
+                              <section className="resource-checks" aria-label="候选适用条件">
+                                <strong className={`badge ${e.current_match.state === 'usable' ? 'green' : e.current_match.state === 'conflict' ? 'red' : 'yellow'}`}>
+                                  {matchStates[e.current_match.state] || '待确认'}
+                                </strong>
+                                <ul>{e.current_match.checks.filter(check => check.state !== 'pass').map(check => <li key={check.code}>{check.message}</li>)}</ul>
+                                <span>标准件号匹配 · {e.source_key}{e.matched_at && ` · 取数 ${e.matched_at.slice(0, 10)}`}</span>
+                              </section>
+                            )}
                             <dl>
                               {(e.source === "inventory"
                                 ? [

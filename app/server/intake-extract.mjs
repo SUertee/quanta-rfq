@@ -1,3 +1,4 @@
+import { normalizeLine, normalizeQuantity } from "./normalization.mjs";
 import { z } from "zod";
 const aliases = {
   partNumber: ["件号", "料号", "part number", "partnumber", "pn", "p/n"],
@@ -17,10 +18,7 @@ const fieldFor = (x) =>
   Object.entries(aliases).find(([k, values]) =>
     [k.toLowerCase(), ...values].includes(String(x).trim().toLowerCase()),
   )?.[0];
-const numeric = (x) => {
-  const n = Number(String(x ?? "").replace(/,/g, ""));
-  return String(x ?? "").trim() && Number.isFinite(n) && n > 0 ? n : null;
-};
+const numeric = normalizeQuantity;
 function normalize(row, chunk, method) {
   const fields = {};
   for (const k of Object.keys(aliases)) {
@@ -37,14 +35,15 @@ function normalize(row, chunk, method) {
   if (fields.quantity === null) issues.push("缺少有效数量");
   if (!fields.uom) issues.push("缺单位");
   if (!fields.condition) issues.push("缺件状");
-  return {
+  return normalizeLine({
     ...fields,
+    rawFields: { ...row },
     contentId: chunk.id,
     raw: chunk.text,
     locator: chunk.locator,
     method,
     issues,
-  };
+  });
 }
 export function extractStructured(chunks) {
   const lines = [],
@@ -81,7 +80,7 @@ export function extractStructured(chunks) {
     );
     if (pn) {
       const qty = c.text.match(
-        /(?:数量|QTY|Quantity)\s*[:：=]?\s*(\d+(?:\.\d+)?)/i,
+        /(?:数量|QTY|Quantity)\s*[:：=]?\s*([^\s:：=]+(?:[ \t]+\d[\d,.]*)?)/i,
       );
       const unit =
         c.text.match(/(?:单位|UOM|Unit)\s*[:：=]?\s*(EA|IN|FT|Each|PCS)\b/i) ||
@@ -186,9 +185,7 @@ export async function extractSemantic(
     const verified = { ...row };
     if (
       row.quantity !== null &&
-      !new RegExp(
-        `(^|[^0-9.])${String(row.quantity).replace(".", "\\.")}([^0-9.]|$)`,
-      ).test(chunk.text.replace(/,/g, ""))
+      !(chunk.text.match(/(?<![A-Za-z0-9.])[+-]?\d[A-Za-z0-9,.]*(?:[eE][+-]?\d+)?(?:[ \t]+\d[A-Za-z0-9,.]*)*(?![A-Za-z0-9.])/g) || []).some(token => normalizeQuantity(token) === row.quantity)
     ) {
       verified.quantity = null;
       issues.push("模型数量无法在原文定位，已清空");

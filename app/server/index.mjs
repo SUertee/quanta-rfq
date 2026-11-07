@@ -1,3 +1,4 @@
+import { normalizePartNumber } from "./normalization.mjs";
 import {readChatFiles} from './chat-files.mjs';
 import {platformChat} from './platform-chat.mjs';
 if (Number(process.versions.node.split('.')[0]) < 22) {
@@ -88,6 +89,9 @@ function persist() {
 }
 
 function upsertRow(row) {
+  const matches = db.exec('SELECT partNumber FROM inventory WHERE normalized_part_number=?', [normalizePartNumber(row.partNumber)])[0]?.values || [];
+  if (matches.length > 1) throw Object.assign(new Error('标准件号对应多条库存，请先处理重复资源'), {status:409});
+  if (matches.length === 1) row = {...row,partNumber:matches[0][0]};
   const provided = {};
   const extra = {};
   for (const [k, v] of Object.entries(row)) {
@@ -117,6 +121,7 @@ function upsertRow(row) {
       JSON.stringify(extra),
     ]);
   }
+  db.run("UPDATE inventory SET normalized_part_number=? WHERE partNumber=?", [normalizePartNumber(row.partNumber), row.partNumber]);
 }
 
 function allRows() {
@@ -195,17 +200,17 @@ http.createServer(async (req, res) => {
     if (req.method === 'POST' && url.pathname === '/api/agent/run') {
       const origin = req.headers.origin;
       if (Number(req.headers['content-length'] || 0) > 300000) { res.writeHead(413); res.end(JSON.stringify({error:'请求过大'})); return; }
-      let input, inquiryId=null;
+      let input, inquiryId=null, resources={};
       try {
         let body=await readBody(req,300000);
-        if(body.inquiryId||body.batchId){const b=intake.detail(body.inquiryId||body.batchId);if(!b)throw new Error('询价不存在');inquiryId=b.id;body=resolveAgentScope(body,b);}
+        if(body.inquiryId||body.batchId){const b=intake.detail(body.inquiryId||body.batchId);if(!b)throw new Error('询价不存在');inquiryId=b.id;body=resolveAgentScope(body,b);const selectedKeys=new Set(body.lines.map(line=>line.key));resources=Object.fromEntries(b.lines.filter(line=>selectedKeys.has(`intake-${b.id}-${line.lineNo}`)).map(line=>[`intake-${b.id}-${line.lineNo}`,line.evidence]));}
         input = validateAgentInput(body);
       }
       catch (error) { if (!res.destroyed && !res.writableEnded) { if (!res.headersSent) res.writeHead(error?.status === 413 ? 413 : 400); res.end(JSON.stringify({ error: error?.status === 413 ? '请求超过 300KB 限制' : '指令或询价数据无效：需 1–150 行、正数数量及有效指令' })); } return; }
       const controller = new AbortController();
       res.on('close', () => { if (!res.writableEnded) controller.abort(); });
       const timer = setTimeout(() => controller.abort(), 90000);
-      try { res.end(JSON.stringify(await runAgent(input, allRows().cost, { signal: controller.signal, audit:{store:agentAudit,actorId:'local-user',inquiryId} }))); }
+      try { res.end(JSON.stringify(await runAgent(input, allRows().cost, { signal: controller.signal, resources, audit:{store:agentAudit,actorId:'local-user',inquiryId} }))); }
       catch (error) { if (!res.destroyed && !res.writableEnded) { if (!res.headersSent) res.writeHead(502); res.end(JSON.stringify({error:'Agent 执行失败或超时，未写入任何报价；请检查模型工具调用能力后重试',runId:error.auditRunId||null})); } }
       finally { clearTimeout(timer); }
       return;
@@ -238,9 +243,13 @@ http.createServer(async (req, res) => {
       const { rows } = await readBody(req);
       if (!Array.isArray(rows) || !rows.length) { res.writeHead(400); res.end(JSON.stringify({ error: 'rows 为空' })); return; }
       let ok = 0, skip = 0;
-      for (const r of rows) {
-        if (r?.partNumber) { upsertRow(r); ok++; } else skip++;
-      }
+      db.run('BEGIN');
+      try {
+        for (const r of rows) {
+          if (r?.partNumber) { upsertRow(r); ok++; } else skip++;
+        }
+        db.run('COMMIT');
+      } catch (error) { db.run('ROLLBACK'); throw error; }
       persist();
       res.end(JSON.stringify({ ok, skip }));
     } else if (req.method === 'PUT' && pnMatch) {

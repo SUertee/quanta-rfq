@@ -1,3 +1,5 @@
+import { normalizeLine, normalizePartNumber, DOCUMENT_TYPES, NORMALIZATION_VERSION } from "./normalization.mjs";
+import { evaluateResource } from "./resource-match.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import { decodeFile, INTAKE_PARSER_VERSION } from "./intake-parser.mjs";
 import { extractStructured, extractSemantic } from "./intake-extract.mjs";
@@ -78,6 +80,40 @@ export function initIntake(db) {
  CREATE TABLE IF NOT EXISTS line_revision(id TEXT PRIMARY KEY,line_id TEXT NOT NULL REFERENCES inquiry_line(id),version INTEGER NOT NULL,fields TEXT NOT NULL,operator TEXT NOT NULL,created_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS schema_migration(id TEXT PRIMARY KEY,applied_at TEXT NOT NULL);
  `);
+  migrateNormalization(db);
+}
+export function migrateNormalization(db) {
+  const has = (table, name) => rows(db, `PRAGMA table_info("${table}")`).some(column => column.name === name);
+  db.run("BEGIN");
+  try {
+    if (!has('file', 'document_type')) db.run("ALTER TABLE file ADD COLUMN document_type TEXT NOT NULL DEFAULT 'unknown'");
+    if (!has('inquiry_line', 'part_number')) db.run("ALTER TABLE inquiry_line ADD COLUMN part_number TEXT");
+    db.run("CREATE INDEX IF NOT EXISTS inquiry_line_part_number ON inquiry_line(part_number)");
+    if (!has('inventory', 'normalized_part_number')) db.run("ALTER TABLE inventory ADD COLUMN normalized_part_number TEXT");
+    if (!has('price_resource', 'normalized_part_number')) db.run("ALTER TABLE price_resource ADD COLUMN normalized_part_number TEXT");
+    db.run("CREATE INDEX IF NOT EXISTS price_resource_normalized_part ON price_resource(normalized_part_number)");
+    db.run("CREATE INDEX IF NOT EXISTS inventory_normalized_part ON inventory(normalized_part_number)");
+    for (const stock of rows(db, 'SELECT partNumber FROM inventory')) db.run('UPDATE inventory SET normalized_part_number=? WHERE partNumber=?', [normalizePartNumber(stock.partNumber), stock.partNumber]);
+    for (const price of rows(db, 'SELECT id,part_number FROM price_resource')) db.run('UPDATE price_resource SET normalized_part_number=? WHERE id=?', [normalizePartNumber(price.part_number), price.id]);
+    const migrationId = `normalization-v${NORMALIZATION_VERSION}`;
+    const applied = rows(db, "SELECT id FROM schema_migration WHERE id=?", [migrationId]).length > 0;
+    if (applied) { db.run("COMMIT"); return; }
+    for (const row of rows(db, "SELECT id,inquiry_id,fields,issues,version,content_id,method FROM inquiry_line")) {
+      const previous = JSON.parse(row.fields);
+      const fields = normalizeLine({ ...previous, rawFields: previous.rawFields || {}, rawFieldsStatus: previous.rawFields ? "recorded" : "legacy_unknown" }, { contentId: previous.rawFields ? row.content_id : null, method: previous.rawFields ? row.method : "legacy_unknown" });
+      const changed = ['partNumber','quantity','uom','condition','dueDate'].some(key=>previous[key]!==fields[key]) || row.issues !== JSON.stringify(fields.issues);
+      if (changed) {
+        db.run("INSERT INTO line_revision VALUES(?,?,?,?,?,?)", [randomUUID(), row.id, row.version, row.fields, "normalization_migration", new Date().toISOString()]);
+        db.run("UPDATE inquiry_line SET version=version+1 WHERE id=?", [row.id]);
+        const inquiry = rows(db, 'SELECT issues FROM inquiry WHERE id=?', [row.inquiry_id])[0];
+        const issues = [...new Set([...JSON.parse(inquiry.issues), '标准字段已更新，请刷新依据'])];
+        db.run("UPDATE inquiry SET status='needs_input',issues=? WHERE id=?", [JSON.stringify(issues), row.inquiry_id]);
+      }
+      db.run("UPDATE inquiry_line SET fields=?,issues=?,part_number=? WHERE id=?", [JSON.stringify(fields), JSON.stringify(fields.issues), fields.partNumber, row.id]);
+    }
+    db.run("INSERT INTO schema_migration VALUES(?,?)", [migrationId, new Date().toISOString()]);
+    db.run("COMMIT");
+  } catch (error) { db.run("ROLLBACK"); throw error; }
 }
 export function seedPrices(db, seed) {
   if (
@@ -87,12 +123,13 @@ export function seedPrices(db, seed) {
   db.run("BEGIN");
   try {
     for (const p of seed) {
-      db.run("INSERT OR IGNORE INTO price_resource VALUES(?,?,?,?,?)", [
+      db.run("INSERT OR IGNORE INTO price_resource(id,part_number,data,source,updated_at,normalized_part_number) VALUES(?,?,?,?,?,?)", [
         p.id,
         p.partNumber,
         JSON.stringify(p),
         "official_demo",
         new Date().toISOString(),
+        normalizePartNumber(p.partNumber),
       ]);
     }
     db.run("INSERT INTO schema_migration VALUES(?,?)", [
@@ -141,7 +178,7 @@ export function createIntakeService(
       issues: JSON.parse(batch.issues),
       files: rows(
         db,
-        "SELECT id,inquiry_id,parent_id,source,file_type,mime_type,name,sha256,size,status,parser_version,metadata,error,created_at FROM file WHERE inquiry_id=? ORDER BY rowid",
+        "SELECT id,inquiry_id,parent_id,source,file_type,document_type,mime_type,name,sha256,size,status,parser_version,metadata,error,created_at FROM file WHERE inquiry_id=? ORDER BY rowid",
         [id],
       ).map((f) => ({ ...f, metadata: JSON.parse(f.metadata) })),
       contents: rows(
@@ -167,34 +204,34 @@ export function createIntakeService(
         version: l.version,
         evidence: rows(db, "SELECT * FROM evidence WHERE line_id=?", [
           l.id,
-        ]).map((e) => ({ ...e, snapshot: JSON.parse(e.snapshot) })),
+        ]).map((e) => {
+          const snapshot = JSON.parse(e.snapshot);
+          return { ...e, snapshot, current_match: evaluateResource(JSON.parse(l.fields), snapshot, { source: e.source, sourceKey: e.source_key }) };
+        }),
       })),
     };
   }
   function matchEvidence(lineId, partNumber) {
+    const fields = JSON.parse(one("SELECT fields FROM inquiry_line WHERE id=?", [lineId]).fields);
+    partNumber = normalizePartNumber(partNumber);
+    db.run("UPDATE inquiry_line SET part_number=? WHERE id=?", [partNumber, lineId]);
     db.run(
       "INSERT INTO evidence_history SELECT *,? FROM evidence WHERE line_id=?",
       [now(), lineId],
     );
     db.run("DELETE FROM evidence WHERE line_id=?", [lineId]);
     if (!partNumber) return;
-    const stock = one("SELECT * FROM inventory WHERE partNumber=?", [
-      partNumber,
-    ]);
-    if (stock)
+    const stocks = rows(db, "SELECT * FROM inventory WHERE normalized_part_number=?", [partNumber]);
+    for (const stock of stocks)
       db.run("INSERT INTO evidence VALUES(?,?,?,?,?,?)", [
         randomUUID(),
         lineId,
         "inventory",
-        partNumber,
-        JSON.stringify(stock),
+        stock.partNumber,
+        JSON.stringify({ ...stock, match: evaluateResource(fields, stock, { source: "inventory", sourceKey: stock.partNumber }) }),
         now(),
       ]);
-    for (const price of rows(
-      db,
-      "SELECT * FROM price_resource WHERE part_number=?",
-      [partNumber],
-    ))
+    for (const price of rows(db, "SELECT * FROM price_resource WHERE normalized_part_number=?", [partNumber]))
       db.run("INSERT INTO evidence VALUES(?,?,?,?,?,?)", [
         randomUUID(),
         lineId,
@@ -204,6 +241,7 @@ export function createIntakeService(
           ...JSON.parse(price.data),
           dataSource: price.source,
           dataUpdatedAt: price.updated_at,
+          match: evaluateResource(fields, JSON.parse(price.data), { source: "supplier_price", sourceKey: price.id }),
         }),
         now(),
       ]);
@@ -290,6 +328,7 @@ export function createIntakeService(
         !/^[A-Za-z0-9+/]*={0,2}$/.test(f.base64)
       )
         throw Object.assign(new Error("文件名或base64无效"), { status: 400 });
+      if (f.document_type && !DOCUMENT_TYPES.includes(f.document_type)) throw Object.assign(new Error("无效资料类型"), { status: 400 });
       const bytes = Buffer.from(f.base64, "base64");
       if (bytes.length > 8_000_000)
         throw Object.assign(new Error("单文件不得超过8MB"), { status: 413 });
@@ -297,6 +336,7 @@ export function createIntakeService(
         name: f.name,
         bytes,
         mime: String(f.mime || "application/octet-stream"),
+        documentType: f.document_type || "customer_inquiry",
       };
     });
     if (files.reduce((n, f) => n + f.bytes.length, 0) > 24_000_000)
@@ -308,7 +348,7 @@ export function createIntakeService(
         source,
         operator,
         title,
-        files: files.map((f) => [f.name, hash(f.bytes)]),
+        files: files.map((f) => f.documentType === "customer_inquiry" ? [f.name, hash(f.bytes)] : [f.name, hash(f.bytes), f.documentType]),
       }),
     );
     const old = one("SELECT * FROM inquiry WHERE request_id=?", [
@@ -366,6 +406,7 @@ export function createIntakeService(
           at,
         ],
       );
+      db.run("UPDATE file SET document_type=? WHERE id=?", [file.documentType || "customer_inquiry", fid]);
       persist();
       try {
         const parsed = await decodeFile(file.name, file.bytes);
@@ -403,16 +444,17 @@ export function createIntakeService(
             c.text,
             c.cells ? JSON.stringify(c.cells) : null,
           ]);
-          chunks.push(chunk);
+          if (!file.documentType || file.documentType === "customer_inquiry") chunks.push(chunk);
         }
         db.run("UPDATE file SET status=? WHERE id=?", [state, fid]);
+        if (file.documentType && file.documentType !== "customer_inquiry") issues.push(`${file.name}：该资料已保存，需单独分类处理后使用`);
         if (state === "needs_ocr")
           issues.push(
             `${file.name}：部分页面无文本，待配置OCR或补充可读取材料`,
           );
         if (parsed.unsupported)
           issues.push(`${file.name}：暂不支持此文件类型，原件已保存`);
-        for (const child of parsed.children) await add(child, fid, depth + 1);
+        for (const child of parsed.children) await add({ ...child, documentType: file.documentType || "customer_inquiry" }, fid, depth + 1);
       } catch (e) {
         db.run("UPDATE file SET status=?,error=? WHERE id=?", [
           "failed",
@@ -517,6 +559,8 @@ export function createIntakeService(
       db.run("ROLLBACK");
       throw e;
     }
+    const current = one('SELECT issues FROM inquiry WHERE id=?', [id]);
+    db.run('UPDATE inquiry SET issues=? WHERE id=?', [JSON.stringify(JSON.parse(current.issues).filter(issue=>issue!=='标准字段已更新，请刷新依据')),id]);
     updateStatus(id);
     persist();
     return detail(id);
@@ -526,7 +570,7 @@ export function createIntakeService(
     { partNumber, quantity, uom, description = "", operator = "本机用户" },
   ) {
     if (!one("SELECT id FROM inquiry WHERE id=?", [batchId]))
-      throw Object.assign(new Error("批次不存在"), { status: 404 });
+      throw Object.assign(new Error("询价不存在"), { status: 404 });
     if (
       typeof partNumber !== "string" ||
       !partNumber.trim() ||
@@ -547,7 +591,7 @@ export function createIntakeService(
       cid = randomUUID(),
       lid = randomUUID(),
       at = now();
-    const fields = {
+    const fields = normalizeLine({
       partNumber: partNumber.trim(),
       quantity,
       uom: uom.trim(),
@@ -556,7 +600,7 @@ export function createIntakeService(
       issues: ["缺件状"],
       contentId: cid,
       method: "manual",
-    };
+    });
     const bytes = Buffer.from(JSON.stringify({ operator, ...fields }));
     db.run("BEGIN");
     try {
@@ -578,6 +622,7 @@ export function createIntakeService(
           at,
         ],
       );
+      db.run("UPDATE file SET document_type=? WHERE id=?", ["customer_inquiry", fid]);
       db.run("INSERT INTO file_content VALUES(?,?,?,?,?,?,?)", [
         cid,
         fid,
@@ -664,11 +709,9 @@ export function createIntakeService(
         throw Object.assign(new Error("字段类型无效"), { status: 400 });
       fields[k] = v;
     }
-    const issues = [];
-    if (!fields.partNumber) issues.push("缺件号");
-    if (!(fields.quantity > 0)) issues.push("缺少有效数量");
-    if (!fields.uom) issues.push("缺单位");
-    if (!fields.condition) issues.push("缺件状");
+    const normalized = normalizeLine({ ...fields, fieldSources: { ...fields.fieldSources, ...Object.fromEntries(Object.keys(patch).map(key => [key, { contentId: null, originalContentId: old.content_id, method: "manual", operator: String(operator).slice(0, 100), value: patch[key] }])) } });
+    Object.assign(fields, normalized);
+    const issues = [...normalized.issues];
     fields.issues = issues;
     db.run("BEGIN");
     try {

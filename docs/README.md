@@ -10,6 +10,7 @@
 
 ## Agent 与数据
 
+- [资料归一化与资源匹配](design/资料归一化与资源匹配.md)
 - [Agent 能力](design/agent能力设计.md)
 - [工具与 Skill](design/agent工具与Skill设计.md)
 - [提示词](design/agent提示词设计.md)

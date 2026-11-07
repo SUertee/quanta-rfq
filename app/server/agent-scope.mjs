@@ -8,7 +8,7 @@ export function resolveAgentScope(body, inquiry) {
     seen.add(requested.key);
     const line = authoritative.get(requested.key);
     if (!line) throw new Error('line does not belong to inquiry');
-    return { key:requested.key, partNumber:line.partNumber||'', description:line.description||'', quantity:line.quantity, uom:line.uom||'', condition:line.condition||'', urgency:line.priority||'' };
+    return { key:requested.key, partNumber:line.partNumber||'', description:line.description||'', quantity:line.quantity, uom:line.uom||'', condition:line.condition||'', urgency:line.priority||'', requirement:line.requirement||'', dueDate:line.dueDate||'' };
   });
   return { ...body, lines };
 }
