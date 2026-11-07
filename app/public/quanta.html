@@ -4,12 +4,25 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#ffffff">
 <title>Quanta · AI 报价搭档</title>
 <script id="landing-entry-scroll">
-// Start fresh visits, reloads and history restores at the hero; explicit section links stay usable.
+// Every entry starts at the hero, even when an old shared URL contains a fragment.
 (()=>{
   history.scrollRestoration='manual';
-  const reset=()=>{if(!location.hash)window.scrollTo({top:0,left:0,behavior:'instant'});};
+  const reset=()=>{
+    if(location.hash)history.replaceState(history.state,'',location.pathname+location.search);
+    window.scrollTo({top:0,left:0,behavior:'instant'});
+  };
   reset();
   addEventListener('pageshow',()=>{reset();requestAnimationFrame(reset);});
+  // In-page navigation scrolls without leaving a fragment to reopen midway next time.
+  document.addEventListener('click',event=>{
+    if(event.defaultPrevented||event.button>0||event.metaKey||event.ctrlKey||event.shiftKey||event.altKey)return;
+    const anchor=event.target?.closest?.('a[href^="#"]');
+    if(!anchor)return;
+    let id;try{id=decodeURIComponent(anchor.getAttribute('href').slice(1));}catch{return;}
+    const section=document.getElementById(id);if(!section)return;
+    event.preventDefault();
+    section.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion:reduce)').matches?'instant':'smooth',block:'start'});
+  });
 })();
 </script>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&display=swap" rel="stylesheet">
