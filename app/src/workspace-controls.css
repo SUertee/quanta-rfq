@@ -455,8 +455,11 @@ html:has(dialog[open]) { overflow:hidden; }
 .floating-assistant:not(.expanded) .floating-assistant-panel .platform-chat-form>button { visibility:hidden; }
 .floating-assistant:not(.expanded) .floating-assistant-panel .platform-chat-form,
 .floating-assistant:not(.expanded) .floating-assistant-panel .rfq-chat-composer { padding-right:64px; }
-.floating-assistant-panel.is-open { transform:none;animation:assistant-anchor-reveal 240ms cubic-bezier(.2,.8,.2,1) both; }
-@keyframes assistant-anchor-reveal { from { clip-path:circle(26px at var(--anchor-local-x) var(--anchor-local-y)); } to { clip-path:circle(150% at var(--anchor-local-x) var(--anchor-local-y)); } }
+.floating-assistant-panel.is-open { overflow:hidden;transform-origin:0 0;animation:assistant-anchor-reveal 480ms cubic-bezier(.22,.8,.28,1) both; }
+@keyframes assistant-anchor-reveal {
+ from { transform:translate(var(--panel-start-x),var(--panel-start-y)) scale(var(--panel-start-scale-x),var(--panel-start-scale-y));border-radius:50%; }
+ to { transform:translate(0,0) scale(1,1);border-radius:20px; }
+}
 @media(prefers-reduced-motion:reduce) { .floating-assistant-panel.is-open { animation:none; } }
 .assistant-capsule { border:0; }
 .floating-assistant:not(.expanded) .platform-chat-form { margin:12px 4px 4px 12px; }
