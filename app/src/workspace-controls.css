@@ -723,3 +723,19 @@ html:has(.layout-reference),body:has(.layout-reference) { height:100%;overflow:h
 .floating-assistant:not(.expanded):not(.docked) .rfq-chat-composer textarea { height:56px;min-height:56px;max-height:120px;padding:14px 0 14px 44px; }
 .layout-reference .copilot-icon { display:inline-grid;place-items:center;padding:0;line-height:1; }
 .layout-reference .rfq-embedded .rfq-chat-suggestions button { display:flex;align-items:center;justify-content:center;text-align:center; }
+
+/* All record pages share the same fixed-height table workspace. */
+.layout-reference.mode-workbench.view-inspect .content,.layout-reference.mode-workbench.view-inventory .content { overflow:hidden;scrollbar-gutter:auto; }
+.layout-reference .page-inspect,.layout-reference .page-inventory { display:flex;flex-direction:column;height:100%;min-height:0;padding-top:24px; }
+.layout-reference .page-inspect>.page-heading,.layout-reference .page-inventory>.page-heading { flex:0 0 auto;margin:0 0 20px; }
+.layout-reference .page-inspect>.issue-strip,.layout-reference .page-inventory>.inventory-controls { flex:0 0 auto;max-height:28%;overflow-y:auto; }
+.layout-reference .page-inspect>.panel,.layout-reference .page-inventory>.panel { display:flex;flex-direction:column;flex:1;min-height:0;margin-bottom:0;overflow:hidden; }
+.layout-reference .page-inspect .list-toolbar,.layout-reference .page-inventory .inventory-toolbar { flex:0 0 auto; }
+.layout-reference .page-inspect .data-grid { display:flex;flex-direction:column;flex:1;min-height:0;overflow:hidden; }
+.layout-reference .page-inspect .data-grid>.table-wrap,.layout-reference .page-inventory>.panel>.table-wrap { flex:1;min-height:0;max-height:none;overflow:auto;overscroll-behavior:contain;scrollbar-gutter:stable; }
+.layout-reference .page-inspect .table-pagination,.layout-reference .page-inventory .table-pagination { flex:0 0 auto; }
+.layout-reference .page-inventory .add-material-inline { max-height:35dvh;overflow:auto; }
+.settings-nav-entry { min-width:0; }
+.settings-nav-entry>button { width:100%; }
+.settings-group-label { display:block;padding:12px 14px 6px;color:var(--ink-2);font-size:13px;font-weight:500; }
+@media(max-width:700px) { .layout-reference .page-inspect,.layout-reference .page-inventory { padding-top:12px; } .settings-nav-entry { flex-shrink:0; } }

@@ -34,7 +34,6 @@ export default function App() {
   const [assignees, setAssignees] = useStoredState<Record<string, string>>('task-assignees', {});
   const [manualTasks, setManualTasks] = useStoredState<string[]>('manual-tasks', []);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsScope,setSettingsScope] = useState<'platform'|'business'>('platform');
   const [importRequested, setImportRequested] = useState(new URLSearchParams(location.search).get('new') === '1');
   const [activeChat,setActiveChat]=useStoredState<string|null>('active-chat-v1',null);
   const [quickMessage,setQuickMessage]=useState<{id:number;text:string}|null>(null);
@@ -188,11 +187,10 @@ export default function App() {
             <span className="nav-label">库存与成本</span>
           </button>
 
-          <button className="nav-item" onClick={()=>{setSettingsScope('business');setSettingsOpen(true);}}><span className="nav-label">业务配置</span></button>
           <button className={`nav-item ${mode==='agent'?'active':''}`} onClick={()=>{setMode('agent');setAssistantOpen(true);}}><span className="nav-label">AI 对话</span></button>
+          <button className="nav-item" onClick={()=>setSettingsOpen(true)}><span className="nav-label">设置</span></button>
         </nav>
         <div className="sidebar-foot">
-          <button className="sidebar-settings" aria-label="平台设置" title="平台设置" onClick={()=>{setSettingsScope('platform');setSettingsOpen(true);}}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" aria-hidden="true"><path d="M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1 1-3Z"/><circle cx="12" cy="12" r="3"/></svg><span>设置</span></button>
           <button className="avatar" aria-label="用户设置" onClick={() => setProfileOpen(true)}>{userName.slice(0, 1) || '我'}</button>
         </div>
       </aside>
@@ -292,7 +290,7 @@ export default function App() {
         {view === 'eval' && <EvalPage ds={dsx2} />}
         </>}
       </main>
-        {settingsOpen && <SettingsPage scope={settingsScope} policy={policyFull} setPolicy={setPolicy} onClose={() => setSettingsOpen(false)} onRefresh={() => setInvVersion((v) => v + 1)} />}
+        {settingsOpen && <SettingsPage scope="all" policy={policyFull} setPolicy={setPolicy} onClose={() => setSettingsOpen(false)} onRefresh={() => setInvVersion((v) => v + 1)} />}
     </div>
   );
 }

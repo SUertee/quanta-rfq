@@ -20,14 +20,14 @@ type SettingsSection = typeof SETTING_SECTIONS[number]['id'];
 export function SettingsPage({
   scope = 'platform', policy: initialPolicy, setPolicy: commitPolicy, onRefresh, onClose,
 }: {
-  scope?: 'platform'|'business';
+  scope?: 'platform'|'business'|'all';
   policy: PricingPolicy;
   setPolicy: (p: PricingPolicy) => void;
   onRefresh: () => void;
   onClose: () => void;
 }) {
   const [activeSection,setActiveSection] = useState<SettingsSection>(scope==='platform'?'services':'pricing');
-  const sections = SETTING_SECTIONS.filter(item=>scope==='platform'?item.id==='services':item.id!=='services');
+  const sections = scope==='all'?[...SETTING_SECTIONS.filter(item=>item.id!=='services'),SETTING_SECTIONS[0]]:SETTING_SECTIONS.filter(item=>scope==='platform'?item.id==='services':item.id!=='services');
   const settingsBody = useRef<HTMLDivElement>(null);
   const selectSection = (id: SettingsSection) => { setActiveSection(id); if(settingsBody.current) settingsBody.current.scrollTop=0; };
   const dialog = useRef<HTMLDialogElement>(null);
@@ -123,14 +123,15 @@ export function SettingsPage({
   };
 
   const saveAi = () => {
-    if (scope==='platform' && (!ai.llm.apiKey || !ai.llm.model || !ai.llm.baseUrl)) {
+    const savePlatform = scope==='platform'||scope==='all'&&JSON.stringify(ai)!==JSON.stringify(JSON.parse(baseline)[0]);
+    if (savePlatform && (!ai.llm.apiKey || !ai.llm.model || !ai.llm.baseUrl)) {
       selectSection('services'); setSaved('请填写模型 API Key、模型名称和接口地址'); return false;
     }
-    if (scope==='business' && (Object.values(policy).some((v) => typeof v === 'number' && (!Number.isFinite(v) || v < 0)) || policy.marginFloor >= 1 || (policy.fxUsd != null && policy.fxUsd <= 0) || (policy.fxEur != null && policy.fxEur <= 0))) {
+    if (scope!=='platform' && (Object.values(policy).some((v) => typeof v === 'number' && (!Number.isFinite(v) || v < 0)) || policy.marginFloor >= 1 || (policy.fxUsd != null && policy.fxUsd <= 0) || (policy.fxEur != null && policy.fxEur <= 0))) {
       selectSection('pricing'); setSaved('请检查报价策略：金额不能为负数，毛利下限需小于 100%，汇率必须大于 0'); return false;
     }
-    if(scope==='platform') saveAiConfig(ai);
-    else {saveCompany(company);commitPolicy(policy);}
+    if(savePlatform) saveAiConfig(ai);
+    if(scope!=='platform') {saveCompany(company);commitPolicy(policy);}
     setBaseline(JSON.stringify([ai, company, policy]));
     setSaved('已保存');
     return true;
@@ -168,7 +169,7 @@ export function SettingsPage({
   return (
     <dialog className="settings-dialog" ref={dialog} aria-labelledby="settings-title" onCancel={(e) => { e.preventDefault(); close(); }}>
       <header className="settings-header">
-        <div><h2 id="settings-title">{scope==='platform'?'设置':'业务配置'}</h2></div>
+        <div><h2 id="settings-title">{scope==='business'?'业务配置':'设置'}</h2></div>
         <button className="btn" onClick={close} aria-label="关闭设置">关闭设置 ×</button>
       </header>
       <div className="settings-layout">
@@ -179,7 +180,7 @@ export function SettingsPage({
           event.preventDefault();selectSection(sections[next].id);
           event.currentTarget.querySelector<HTMLButtonElement>(`#settings-tab-${sections[next].id}`)?.focus();
         }}>
-          {sections.map(item=><button key={item.id} id={`settings-tab-${item.id}`} type="button" role="tab" aria-selected={activeSection===item.id} aria-controls={`settings-panel-${item.id}`} tabIndex={activeSection===item.id?0:-1} onClick={()=>selectSection(item.id)}>{item.label}</button>)}
+          {scope==='all'&&<span className="settings-group-label">业务配置</span>}{sections.map(item=><div className="settings-nav-entry" key={item.id}>{scope==='all'&&item.id==='services'&&<span className="settings-group-label">平台设置</span>}<button id={`settings-tab-${item.id}`} type="button" role="tab" aria-selected={activeSection===item.id} aria-controls={`settings-panel-${item.id}`} tabIndex={activeSection===item.id?0:-1} onClick={()=>selectSection(item.id)}>{item.label}</button></div>)}
         </nav>
       <div className="settings-body" ref={settingsBody}>
       {confirmClose && <div ref={closePrompt} className="panel" role="alert"><strong>还有未保存的修改</strong><div className="settings-actions"><button className="btn primary" disabled={testing} onClick={() => { if (saveAi()) onClose(); }}>保存并返回</button><button className="btn" onClick={onClose}>放弃修改并返回</button><button className="btn" onClick={() => setConfirmClose(false)}>继续编辑</button></div></div>}
