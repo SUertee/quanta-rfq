@@ -270,7 +270,7 @@ export function IntakeRecord({
                                 <td>{line.rawFields?.[key] == null ? '原文未提供' : value(line.rawFields[key])}</td>
                                 <td>
                                   {value((line as Record<string, unknown>)[key])}
-                                  {line.fieldSources?.[key]?.method === 'manual' && <span className="badge">人工修改</span>}
+                                  {line.fieldSources?.[key]?.method === 'manual' && <span className="badge badge-blue">人工修改</span>}
                                 </td>
                               </tr>
                             ))}</tbody>
@@ -296,7 +296,7 @@ export function IntakeRecord({
                             </header>
                             {e.current_match && (
                               <section className="resource-checks" aria-label="候选适用条件">
-                                <strong className={`badge ${e.current_match.state === 'usable' ? 'green' : e.current_match.state === 'conflict' ? 'red' : 'yellow'}`}>
+                                <strong className={`badge badge-${e.current_match.state === 'usable' ? 'green' : e.current_match.state === 'conflict' ? 'red' : 'amber'}`}>
                                   {matchStates[e.current_match.state] || '待确认'}
                                 </strong>
                                 <ul>{e.current_match.checks.filter(check => check.state !== 'pass').map(check => <li key={check.code}>{check.message}</li>)}</ul>
