@@ -69,3 +69,12 @@ assert.equal(quoteDeadlineExpired('2026-11-08','2026-11-08',Date.parse('2026-11-
 assert.equal(quoteDeadlineExpired('2026-11-08T02:00:00Z','2026-11-08',Date.parse('2026-11-08T15:00:00+08:00')),true);
 assert.equal(quoteDeadlineExpired('2026-11-09T00:30:00+09:00','2026-11-08',Date.parse('2026-11-08T23:45:00+08:00')),true);
 assert.equal(quoteDeadlineExpired('2026-11-07T23:00:00-10:00','2026-11-08',Date.parse('2026-11-08T15:00:00+08:00')),false);
+const chosen=parity({line:{...demand,selectedBasisId:supplier.id},prices:[supplier]});
+assert.equal(chosen.preview,112.5,'manual supplier overrides automatic stock preference');
+assert.equal(chosen.agent.basisId,supplier.id);
+assert.equal(parity({line:{...demand,selectedBasisId:'missing'},prices:[supplier]}).preview,undefined,'stale selection must never fall back to stock');
+assert.equal(parity({line:{...demand,selectedBasisId:supplier.id},prices:[{...supplier,moq:20}]}).preview,undefined,'selection cannot bypass MOQ');
+const duplicateStocks=matchResources(demand.partNumber,[stock,{...stock,lastPurchasePrice:80}]);
+assert.equal(parity({line:{...demand,selectedBasisId:duplicateStocks[1].id},costs:[stock,{...stock,lastPurchasePrice:80}]}).preview,100,'explicit choice resolves multiple inventory candidates');
+assert.equal(buildDraft({instruction:'仅用内部库存成本生成报价草稿',lines:[{...demand,selectedBasisId:supplier.id}],policy:{}},[stock],{one:matchResources(demand.partNumber,[stock],[supplier])}).lines[0].suggestedPrice,undefined,'instruction cannot silently replace selected supplier');
+console.log('PASS: manual choice parity, duplicate inventory resolution, stale/MOQ conflicts and inventory-only scope');

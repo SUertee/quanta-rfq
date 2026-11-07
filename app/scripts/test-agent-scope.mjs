@@ -7,3 +7,7 @@ assert.throws(()=>resolveAgentScope({lines:[{key:'intake-other-1'}]},inquiry));
 assert.throws(()=>resolveAgentScope({lines:[{key:'intake-qa-1'},{key:'intake-qa-1'}]},inquiry));
 assert.throws(()=>resolveAgentScope({lines:[]},inquiry));
 console.log('PASS: one-line scope is never widened; spoofed fields replaced; unknown/duplicate/empty scope rejected');
+const scoped=resolveAgentScope({lines:[{key:'intake-qa-2',selectedBasisId:'forged'}],policy:{markupRate:2}},inquiry,{state:{policy:{margin:.25,fxRates:{USD:7}},lines:[{key:'intake-qa-2',selectedBasisId:'saved-resource'}]}});
+assert.equal(scoped.lines[0].selectedBasisId,'saved-resource');assert.equal(scoped.policy.markupRate,.25);
+assert.equal(resolveAgentScope({lines:[{key:'intake-qa-1',selectedBasisId:'forged'}]},inquiry).lines[0].selectedBasisId,undefined);
+console.log('PASS: Agent selected source and pricing policy come from saved inquiry');

@@ -28,6 +28,24 @@ inquiries.get('qa').lines[0].version++;assert.equal(store.read('qa').stale,true)
 saved=save('qa');const receipt={draftVersion:saved.version,content:JSON.stringify({draftVersion:saved.version,...saved.state})};validateSavedQuote(receipt,saved);
 assert.throws(()=>validateSavedQuote({...receipt,draftVersion:0},saved),error=>error.status===409);
 assert.throws(()=>validateSavedQuote({...receipt,content:JSON.stringify({draftVersion:saved.version,policy:saved.state.policy,lines:[{...saved.state.lines[0],reviewed:true}]})},saved),error=>error.status===409);
+const stock={id:'stock-qa',source:'inventory',snapshot:{partNumber:'A',uom:'EA',stockCondition:'FN',stockQty:10,lastPurchasePrice:20,currency:'CNY'}};
+inquiries.get('qa').lines[0].evidence=[stock];
+saved=save('qa',{lines:[{...state('qa').lines[0],selectedBasisId:stock.id,reviewed:true}]});
+assert.equal(saved.state.lines[0].selectedBasisId,stock.id);assert.equal(saved.state.lines[0].price,null);assert.equal(saved.state.lines[0].reviewed,false);
+saved=save('qa',{lines:[{...state('qa').lines[0],selectedBasisId:stock.id,price:25,reviewed:false}]});
+saved=save('qa',{lines:[{...saved.state.lines[0],reviewed:true}]});assert.equal(saved.state.lines[0].reviewed,true);
+assert.throws(()=>save('qa',{lines:[{...state('qa').lines[0],selectedBasisId:'another-line-source'}]}),error=>error.status===409);
+assert.throws(()=>validateSavedQuote({draftVersion:saved.version,content:JSON.stringify({draftVersion:saved.version,policy:saved.state.policy,lines:[{...saved.state.lines[0],basisId:'forged'}]})},saved),error=>error.status===409);
+validateSavedQuote({draftVersion:saved.version,content:JSON.stringify({draftVersion:saved.version,policy:saved.state.policy,lines:[{...saved.state.lines[0],basisId:stock.id}]})},saved);
+const changedPolicy={...saved.state.policy,condFnNe:false};
+stock.snapshot.stockCondition='NE';
+// Refresh fingerprint, but keep the same selected source. Saving changed rules must retain a visible invalid choice and clear old prices.
+saved=save('qa',{policy:changedPolicy,lines:[{...saved.state.lines[0]}]});
+assert.equal(saved.state.lines[0].selectedBasisId,stock.id);assert.equal(saved.state.lines[0].price,null);assert.equal(saved.state.lines[0].reviewed,false);
+assert.throws(()=>save('qb',{lines:[{...state('qb').lines[0],selectedBasisId:stock.id}]}),error=>error.status===409);
+saved=save('qa',{lines:[{...saved.state.lines[0],selectedBasisId:null}]});assert.equal(saved.state.lines[0].price,null);assert.equal(saved.state.lines[0].reviewed,false);
+// Keep the existing hook restoration fixture stable.
+save('qa');
 console.log('PASS: SQLite draft/revision persistence, exact scope, version conflicts, retry idempotency, rollback, source/policy/price invalidation and saved-review export gate');
 const window=new Window({url:'http://127.0.0.1:5176/'});
 for(const name of ['window','document','navigator','HTMLElement','Node','localStorage'])Object.defineProperty(globalThis,name,{configurable:true,value:name==='window'?window:window[name]});

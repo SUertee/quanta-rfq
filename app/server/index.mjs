@@ -75,7 +75,11 @@ seedPrices(db,existsSync(priceSeedPath)?JSON.parse(readFileSync(priceSeedPath,'u
 db.run("UPDATE inquiry SET status='interrupted',issues='[\"服务重启中断了处理，已保留已接收文件\"]' WHERE status='processing'");
 const runtime=getRuntimeConfig();
 const intake=createIntakeService(db,persist,{modelConfig:runtime.model,ocrConfig:runtime.ocr});
-const quoteDrafts=createQuoteDraftStore(db,persist,id=>intake.detail(id));
+const quoteDrafts=createQuoteDraftStore(db,persist,id=>intake.detail(id),()=>{
+  const conversions={};
+  for(const [pn,uom,factor] of db.exec('SELECT pn,uom,factor FROM unit_conv')[0]?.values||[]){conversions[normalizePartNumber(pn)]??={};conversions[normalizePartNumber(pn)][normalizeUnit(uom)]=factor;}
+  return conversions;
+});
 persist();
 
 // 首次启动：从演示成本表播种
@@ -226,7 +230,21 @@ http.createServer(async (req, res) => {
       let input, inquiryId=null, resources={};
       try {
         let body=await readBody(req,300000);
-        if(body.inquiryId||body.batchId){const b=intake.detail(body.inquiryId||body.batchId);if(!b)throw new Error('询价不存在');inquiryId=b.id;body=resolveAgentScope(body,b);const selectedKeys=new Set(body.lines.map(line=>line.key));resources=Object.fromEntries(b.lines.filter(line=>selectedKeys.has(`intake-${b.id}-${line.lineNo}`)).map(line=>[`intake-${b.id}-${line.lineNo}`,line.evidence]));}
+        if(body.inquiryId||body.batchId){
+          const inquiry=intake.detail(body.inquiryId||body.batchId);
+          if(!inquiry)throw new Error('询价不存在');
+          inquiryId=inquiry.id;
+          const saved=quoteDrafts.read(inquiry.id);
+          if(body.draftVersion!=null&&body.draftVersion!==saved.version){
+            throw Object.assign(new Error('询价审核已在其他窗口更新，请载入最新版本'),{status:409});
+          }
+          if(saved.stale)throw Object.assign(new Error('询价依据已变化，请刷新并保存后重试'),{status:409});
+          body=resolveAgentScope(body,inquiry,saved);
+          const selectedKeys=new Set(body.lines.map(line=>line.key));
+          resources=Object.fromEntries(inquiry.lines
+            .filter(line=>selectedKeys.has(`intake-${inquiry.id}-${line.lineNo}`))
+            .map(line=>[`intake-${inquiry.id}-${line.lineNo}`,line.evidence]));
+        }
         body.context=referenceContext(body.context,resolveChatReferences(body.references,id=>intake.detail(id),{inquiryId}));
         const unitRows=db.exec('SELECT pn,uom,factor FROM unit_conv')[0]?.values||[];
         const unitConversions={};

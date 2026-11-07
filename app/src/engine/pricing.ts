@@ -25,7 +25,7 @@ export function priceLine(line:InquiryLine,ds:Dataset,opts:PriceOpts={}):PricedL
   if(!result.selected){
     if(!resources.length)flags.add('NO_MATCH');
     for(const entry of result.candidates)for(const flag of flagsFor(entry.match.checks))flags.add(flag);
-    if(result.issues.some(issue=>issue.includes('不唯一')))flags.add('RESOURCE_REVIEW');
+    if(result.issues.length)flags.add('RESOURCE_REVIEW');
   }
   if(line.issues.length)flags.add('PARSE_ISSUE');
   flags.add('PRICE_PENDING');

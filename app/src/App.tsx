@@ -65,6 +65,7 @@ export default function App() {
   }, []);
   const [policy, setPolicy] = useStoredState<PricingPolicy>('policy', DEFAULT_POLICY);
   const [priceBook, setPriceBook] = useStoredState<Record<string, number>>('prices', {});
+  const [selectedBases,setSelectedBases]=useStoredState<Record<string,string>>('selected-bases',{});
   const [manualPrices, setManualPrices] = useStoredState<Set<string>>('manual-prices', new Set());
   const [skipped, setSkipped] = useStoredState<Set<string>>('skipped-lines', new Set());
   const [taskTime, setTaskTime] = useStoredState<Record<string, number>>('task-time', {});
@@ -128,21 +129,20 @@ export default function App() {
   }, [policyFull]);
   const tasks = useMemo(() => dsx2 ? buildTasks(dsx2, priceOpts, taskRows).filter(t => !deletedTasks.includes(t.key)).map((t) => {
     const taskSource = t.source.kind === 'email' && taskRows[t.source.id] ? { ...t.source, llmRows: taskRows[t.source.id] } : t.source;
-    const lines = [...linesOf(dsx2, taskSource).lines, ...(addedLines[sourceKey(taskSource)] ?? [])].map((line) => ({ ...line, ...lineEdits[line.key] }));
+    const lines = [...linesOf(dsx2, taskSource).lines, ...(addedLines[sourceKey(taskSource)] ?? [])].map((line) => ({ ...line, ...lineEdits[line.key],selectedBasisId:selectedBases[line.key] }));
     return { ...t, inquiryError: taskSource.kind === 'email' && ['case1-en', 'case2-en'].includes(taskSource.id) && !manualTasks.includes(t.key), tag: manualTasks.includes(t.key) ? '手工单' : t.tag, source: taskSource, total: lines.length, checkCount: priceAll(lines, dsx2, priceOpts).filter((p) => isYellow(p) && !resolved.has(p.line.key)).length };
-  }) : [], [dsx2, priceOpts, taskRows, lineEdits, resolved, addedLines, deletedTasks, manualTasks]);
+  }) : [], [dsx2, priceOpts, taskRows, lineEdits, resolved, addedLines, deletedTasks, manualTasks,selectedBases]);
   const current = useMemo(() => {
     const base = dsx2 && source ? linesOf(dsx2, source) : { email: undefined, lines: [], label: '' };
     if (source) base.lines = [...base.lines, ...(addedLines[sourceKey(source)] ?? [])];
-    const keys = Object.keys(lineEdits);
-    if (!keys.length) return base;
-    return { ...base, lines: base.lines.map((l) => (lineEdits[l.key] ? { ...l, ...lineEdits[l.key] } : l)) };
-  }, [dsx2, source, lineEdits, addedLines]);
+    return { ...base, lines: base.lines.map(l=>({...l,...lineEdits[l.key],selectedBasisId:selectedBases[l.key]})) };
+  }, [dsx2, source, lineEdits, addedLines,selectedBases]);
   const priced = useMemo(() => (dsx2 ? priceAll(current.lines, dsx2, priceOpts) : []), [dsx2, current.lines, priceOpts]);
 
-  const quoteSync=useInquiryQuote({inquiryId:current.email?.intakeBatchId,sourceRevision:JSON.stringify(current.email?.parsedRows||[]),operator:userName,value:{policy:policyFull,lines:current.lines.map(line=>({key:line.key,price:priceBook[line.key]??null,manual:manualPrices.has(line.key),reviewed:resolved.has(line.key),skipped:skipped.has(line.key),manualCost:estCost[line.key]??null}))},onRestore:state=>{
+  const quoteSync=useInquiryQuote({inquiryId:current.email?.intakeBatchId,sourceRevision:JSON.stringify(current.email?.parsedRows||[]),operator:userName,value:{policy:policyFull,lines:current.lines.map(line=>({key:line.key,price:priceBook[line.key]??null,manual:manualPrices.has(line.key),reviewed:resolved.has(line.key),skipped:skipped.has(line.key),manualCost:estCost[line.key]??null,selectedBasisId:selectedBases[line.key]??null}))},onRestore:state=>{
     const prefix=`intake-${current.email?.intakeBatchId}-`;
     setPolicy(state.policy);
+    setSelectedBases(old=>({...Object.fromEntries(Object.entries(old).filter(([key])=>!key.startsWith(prefix))),...Object.fromEntries(state.lines.filter(line=>line.selectedBasisId).map(line=>[line.key,line.selectedBasisId!]))}));
     setPriceBook(old=>({...Object.fromEntries(Object.entries(old).filter(([key])=>!key.startsWith(prefix))),...Object.fromEntries(state.lines.filter(line=>line.price!=null).map(line=>[line.key,line.price!]))}));
     setManualPrices(old=>new Set([...old].filter(key=>!key.startsWith(prefix)).concat(state.lines.filter(line=>line.manual).map(line=>line.key))));
     setResolved(old=>new Set([...old].filter(key=>!key.startsWith(prefix)).concat(state.lines.filter(line=>line.reviewed).map(line=>line.key))));
@@ -236,6 +236,7 @@ export default function App() {
             onExpand={() => { setAssistantOpen(true); setMode('workbench'); setAssistantDocked(mode==='agent'?false:!assistantDocked); }}
             onApplyPrice={(line, price) => {
               if (!current.lines.some(l => l.key === line.key && l.partNumber === line.partNumber && l.quantity === line.quantity) || skipped.has(line.key) || !Number.isFinite(price) || price <= 0) return;
+              if(current.email?.intakeBatchId&&(!quoteSync.ready||quoteSync.saving||quoteSync.error||priced.find(row=>row.line.key===line.key)?.basisId!==line.basisId))return;
               setManualPrices(old => new Set([...old,line.key]));
               bumpOp(sourceKey(source!), 'agent-price');
               setPriceBook(old => ({ ...old, [line.key]: Math.round(price * 100) / 100 }));
@@ -243,7 +244,7 @@ export default function App() {
             }}
             onNewInquiry={() => { setMode('workbench'); setView('home'); setImportRequested(true); setAssistantOpen(false); setAssistantDocked(false); }}
             onSelectTask={(s) => { setSource(s); setAgentLineKey(null); }}
-            addedLines={addedLines} tasks={tasks} ds={dsx2} policy={policyFull} activeSource={source} lineEdits={lineEdits}
+            quoteVersion={current.email?.intakeBatchId?quoteSync.version:undefined} persistencePending={!!current.email?.intakeBatchId&&(!quoteSync.ready||quoteSync.saving||!!quoteSync.error)} selectedBases={selectedBases} addedLines={addedLines} tasks={tasks} ds={dsx2} policy={policyFull} activeSource={source} lineEdits={lineEdits}
             priceBook={priceBook} setPriceBook={setPriceBook}
             resolved={resolved} setResolved={setResolved}
             estCost={estCost} setEstCost={setEstCost}
@@ -273,6 +274,13 @@ export default function App() {
           <WorkbenchPage persistenceError={quoteSync.error} persistenceConflict={quoteSync.conflict} onRetryQuote={()=>{if(quoteSync.conflict){quoteSync.loadServer();setInvVersion(version=>version+1);}else quoteSync.retry();}} quoteVersion={current.email?.intakeBatchId?quoteSync.version:undefined} persistencePending={!quoteSync.ready||quoteSync.saving||!!quoteSync.error} key={sourceKey(source)} onDataRefresh={()=>setInvVersion(v=>v+1)}
             onAskAgent={(key) => { setAgentLineKey(key); setAssistantOpen(true); }}
             selectedAgentLine={agentLineKey}
+            selectedBases={selectedBases} onSelectBasis={(key,id)=>{
+              setSelectedBases(old=>{const next={...old};if(id)next[key]=id;else delete next[key];return next;});
+              setPriceBook(old=>{const next={...old};delete next[key];return next;});
+              setEstCost(old=>{const next={...old};delete next[key];return next;});
+              setManualPrices(old=>{const next=new Set(old);next.delete(key);return next;});
+              setResolved(old=>{const next=new Set(old);next.delete(key);return next;});
+            }}
 
             assigneeId={assignees[sourceKey(source)] ?? ''} onAssigneeChange={id => setAssignees(old => ({ ...old, [sourceKey(source)]: id }))}
             currentUserId={userId}

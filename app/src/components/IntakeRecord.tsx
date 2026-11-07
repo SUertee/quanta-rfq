@@ -38,8 +38,11 @@ export function IntakeRecord({
   view,
   onLoaded,
   onEvidenceRefresh,
-  rules,
+  rules,selectedBases={},selectionDisabled=false,onSelectBasis,
 }: {
+  selectedBases?:Record<string,string>;
+  selectionDisabled?:boolean;
+  onSelectBasis?:(key:string,id:string|null)=>void;
   batchId: string;
   rules?: RulePolicy;
   revisionKey?: string;
@@ -109,7 +112,7 @@ export function IntakeRecord({
     excerpt:JSON.stringify({partNumber:line?.partNumber,source:entry.source_key,...Object.fromEntries(Object.entries(entry.snapshot).filter(([field])=>['unitPrice','lastPurchasePrice','stockQty','currency','moq','uom','condition','certType','leadDays','validUntil'].includes(field)))}),
     inquiryId:batchId,lineId:line?.id,version:line?.version,evidenceId:entry.id,matchedAt:entry.matched_at,
   });
-  const resourceResult=line?evaluateQuoteLine(line,evidence,rules):null;
+  const resourceResult=line?evaluateQuoteLine({...line,selectedBasisId:selectedBases[`intake-${batchId}-${line.lineNo}`]},evidence,rules):null;
   const evaluatedEvidence=evidence.map(entry=>({...entry,current_match:resourceResult?.candidates.find(candidate=>candidate.id===entry.id)?.match||entry.current_match}));
   const toggle = (next: Pane) => setPane((old) => (old === next ? null : next));
   return (
@@ -276,6 +279,7 @@ export function IntakeRecord({
                   {busy ? "查询中…" : "刷新依据"}
                 </button>
               </div>
+              {line&&selectedBases[`intake-${batchId}-${line.lineNo}`]&&onSelectBasis&&<div className="evidence-selection"><span>{resourceResult?.selected?'已指定报价依据':'已选依据待重新确认'}</span><button type="button" className="btn" disabled={selectionDisabled} onClick={()=>onSelectBasis(`intake-${batchId}-${line.lineNo}`,null)}>恢复自动选择</button></div>}
               <div className="intake-evidence-layout">
                 <nav aria-label="选择物料依据">
                   {lines.map((l) => (
@@ -333,7 +337,7 @@ export function IntakeRecord({
                                   ? "内部库存与成本"
                                   : (e.snapshot.supplierName ? String(e.snapshot.supplierName) : "供应商报价")}
                               </strong>
-                              <div className="reference-actions">{resourceResult?.selected?.id===e.id&&<span className="badge badge-green">已选依据</span>}<span>
+                              <div className="reference-actions">{resourceResult?.selected?.id===e.id&&<span className="badge badge-green">{selectedBases[`intake-${batchId}-${line.lineNo}`]?'已选依据':'自动选用'}</span>}<span>
                                 {e.snapshot.dataSource === "official_demo"
                                   ? "演示数据"
                                   : e.source === "inventory"
@@ -341,6 +345,7 @@ export function IntakeRecord({
                                     : "供应商报价"}
                               </span><button type="button" className="reference-cite" aria-label={`引用依据 ${e.source_key}`} onClick={()=>citeReference(evidenceReference(e))}>引用</button></div>
                             </header>
+                            {onSelectBasis&&<div className="evidence-selection"><button type="button" className="btn" disabled={selectionDisabled||e.current_match?.state!=='usable'||!!line.issues?.length||selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id} aria-pressed={selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id} onClick={()=>onSelectBasis(`intake-${batchId}-${line.lineNo}`,e.id)}>{selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id?'已选为报价依据':'选为报价依据'}</button></div>}
                             {e.current_match && (
                               <section className="resource-checks" aria-label="候选适用条件">
                                 <strong className={`badge badge-${e.current_match.state === 'usable' ? 'green' : e.current_match.state === 'conflict' ? 'red' : 'amber'}`}>

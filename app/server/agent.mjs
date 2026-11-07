@@ -8,12 +8,12 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
 import { RFQ_SYSTEM_PROMPT } from './agent-prompt.mjs';
 const historySchema=z.array(z.object({role:z.enum(['user','assistant']),content:z.string().trim().min(1).max(2000)}).strict()).max(12).refine(messages=>messages.reduce((n,m)=>n+m.content.length,0)<=12000,'对话历史超过总长度限制');
-const inputSchema = z.object({context:z.string().max(24000).optional(),history:historySchema.optional(),instruction:z.string().trim().min(1).max(2000),lines:z.array(z.object({key:z.string().min(1).max(200),partNumber:z.string().max(100),description:z.string().max(1000).optional(),quantity:z.number().positive().finite().nullable(),uom:z.string().max(30).optional(),condition:z.string().max(30).optional(),requirement:z.string().max(4000).optional(),dueDate:z.string().max(100).optional(),urgency:z.string().max(30).optional(),needByDate:z.string().max(100).optional(),quoteDeadline:z.string().max(100).optional(),issues:z.array(z.string().max(1000)).max(50).optional()})).min(1).max(150),policy:z.object({condFnNe:z.boolean().optional(),certMutual:z.boolean().optional(),freightDays:z.number().min(0).max(3650).optional(),fxRates:z.record(z.string(),z.number().positive().finite()).optional(),unitConversions:z.record(z.string(),z.record(z.string(),z.number().positive().finite())).optional(),markupRate:z.number().min(0).max(2).optional(),marginRate:z.number().min(0).lt(1).optional(),aogPremium:z.number().min(0).max(2).optional(),bulkDiscount:z.number().min(0).max(1).optional(),bulkQty:z.number().min(0).finite().optional()}).optional()});
+const inputSchema = z.object({context:z.string().max(24000).optional(),history:historySchema.optional(),instruction:z.string().trim().min(1).max(2000),lines:z.array(z.object({key:z.string().min(1).max(200),partNumber:z.string().max(100),description:z.string().max(1000).optional(),quantity:z.number().positive().finite().nullable(),uom:z.string().max(30).optional(),condition:z.string().max(30).optional(),requirement:z.string().max(4000).optional(),dueDate:z.string().max(100).optional(),urgency:z.string().max(30).optional(),needByDate:z.string().max(100).optional(),quoteDeadline:z.string().max(100).optional(),selectedBasisId:z.string().max(200).optional(),issues:z.array(z.string().max(1000)).max(50).optional()})).min(1).max(150),policy:z.object({condFnNe:z.boolean().optional(),certMutual:z.boolean().optional(),freightDays:z.number().min(0).max(3650).optional(),fxRates:z.record(z.string(),z.number().positive().finite()).optional(),unitConversions:z.record(z.string(),z.record(z.string(),z.number().positive().finite())).optional(),markupRate:z.number().min(0).max(2).optional(),marginRate:z.number().min(0).lt(1).optional(),aogPremium:z.number().min(0).max(2).optional(),bulkDiscount:z.number().min(0).max(1).optional(),bulkQty:z.number().min(0).finite().optional()}).optional()});
 export function validateAgentInput(value) { const input=inputSchema.parse(value); if(new Set(input.lines.map(l=>l.key)).size!==input.lines.length) throw new Error('重复行标识'); return input; }
 export function buildDraft(input,costs,resources={}) {
  const analysisOnly=/(只|仅).{0,8}(分析|检查|核对)|不要.{0,5}(报价|出价)|不生成.{0,5}(价格|报价)/.test(input.instruction);
  const lines=input.lines.map(original=>{
-  const line=normalizeLine(original);
+  const line={...normalizeLine(original),selectedBasisId:original.selectedBasisId};
   const evidence=resources[line.key]??matchResources(line.partNumber,costs);
   const inventoryOnly=/(仅|只).{0,12}(内部|库存).{0,6}成本/.test(input.instruction);
   const evaluated=evaluateQuoteLine(line,evidence,{...input.policy,inventoryOnly});
@@ -89,7 +89,7 @@ async function executeAgent(value,costs,{signal,modelOverride,onAuditEvent,resou
  return {runId:randomUUID(),status:incomplete?'failed':'needs_review',outcome:incomplete?'incomplete':draft?'draft':'evidence',summary,answer,model:cfg.model,draft:finalDraft,events};
 }
 
-export const RFQ_AGENT_DEFINITION=Object.freeze({agentId:'rfq-quote',version:'1.3.0',promptSha256:createHash('sha256').update(RFQ_SYSTEM_PROMPT).digest('hex'),tools:['read_inquiry','lookup_costs','build_quote_draft']});
+export const RFQ_AGENT_DEFINITION=Object.freeze({agentId:'rfq-quote',version:'1.4.0',promptSha256:createHash('sha256').update(RFQ_SYSTEM_PROMPT).digest('hex'),tools:['read_inquiry','lookup_costs','build_quote_draft']});
 export async function runAgent(value,costs,options={}) {
  const audit=options.audit;
  if(!audit) return executeAgent(value,costs,options);

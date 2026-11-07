@@ -2,7 +2,7 @@ import {canonicalJson} from '../shared/quote-state.mjs';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
 import {rows} from './intake.mjs';
-import {businessToday,RFQ_RULE_VERSION} from '../shared/rfq-rules.mjs';
+import {businessToday,RFQ_RULE_VERSION,evaluateQuoteLine} from '../shared/rfq-rules.mjs';
 
 const money=z.number().finite().nonnegative().max(1e12);
 const policySchema=z.object({
@@ -12,7 +12,7 @@ const policySchema=z.object({
   freightAlloc:z.enum(['order','byLine','byValue']),aogPremium:z.number().min(0).max(2),bulkDiscount:z.number().min(0).max(1),bulkQty:z.number().nonnegative().finite(),minFreightCny:money,freeFreightOverCny:money,
 }).strict();
 const costSchema=z.object({value:money.positive(),source:z.enum(['ai','manual']),basis:z.string().max(8000).optional(),refs:z.array(z.object({title:z.string().max(1000),url:z.string().max(2000)})).max(50).optional(),verdict:z.enum(['有市场依据','有间接参考','纯经验估算']).optional(),limitation:z.string().max(4000).optional(),trace:z.array(z.object({query:z.string().max(1000),hits:z.number().nonnegative()})).max(50).optional()}).strict();
-const lineSchema=z.object({key:z.string().max(200),price:money.positive().nullable(),manual:z.boolean(),reviewed:z.boolean(),skipped:z.boolean(),manualCost:costSchema.nullable()}).strict();
+const lineSchema=z.object({key:z.string().max(200),price:money.positive().nullable(),manual:z.boolean(),reviewed:z.boolean(),skipped:z.boolean(),manualCost:costSchema.nullable(),selectedBasisId:z.string().min(1).max(200).nullable().optional()}).strict();
 const saveSchema=z.object({requestId:z.string().uuid(),version:z.number().int().nonnegative(),sourceFingerprint:z.string().regex(/^[a-f0-9]{64}$/),operator:z.string().trim().min(1).max(100),policy:policySchema,lines:z.array(lineSchema).max(150)}).strict();
 const hash=value=>createHash('sha256').update(canonicalJson(value)).digest('hex');
 const fail=(status,message)=>{const error=new Error(message);error.status=status;throw error;};
@@ -21,7 +21,7 @@ export function quoteSourceFingerprint(inquiry){
   return hash({ruleVersion:RFQ_RULE_VERSION,asOf:businessToday(),status:inquiry.status,issues:inquiry.issues,files:inquiry.files?.map(file=>({id:file.id,status:file.status,sha256:file.sha256})),lines:inquiry.lines.map(line=>({id:line.id,version:line.version,fields:Object.fromEntries(Object.entries(line).filter(([key])=>key!=='evidence')),evidence:line.evidence?.map(entry=>({id:entry.id,source:entry.source,matchedAt:entry.matched_at,snapshot:entry.snapshot}))}))});
 }
 
-export function createQuoteDraftStore(db,persist,getInquiry){
+export function createQuoteDraftStore(db,persist,getInquiry,getUnitConversions=()=>({})){
   db.run(`CREATE TABLE IF NOT EXISTS quote_draft(inquiry_id TEXT PRIMARY KEY REFERENCES inquiry(id) ON DELETE CASCADE,version INTEGER NOT NULL,source_fingerprint TEXT NOT NULL,content TEXT NOT NULL,operator TEXT NOT NULL,updated_at TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS quote_draft_revision(inquiry_id TEXT NOT NULL REFERENCES inquiry(id) ON DELETE CASCADE,version INTEGER NOT NULL,source_fingerprint TEXT NOT NULL,content TEXT NOT NULL,operator TEXT NOT NULL,created_at TEXT NOT NULL,request_id TEXT NOT NULL,request_hash TEXT NOT NULL,PRIMARY KEY(inquiry_id,version),UNIQUE(inquiry_id,request_id));`);
   const stored=id=>rows(db,'SELECT * FROM quote_draft WHERE inquiry_id=?',[id])[0];
@@ -52,9 +52,20 @@ export function createQuoteDraftStore(db,persist,getInquiry){
     const policyChanged=prior&&hash(prior.policy)!==hash(body.policy);
     const sourceChanged=before&&before.source_fingerprint!==fingerprint;
     const oldLines=new Map(prior?.lines.map(line=>[line.key,line])||[]);
+    const invalidBases=new Set();
+    for(const line of body.lines.filter(line=>line.selectedBasisId)){
+      const source=inquiry.lines.find(source=>`intake-${id}-${source.lineNo}`===line.key);
+      const result=evaluateQuoteLine({...source,selectedBasisId:line.selectedBasisId},source.evidence||[],{...body.policy,fxRates:{...(body.policy.fxUsd?{USD:body.policy.fxUsd}:{}),...(body.policy.fxEur?{EUR:body.policy.fxEur}:{}),...body.policy.fxRates},unitConversions:getUnitConversions()});
+      if(!result.selected){
+        if(oldLines.get(line.key)?.selectedBasisId!==line.selectedBasisId)fail(409,'所选依据已变化或条件不满足，请刷新并重新选择');
+        invalidBases.add(line.key);
+      }
+    }
     let invalidated=false;
     const lines=body.lines.map(line=>{
       const old=oldLines.get(line.key);
+      const basisChanged=(old?.selectedBasisId||null)!==(line.selectedBasisId||null);
+      if(basisChanged||invalidBases.has(line.key)){invalidated=true;return {...line,price:null,manual:false,manualCost:null,reviewed:false};}
       const changed=old&&(old.price!==line.price||old.skipped!==line.skipped||hash(old.manualCost)!==hash(line.manualCost));
       if(line.reviewed&&(policyChanged||sourceChanged||changed)){invalidated=true;return {...line,reviewed:false};}
       return line;
@@ -86,6 +97,6 @@ export function validateSavedQuote(receipt,saved){
   if(content.lines?.length!==expected.size)fail(409,'报价行不一致');
   for(const line of content.lines){
     const draft=expected.get(line.key);
-    if(!draft||line.price!==draft.price||line.reviewed!==draft.reviewed||line.skipped!==draft.skipped)fail(409,'价格或核对结果未保存，请重新核对');
+    if(!draft||line.price!==draft.price||line.reviewed!==draft.reviewed||line.skipped!==draft.skipped||(draft.selectedBasisId&&line.basisId!==draft.selectedBasisId))fail(409,'价格或核对结果未保存，请重新核对');
   }
 }

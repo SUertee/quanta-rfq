@@ -1,6 +1,6 @@
 import {normalizePartNumber,normalizeUnit,validDate} from './normalization.mjs';
 
-export const RFQ_RULE_VERSION='4';
+export const RFQ_RULE_VERSION='5';
 export const businessToday=(now=Date.now())=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(now));
 export function quoteDeadlineExpired(value, asOf=businessToday(), now=Date.now()) {
   if (!validDate(value)) return false;
@@ -102,8 +102,14 @@ export function evaluateQuoteLine(line,resources,policy={}) {
   const inventoryChoices=eligible.filter(entry=>entry.source==='inventory');
   const duplicateInventory=inventory.length>1;
   const suppliers=eligible.filter(entry=>entry.source!=='inventory'&&!policy.inventoryOnly).sort((a,b)=>a.match.cost-b.match.cost||String(a.id||a.source_key).localeCompare(String(b.id||b.source_key)));
-  const selected=duplicateInventory||line.issues?.length?null:inventoryChoices[0]||suppliers[0]||null;
-  const issues=selected?[]:line.issues?.length?[...line.issues]:policy.inventoryOnly&&!inventory.length?['本次仅使用内部成本，尚无可用库存依据']:duplicateInventory?['成本记录不唯一，需人工选择']:candidates.length?[...new Set(candidates.flatMap(entry=>entry.match.checks.filter(check=>check.state!=='pass').map(check=>check.message)))]:['未找到精确件号成本，需补充供应商报价'];
+  const requested=line.selectedBasisId?candidates.find(entry=>entry.id===line.selectedBasisId):null;
+  const requestedUsable=requested?.match.state==='usable'&&(!policy.inventoryOnly||requested.source==='inventory');
+  let selected=null;
+  if(!line.issues?.length){
+    if(line.selectedBasisId)selected=requestedUsable?requested:null;
+    else if(!duplicateInventory)selected=inventoryChoices[0]||suppliers[0]||null;
+  }
+  const issues=selected?[]:line.issues?.length?[...line.issues]:line.selectedBasisId?['已选依据不再满足条件，请重新选择']:policy.inventoryOnly&&!inventory.length?['本次仅使用内部成本，尚无可用库存依据']:duplicateInventory?['成本记录不唯一，需人工选择']:candidates.length?[...new Set(candidates.flatMap(entry=>entry.match.checks.filter(check=>check.state!=='pass').map(check=>check.message)))]:['未找到精确件号成本，需补充供应商报价'];
   return {candidates,selected,issues,ruleVersion:RFQ_RULE_VERSION};
 }
 

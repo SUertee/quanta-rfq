@@ -64,6 +64,7 @@ export interface InquiryLine {
   llmFixedMark?: boolean;
   /** 该行经人工手动修改（AI 不可用或兜底，审计标记） */
   manualFixedMark?: boolean;
+  selectedBasisId?:string|null;
   resourceEvidence?:import('../shared/rfq-rules.mjs').RuleEvidence[];
 }
 

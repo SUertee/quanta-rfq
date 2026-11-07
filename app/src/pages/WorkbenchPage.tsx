@@ -50,9 +50,11 @@ function RawHighlight({ body, needle }: { body: string; needle: string }) {
 
 /** 报价工作台：一个页面完成 核对 → 定价 → 预览 → 导出 */
 export function WorkbenchPage({
-  persistenceError, persistenceConflict, onRetryQuote, quoteVersion, persistencePending=false, onDataRefresh, onAskAgent, selectedAgentLine, ds, source, lines, priced, email, label, assigneeId, onAssigneeChange, currentUserId, inquiryError, onConvertManual,
+  selectedBases={},onSelectBasis,persistenceError, persistenceConflict, onRetryQuote, quoteVersion, persistencePending=false, onDataRefresh, onAskAgent, selectedAgentLine, ds, source, lines, priced, email, label, assigneeId, onAssigneeChange, currentUserId, inquiryError, onConvertManual,
   policy, priceBook, setPriceBook, resolved, setResolved, estCost, setEstCost, manualPrices, setManualPrices, skipped, setSkipped, taskKey, timing, ops, onTime, onOp, onEditLine, onAddLine, onBack, onApplyLlmRows,
 }: {
+  selectedBases?:Record<string,string>;
+  onSelectBasis?:(key:string,id:string|null)=>void;
   persistenceError?:string;
   persistenceConflict?:boolean;
   onRetryQuote?:()=>void;
@@ -721,7 +723,7 @@ export function WorkbenchPage({
       </section>
       <section className="workflow-section" data-current={stage===3} id="inquiry-stage-3" tabIndex={-1} data-inquiry-stage="3" aria-labelledby="inquiry-stage-title-3">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-3">{stageItems[2].label}</h2></header>
-      {email?.intakeBatchId&&<IntakeRecord batchId={email.intakeBatchId} revisionKey={JSON.stringify(email.parsedRows?.map(l=>l.version))} view="evidence" rules={{condFnNe:policy.condFnNe,certMutual:policy.certMutual,freightDays:policy.freightDays,fxRates:{...(policy.fxUsd?{USD:policy.fxUsd}:{}),...(policy.fxEur?{EUR:policy.fxEur}:{}),...(policy.fxRates||{})},unitConversions:ds.units}} onLoaded={setIntakeRecord} onEvidenceRefresh={onDataRefresh} />}
+      {email?.intakeBatchId&&<IntakeRecord batchId={email.intakeBatchId} revisionKey={JSON.stringify(email.parsedRows?.map(l=>l.version))} view="evidence" selectedBases={selectedBases} selectionDisabled={persistencePending} onSelectBasis={onSelectBasis} rules={{condFnNe:policy.condFnNe,certMutual:policy.certMutual,freightDays:policy.freightDays,fxRates:{...(policy.fxUsd?{USD:policy.fxUsd}:{}),...(policy.fxEur?{EUR:policy.fxEur}:{}),...(policy.fxRates||{})},unitConversions:ds.units}} onLoaded={setIntakeRecord} onEvidenceRefresh={onDataRefresh} />}
       {!email?.intakeBatchId&&<section className="panel"><div className="panel-title">库存与供应商依据</div><div className="table-wrap"><table><thead><tr><th>件号</th><th>库存</th><th>内部成本</th><th>供应商参考</th></tr></thead><tbody>{priced.map(p=><tr key={p.line.key}><td><b>{p.line.partNumber}</b></td><td>{p.cost?`${p.cost.stockQty} ${p.cost.uom}`:'未匹配'}</td><td>{p.cost?fmtMoney(p.cost.lastPurchasePrice||p.cost.avgCost):'缺依据'}</td><td>{p.candidates.length?<div className="candidate-evidence-list">{p.candidates.map((c,i)=><div className="candidate-evidence" key={i}><b>{c.row.supplierName}</b><span>{c.row.unitPrice} {c.row.currency}</span><span>{c.row.condition} · MOQ {c.row.moq} · {c.row.validUntil||'有效期缺失'}</span></div>)}</div>:'未匹配'}</td></tr>)}</tbody></table></div></section>}
 
       </section>

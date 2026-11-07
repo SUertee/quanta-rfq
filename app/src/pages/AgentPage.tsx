@@ -30,7 +30,7 @@ type Session = { state: 'idle' | 'running' | 'failed' | 'stopped'; input: string
 const fresh = (): Session => ({ state: 'idle', input: '', turns: [] });
 const money = (v?: number) => v == null ? '—' : `¥${v.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`;
 
-export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOverride, quickMessage, onQuickHandled, onHistory, priceBook, tasks, ds, policy, activeSource, lineEdits, resolved, onOpenTask, onSelectTask, onNewInquiry, embedded = false, expanded = false, docked = false, selectedLineKey = null, onClearLine, onClose, onExpand, onApplyPrice, skipped = new Set(), addedLines = {} }: {
+export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOverride, quickMessage, onQuickHandled, onHistory, priceBook, tasks, ds, policy, activeSource, lineEdits, resolved, onOpenTask, onSelectTask, onNewInquiry, embedded = false, expanded = false, docked = false, selectedLineKey = null, onClearLine, onClose, onExpand, onApplyPrice, skipped = new Set(), addedLines = {},selectedBases={},persistencePending=false,quoteVersion }: {
   onInquiryCreated?: (batch:IntakeBatch,conversationKey:string)=>void;
   operator?:string;
   sessionOverride?:string;
@@ -41,6 +41,9 @@ export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOv
   onNewInquiry?: () => void;
   addedLines?: Record<string, InquiryLine[]>;
   tasks: TaskSummary[]; ds: Dataset; policy: PricingPolicy;
+  selectedBases?:Record<string,string>;
+  persistencePending?:boolean;
+  quoteVersion?:number;
   activeSource: Source | null; lineEdits: Record<string, Partial<InquiryLine>>;
   priceBook: Record<string, number>; setPriceBook: (v: SetStateAction<Record<string, number>>) => void;
   resolved: Set<string>; setResolved: (v: SetStateAction<Set<string>>) => void;
@@ -83,9 +86,9 @@ export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOv
     if (!task) return null;
     const base = linesOf(ds, task.source);
     const key = task.source.kind === 'email' ? `email:${task.source.id}` : `kanban:${task.source.rfqId}`;
-    const allLines = [...base.lines, ...(addedLines[key] ?? [])].map(l => ({ ...l, ...lineEdits[l.key] }));
+    const allLines = [...base.lines, ...(addedLines[key] ?? [])].map(l => ({ ...l, ...lineEdits[l.key],selectedBasisId:selectedBases[l.key] }));
     return { ...base, lines: selectedLineKey ? allLines.filter(l => l.key === selectedLineKey && !skipped.has(l.key)) : allLines.filter(l => !skipped.has(l.key)) };
-  }, [ds, task, lineEdits, addedLines, embedded, selectedLineKey, skipped]);
+  }, [ds, task, lineEdits, addedLines, embedded, selectedLineKey, skipped,selectedBases]);
   const priced = useMemo(() => current ? priceAll(current.lines, ds, { freightDays: policy.freightDays, condFnNe: policy.condFnNe, certMutual: policy.certMutual, fxOverride: { ...(policy.fxUsd ? { USD: policy.fxUsd } : {}), ...(policy.fxEur ? { EUR: policy.fxEur } : {}),...(policy.fxRates||{}) } }) : [], [current, ds, policy]);
   const pending = priced.filter(p => isYellow(p) && !resolved.has(p.line.key)).length;
   const basis = JSON.stringify({ lines: current?.lines, policy, inventory: ds.cost });
@@ -120,6 +123,7 @@ export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOv
     const instruction = (preset ?? (session.input || (references.items.length?'请核对引用内容。':attachments.length?'请核对附件与当前询价；附件中未读取的信息保持待补充，不编造价格。':''))).trim();
     if (!task || !current || busy.current || attachments.some(f=>f.status==='reading') || !instruction) return;
     if (session.creation) return;
+    if(persistencePending){patch(sessionKey,{error:'询价修改正在保存，请稍后重试。'});return;}
     if (onInquiryCreated && (attachments.length || /(新建|创建|建立).{0,8}询价/.test(instruction)) && shouldCreateChatInquiry(instruction,attachments.length)) {
       await receiveInquiry(undefined,(preset??session.input).trim());
       return;
@@ -147,7 +151,7 @@ export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOv
         return;
       }
       // Legacy field named margin stores markup rate (cost-based), matching Settings.
-      const response = await fetch('/api/agent/run', {method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({instruction,history,references:activeReferences,context:attachmentContext,inquiryId:current.email?.intakeBatchId,lines:current.lines.map(l => ({key:l.key,partNumber:l.partNumber || '',description:l.description,quantity:l.quantity,uom:l.uom,condition:l.condition,urgency:l.urgency,requirement:l.requirement,dueDate:l.dueDate,needByDate:l.needByDate||'',quoteDeadline:l.quoteDeadline||'',issues:l.issues})),policy:{condFnNe:policy.condFnNe,certMutual:policy.certMutual,freightDays:policy.freightDays,fxRates:{...(policy.fxUsd?{USD:policy.fxUsd}:{}),...(policy.fxEur?{EUR:policy.fxEur}:{}),...(policy.fxRates||{})},markupRate:policy.margin,aogPremium:policy.aogPremium,bulkDiscount:policy.bulkDiscount,bulkQty:policy.bulkQty}})});
+      const response = await fetch('/api/agent/run', {method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({instruction,history,references:activeReferences,context:attachmentContext,inquiryId:current.email?.intakeBatchId,draftVersion:quoteVersion,lines:current.lines.map(l => ({key:l.key,partNumber:l.partNumber || '',description:l.description,quantity:l.quantity,uom:l.uom,condition:l.condition,urgency:l.urgency,requirement:l.requirement,dueDate:l.dueDate,needByDate:l.needByDate||'',quoteDeadline:l.quoteDeadline||'',issues:l.issues})),policy:{condFnNe:policy.condFnNe,certMutual:policy.certMutual,freightDays:policy.freightDays,fxRates:{...(policy.fxUsd?{USD:policy.fxUsd}:{}),...(policy.fxEur?{EUR:policy.fxEur}:{}),...(policy.fxRates||{})},markupRate:policy.margin,aogPremium:policy.aogPremium,bulkDiscount:policy.bulkDiscount,bulkQty:policy.bulkQty}})});
       const data = await readAgentStream<AgentResult>(response,(tool,state)=>{
         if(id!==generation.current)return;
         setSessions(old=>{
