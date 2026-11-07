@@ -27,3 +27,6 @@
 **/*.zip
 **/*.7z
 docs/verification/
+
+# Private deployment credentials and build archives
+.deployment/

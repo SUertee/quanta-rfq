@@ -24,6 +24,7 @@ const DB_PATH = process.env.RFQ_DB_PATH || fileURLToPath(new URL('./inventory.sq
 if(existsSync(DB_PATH) && !existsSync(DB_PATH+'.pre-intake.bak')) copyFileSync(DB_PATH,DB_PATH+'.pre-intake.bak');
 const SEED_PATH = fileURLToPath(new URL('../public/data/cost.json', import.meta.url));
 const PORT = Number(process.env.RFQ_PORT || 3004);
+const allowedOrigins=new Set(['http://127.0.0.1:5176','http://localhost:5176',...(process.env.RFQ_ALLOWED_ORIGINS||'').split(',').map(v=>v.trim()).filter(Boolean)]);
 
 const CORE = [
   'partNumber', 'description', 'productScope', 'uom', 'stockQty',
@@ -149,7 +150,9 @@ function readBody(req, limit = Infinity) {
 }
 
 http.createServer(async (req, res) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  const origin=req.headers.origin;
+  if(origin&&!allowedOrigins.has(origin)){res.writeHead(403,{'Content-Type':'application/json'});res.end(JSON.stringify({error:'访问来源不被允许'}));return;}
+  if(origin){res.setHeader('Access-Control-Allow-Origin',origin);res.setHeader('Vary','Origin');}
   res.setHeader('Access-Control-Allow-Methods', 'GET,POST,PUT,PATCH,DELETE,OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
   res.setHeader('Content-Type', 'application/json; charset=utf-8');
@@ -161,7 +164,6 @@ http.createServer(async (req, res) => {
   if(url.pathname.startsWith('/api/intake/files'))url.pathname=url.pathname.replace('/api/intake/files','/api/files');
   const pnMatch = url.pathname.match(/^\/api\/inventory\/([^/]+)$/);
   try {
-    if(((url.pathname.startsWith('/api/inquiries')||url.pathname.startsWith('/api/files'))||url.pathname==='/api/price-resources') && req.headers.origin && !['http://127.0.0.1:5176','http://localhost:5176'].includes(req.headers.origin)){res.writeHead(403);res.end(JSON.stringify({error:'仅允许本机工作台访问'}));return;}
     const addLinePath=url.pathname.match(/^\/api\/inquiries\/([^/]+)\/lines$/);
     if(addLinePath&&req.method==='POST'){res.end(JSON.stringify(intake.addLine(addLinePath[1],await readBody(req,50000))));return;}
     const linePath=url.pathname.match(/^\/api\/inquiries\/([^/]+)\/lines\/([^/]+)$/);
@@ -192,7 +194,6 @@ http.createServer(async (req, res) => {
     if(req.method==='GET'&&auditPath){const run=agentAudit.getRun(auditPath[1]);if(!run)res.writeHead(404);res.end(JSON.stringify(run||{error:'运行记录不存在'}));return;}
     if (req.method === 'POST' && url.pathname === '/api/agent/run') {
       const origin = req.headers.origin;
-      if (origin && !['http://127.0.0.1:5176','http://localhost:5176'].includes(origin)) { res.writeHead(403); res.end(JSON.stringify({error:'仅允许本机工作台调用'})); return; }
       if (Number(req.headers['content-length'] || 0) > 300000) { res.writeHead(413); res.end(JSON.stringify({error:'请求过大'})); return; }
       let input, inquiryId=null;
       try {

@@ -1,0 +1,13 @@
+.git
+.github
+.deployment
+**/node_modules
+**/dist
+**/.env
+**/.env.*
+**/*.sqlite*
+**/*.db
+**/*.bak
+**/*.log
+**/*.tmp
+**/.finesse

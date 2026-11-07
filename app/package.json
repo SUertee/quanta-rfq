@@ -25,7 +25,9 @@
     "test:chat-stream": "node scripts/test-chat-stream.mjs",
     "test:conversations": "node scripts/test-conversations.mjs",
     "test:floating-assistant": "node scripts/test-floating-assistant.mjs",
-    "test:stage-navigation": "node scripts/test-stage-navigation.mjs"
+    "test:stage-navigation": "node scripts/test-stage-navigation.mjs",
+    "start": "node server/web.mjs",
+    "test:production": "node scripts/test-production.mjs"
   },
   "dependencies": {
     "@langchain/openai": "^1.8.0",
