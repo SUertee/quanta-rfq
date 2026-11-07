@@ -371,3 +371,14 @@ html:has(dialog[open]) { overflow:hidden; }
 
 .layout-reference .rfq-embedded .rfq-chat-composer { gap:8px;padding:12px 14px; }
 .layout-reference .rfq-embedded .rfq-chat-composer textarea { font-size:16px; }
+
+/* The full-page chat canvas shares the site background, including the RFQ wrapper. */
+.layout-reference.mode-agent .rfq-hybrid,
+.layout-reference.mode-agent .rfq-chat,
+.layout-reference.mode-agent .platform-chat,
+.layout-reference.mode-agent .rfq-chat-messages,
+.layout-reference.mode-agent .platform-chat-messages { background:transparent;border:0;border-radius:0;box-shadow:none; }
+.mode-agent .rfq-chat-messages:has(>.rfq-chat-welcome:only-child) { display:flex;align-items:center;justify-content:center; }
+.mode-agent .rfq-embedded .rfq-chat-welcome { width:100%; }
+.mode-agent .rfq-chat-welcome .rfq-chat-suggestions { justify-content:center; }
+.mode-agent .rfq-chat-composer,.mode-agent .platform-chat-form { background:var(--hal-head); }
