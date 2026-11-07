@@ -1,6 +1,7 @@
 import {appFetch as fetch,appUrl} from './engine/appUrl';
 import {conversationMeta,newConversation} from './engine/conversations';
 import {PlatformChat,ConversationList} from './components/AssistantConversations';
+import {Modal} from './components/Modal';
 import {FloatingAssistant} from './components/FloatingAssistant';
 import {batchEmail} from './engine/intake';
 import { useEffect, useMemo, useState } from 'react';
@@ -228,7 +229,10 @@ export default function App() {
         </div>
         </FloatingAssistant>
         {dsx2.intakeLoadError && <div role="alert" className="hint">{dsx2.intakeLoadError}</div>}
-        {profileOpen && <div className="modal-mask" onClick={() => setProfileOpen(false)}><div className="modal" onClick={(e) => e.stopPropagation()}><h2>个人设置</h2><label>用户 ID <input aria-label="用户 ID" value={userId} onChange={e => setUserId(e.target.value)} /></label><label>显示名称 <input value={userName} onChange={(e) => { setUserName(e.target.value); localStorage.setItem('quanta-user-name', e.target.value); }} /></label><button className="btn primary" onClick={() => setProfileOpen(false)}>完成</button></div></div>}
+        {profileOpen && <Modal title="个人设置" className="profile-dialog" onClose={()=>setProfileOpen(false)}>
+          <div className="dialog-fields"><label>用户 ID<input autoFocus aria-label="用户 ID" placeholder="输入用户 ID" value={userId} onChange={e=>setUserId(e.target.value)} /></label><label>显示名称<input aria-label="显示名称" value={userName} onChange={e=>{setUserName(e.target.value);localStorage.setItem('quanta-user-name',e.target.value);}} /></label></div>
+          <footer className="app-dialog-actions"><button className="btn primary" onClick={()=>setProfileOpen(false)}>完成</button></footer>
+        </Modal>}
         {mode === 'workbench' && <>
         {view === 'home' && <HomePage operator={userId||userName} openImport={importRequested} onImportHandled={() => setImportRequested(false)} industryKw={policyFull.industryKw} onDelete={key => {
             setDeletedTasks(old => [...old, key]);

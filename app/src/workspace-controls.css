@@ -630,3 +630,30 @@ html:has(dialog[open]) { overflow:hidden; }
  .layout-reference .page-home .inquiry-records .filter-tabs { grid-column:1 / -1;max-width:100%; }
  .layout-reference .page-home .inquiry-records .search-input { width:100%;margin:0; }
 }
+
+/* Named business actions stay explicit; only secondary composer tools use icons. */
+.layout-reference .page-home .inquiry-create { display:inline-flex;flex:0 0 auto;width:auto;min-width:112px;padding:10px 20px;border-radius:var(--radius-control);font-size:16px;font-weight:500;white-space:nowrap; }
+@media(max-width:700px) { .layout-reference .page-home .inquiry-records .list-toolbar { grid-template-columns:minmax(0,240px) auto; } }
+.layout-reference .app-dialog { border:1px solid var(--line);padding:24px;width:600px;max-width:calc(100vw - 32px);max-height:calc(100dvh - 32px);margin:auto;color:var(--ink);background:var(--panel);box-shadow:0 24px 80px -24px rgba(11,29,58,.35); }
+.app-dialog::backdrop { background:rgba(11,29,58,.34); }
+.app-dialog-head { display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:24px; }
+.app-dialog-head h2 { margin:0;font-size:24px;font-weight:600;line-height:1.4; }
+.dialog-close { display:grid;place-items:center;flex:0 0 36px;width:36px;height:36px;padding:0;border:0;border-radius:50%;background:transparent;color:var(--ink-2);font:inherit;font-size:24px;cursor:pointer; }
+.dialog-close:hover { background:var(--hal-hover); }
+.dialog-fields { display:grid;gap:20px; }
+.dialog-fields label,.inquiry-text-label { display:grid;gap:8px;font-size:15px;font-weight:500; }
+.dialog-fields input { box-sizing:border-box;width:100%;min-height:46px;padding:10px 14px;border:1px solid var(--line);border-radius:var(--field-radius);background:var(--hal-head);color:var(--ink);font:inherit;font-weight:400; }
+.layout-reference .profile-dialog { width:440px; }
+.app-dialog-actions { display:flex;align-items:center;justify-content:flex-end;gap:12px;margin-top:24px; }
+.app-dialog-actions .btn { min-height:44px; }
+.app-dialog-actions .btn.primary::after { content:none; }
+.inquiry-file-picker { display:flex;align-items:center;justify-content:center;gap:10px;width:100%;min-height:88px;margin-bottom:20px;border:1px dashed var(--line);border-radius:var(--radius-control);background:var(--hal-head);color:var(--ink-2);font:inherit;cursor:pointer; }
+.inquiry-file-picker>span { font-size:24px; }
+.inquiry-file-picker:hover { border-color:var(--hal-accent);color:var(--ink); }
+.inquiry-upload-list { display:grid;gap:8px;margin:0 0 20px;padding:0;list-style:none; }
+.inquiry-upload-list li { display:flex;align-items:center;justify-content:space-between;gap:12px;padding:8px 12px;background:var(--hal-head);border-radius:var(--radius-control);font-size:14px; }
+.inquiry-upload-list li span { overflow-wrap:anywhere;min-width:0; }
+.inquiry-upload-list button { flex-shrink:0;border:0;background:transparent;color:var(--ink-2);font:inherit;font-size:22px;cursor:pointer; }
+.app-dialog .new-task-text { box-sizing:border-box;width:100%;min-height:144px;max-height:240px;margin:0;padding:12px 14px;border:1px solid var(--line);border-radius:var(--field-radius);font:inherit;font-weight:400;resize:vertical; }
+.dialog-close:focus-visible,.inquiry-file-picker:focus-visible,.dialog-fields input:focus-visible { outline:2px solid var(--hal-accent);outline-offset:2px; }
+@media(max-width:650px) { .layout-reference .app-dialog { padding:20px; } .app-dialog-head h2 { font-size:22px; } .app-dialog-actions { gap:8px; } }

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import {Modal} from '../components/Modal';
 import { Badge, DataTable, StatCard, FilterTabs } from '../components/ui';
 import type { TaskSummary } from '../task';
 import type { Source } from '../App';
@@ -53,7 +54,7 @@ export function HomePage({
       </section>
 
       <div className="panel inquiry-records" role="region" aria-label="询价记录">
-        <div className="list-toolbar"><FilterTabs label="任务状态筛选" value={statusFilter} onChange={setStatusFilter} items={[{value:'all',label:'全部任务'},{value:'review',label:'待核对'},{value:'ready',label:'待核价'}]} /><input className="search-input" aria-label="搜索询价" placeholder="搜索询价编号、客户…" value={query} onChange={e=>setQuery(e.target.value)} /><button className="btn primary inquiry-create" aria-label="新建询价" title="新建询价" onClick={()=>setShowNew(true)}>+</button>{deletedCount>0&&<button className="btn" onClick={onRestore}>恢复已删除（{deletedCount}）</button>}</div>
+        <div className="list-toolbar"><FilterTabs label="任务状态筛选" value={statusFilter} onChange={setStatusFilter} items={[{value:'all',label:'全部任务'},{value:'review',label:'待核对'},{value:'ready',label:'待核价'}]} /><input className="search-input" aria-label="搜索询价" placeholder="搜索询价编号、客户…" value={query} onChange={e=>setQuery(e.target.value)} /><button className="btn primary inquiry-create" aria-label="新建询价" title="新建询价" onClick={()=>setShowNew(true)}>新建询价</button>{deletedCount>0&&<button className="btn" onClick={onRestore}>恢复已删除（{deletedCount}）</button>}</div>
         <DataTable
           rows={filteredTasks}
           mobileRender={t=><article className="task-record-card">
@@ -76,16 +77,16 @@ export function HomePage({
         />
       </div>
 
-      {showNew && <div className="modal-mask" onClick={()=>{if(!busy)setShowNew(false)}}><div className="modal" onClick={e=>e.stopPropagation()}>
-        <div className="panel-title">新建询价</div>
-        <button className="btn" disabled={busy} onClick={()=>fileRef.current?.click()}>选择文件</button>
-        <input ref={fileRef} type="file" multiple accept=".eml,.txt,.md,.csv,.xlsx,.pdf,.png,.jpg,.jpeg,.webp" style={{display:'none'}} onChange={e=>{setFiles(Array.from(e.target.files||[]));requestId.current=crypto.randomUUID();setErr('');}} />
-        {files.length>0&&<ul>{files.map((f,i)=><li key={i}>{f.name}</li>)}</ul>}
-        <textarea className="new-task-text" rows={8} aria-label="询价内容或补充要求" placeholder="粘贴询价内容或补充要求…" disabled={busy} value={text} onChange={e=>{setText(e.target.value);requestId.current=crypto.randomUUID()}} />
+      {showNew && <Modal title="新建询价" className="inquiry-dialog" busy={busy} onClose={()=>setShowNew(false)}>
+        <button className="inquiry-file-picker" disabled={busy} onClick={()=>fileRef.current?.click()}><span aria-hidden="true">＋</span>选择文件</button>
+        <input ref={fileRef} type="file" multiple accept=".eml,.txt,.md,.csv,.xlsx,.pdf,.png,.jpg,.jpeg,.webp" hidden onChange={e=>{setFiles(Array.from(e.target.files||[]));requestId.current=crypto.randomUUID();setErr('');}} />
+        {files.length>0&&<ul className="inquiry-upload-list">{files.map((f,i)=><li key={i}><span>{f.name}</span><button type="button" aria-label={`移除 ${f.name}`} disabled={busy} onClick={()=>{setFiles(items=>items.filter((_,index)=>index!==i));requestId.current=crypto.randomUUID();}}>×</button></li>)}</ul>}
+        <label className="inquiry-text-label">询价内容<textarea className="new-task-text" rows={5} aria-label="询价内容或补充要求" placeholder="粘贴询价内容，或补充文件中的要求…" disabled={busy} value={text} onChange={e=>{setText(e.target.value);requestId.current=crypto.randomUUID()}} /></label>
         {err&&<div role="alert" className="hint">{err}</div>}
         {busy&&<div role="status">正在保存原件、提取需求并匹配依据…</div>}
-        <div className="toolbar"><button className="btn primary" disabled={busy||(!files.length&&!text.trim())} onClick={()=>void submit()}>{busy?'处理中…':'创建并分析'}</button><button className="btn" disabled={busy} onClick={()=>setShowNew(false)}>取消</button></div>
-      </div></div>}
+        <footer className="app-dialog-actions"><button className="btn" disabled={busy} onClick={()=>setShowNew(false)}>取消</button><button className="btn primary" disabled={busy||(!files.length&&!text.trim())} onClick={()=>void submit()}>{busy?'处理中…':'创建并分析'}</button></footer>
+      </Modal>}
+
     </div>
   );
 }
