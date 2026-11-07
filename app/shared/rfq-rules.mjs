@@ -1,6 +1,6 @@
 import {normalizePartNumber,normalizeUnit,validDate} from './normalization.mjs';
 
-export const RFQ_RULE_VERSION='2';
+export const RFQ_RULE_VERSION='3';
 export const businessToday=()=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
 const positive=value=>typeof value==='number'&&Number.isFinite(value)&&value>0;
 const rounded=value=>Math.round(value*100)/100;
@@ -76,7 +76,12 @@ export function evaluateResource(line,resource,{source,sourceKey,asOf=businessTo
     if(!validDate(needBy)||!known)check('delivery','unknown','需求日期或交期不明确，需确认');
     else{const arrival=addDays(asOf,lead+freightDays);const ok=arrival<=needBy.slice(0,10);check('delivery',ok?'pass':'conflict',ok?`预计 ${arrival} 到达，满足需求日期`:`预计 ${arrival} 到达，晚于需求日期`);}
   }
-  if(line.dueDate&&!validDate(line.dueDate))check('quote_date','unknown','日期格式不明确，需人工确认');
+  if(line.dueDate)check('quote_date','unknown',validDate(line.dueDate)?'截止日期用途不明确，需人工确认':'日期格式不明确，需人工确认');
+  if(line.quoteDeadline){
+    const valid=validDate(line.quoteDeadline);
+    const expired=valid&&line.quoteDeadline.slice(0,10)<asOf;
+    check('quote_deadline',!valid?'unknown':expired?'conflict':'pass',!valid?'报价截止日期不明确，需确认':expired?'已超过报价截止日期':'报价截止日期有效');
+  }
   const state=checks.some(item=>item.state==='conflict')?'conflict':checks.some(item=>item.state==='unknown')?'needs_review':'usable';
   return {source,sourceKey,matchMethod:'exact_part_number',state,checks,cost:positive(cost)?cost:null,asOf,ruleVersion:RFQ_RULE_VERSION,conversionFactor:converted?factor:1};
 }

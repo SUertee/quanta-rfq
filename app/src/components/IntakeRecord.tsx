@@ -14,7 +14,7 @@ type Evidence = {
 };
 const documentTypes: Record<string, string> = { customer_inquiry: '客户询价', supplier_quote: '供应商报价', inventory: '库存', certificate: '证书', unknown: '待分类' };
 const matchStates: Record<string, string> = { usable: '条件满足', needs_review: '待确认', conflict: '条件冲突' };
-const fieldLabels: Record<string, string> = { partNumber: '件号', quantity: '数量', uom: '单位', condition: '件状', dueDate: '需求日期', description: '描述', requirement: '要求', mpn: '制造商件号', priority: '优先级', manualPn: '手册件号', productScope: '产品范围' };
+const fieldLabels: Record<string, string> = { partNumber: '件号', quantity: '数量', uom: '单位', condition: '件状', dueDate: '待确认日期', needByDate: '到货日期', quoteDeadline: '报价截止日期', description: '描述', requirement: '要求', mpn: '制造商件号', priority: '优先级', manualPn: '手册件号', productScope: '产品范围' };
 const fileStates: Record<string, string> = {
   parsed: "已读取",
   needs_ocr: "待识别",
@@ -90,7 +90,8 @@ export function IntakeRecord({
   const content = record?.contents.find((c) => c.id === line?.contentId);
   const file = record?.files.find((f) => f.id === content?.file_id);
   const changedFields = Object.entries(fieldLabels).filter(([key]) => {
-    if (line?.fieldSources?.[key]?.method === 'manual') return true;
+    if (line?.fieldSources?.[key]?.method === 'manual' || line?.fieldSources?.[key]?.sources?.length) return true;
+    if (['needByDate','quoteDeadline','dueDate'].includes(key) && line?.[key as keyof typeof line]) return true;
     const original = line?.rawFields?.[key];
     return original != null && String(original) !== String((line as Record<string, unknown>)[key]);
   });
@@ -108,7 +109,7 @@ export function IntakeRecord({
     excerpt:JSON.stringify({partNumber:line?.partNumber,source:entry.source_key,...Object.fromEntries(Object.entries(entry.snapshot).filter(([field])=>['unitPrice','lastPurchasePrice','stockQty','currency','moq','uom','condition','certType','leadDays','validUntil'].includes(field)))}),
     inquiryId:batchId,lineId:line?.id,version:line?.version,evidenceId:entry.id,matchedAt:entry.matched_at,
   });
-  const resourceResult=line?evaluateQuoteLine({...line,needByDate:line.dueDate},evidence,rules):null;
+  const resourceResult=line?evaluateQuoteLine(line,evidence,rules):null;
   const evaluatedEvidence=evidence.map(entry=>({...entry,current_match:resourceResult?.candidates.find(candidate=>candidate.id===entry.id)?.match||entry.current_match}));
   const toggle = (next: Pane) => setPane((old) => (old === next ? null : next));
   return (
@@ -307,10 +308,16 @@ export function IntakeRecord({
                             <tbody>{changedFields.map(([key, label]) => (
                               <tr key={key}>
                                 <th>{label}</th>
-                                <td>{line.rawFields?.[key] == null ? '原文未提供' : value(line.rawFields[key])}</td>
-                                <td>
+                                <td data-label="原始值">{line.rawFields?.[key] == null ? '本行未提供' : value(line.rawFields[key])}</td>
+                                <td data-label="当前值">
                                   {value((line as Record<string, unknown>)[key])}
                                   {line.fieldSources?.[key]?.method === 'manual' && <span className="badge badge-blue">人工修改</span>}
+                                  {line.fieldSources?.[key]?.sources?.filter((source,index,all)=>source.contentId!==line.contentId&&all.findIndex(other=>other.contentId===source.contentId&&other.value===source.value)===index).map((source,index)=>{
+                                    const origin=record?.contents.find(content=>content.id===source.contentId);
+                                    const originFile=record?.files.find(file=>file.id===origin?.file_id);
+                                    const reference:ChatReference={id:`content:${source.contentId}:${line.version||1}`,label:`${label} · ${originFile?.name||'材料'}`,excerpt:origin?.text||source.value||'要求原文',inquiryId:batchId,lineId:line.id,contentId:source.contentId||undefined,version:line.version};
+                                    return <small className="reference-source" draggable onDragStart={event=>dragReference(event,reference)} key={index}>{originFile?.name} · {position(origin?.locator)} · {source.value}</small>;
+                                  })}
                                 </td>
                               </tr>
                             ))}</tbody>

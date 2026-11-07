@@ -33,7 +33,7 @@ export interface IntakeBatch {
     contentId: string;
     method: string;
     rawFields?: Record<string, unknown>;
-    fieldSources?: Record<string, { contentId: string | null; method: string; locator?: Record<string, unknown> }>;
+    fieldSources?: Record<string, { contentId: string | null; method: string; locator?: Record<string, unknown>; sources?: { contentId: string | null; method: string; value?: string; locator?: Record<string, unknown> }[] }>;
     normalizationVersion?: string;
     rawFieldsStatus?: string;
   })[];

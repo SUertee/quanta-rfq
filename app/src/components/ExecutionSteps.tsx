@@ -15,7 +15,7 @@ export function ExecutionSteps({events,lines=[],running=false,mode}:{events:Even
     if(event.state!=='done')return '本步尚未完成';
     if(!lines.length)return '已完成';
     if(event.tool==='read_inquiry')return `${lines.length} 行物料`;
-    if(event.tool==='lookup_costs')return `${lines.filter(line=>line.source).length} 行有成本依据`;
+    if(event.tool==='lookup_costs')return `${lines.filter(line=>line.source).length} 行有可用成本依据`;
     return mode==='analysis'?`${lines.length} 行核对结果`:`${lines.filter(line=>line.suggestedPrice!=null).length} 行建议价，等待人工核对`;
   };
   return <ol className="execution-steps" aria-label={running?'正在处理询价':'本轮处理过程'}>{steps.map(event=><li key={event.tool} data-state={event.state}><span aria-hidden="true">{event.state==='done'?'✓':'·'}</span><div><strong>{labels[event.tool]}</strong><p>{detail(event)}</p></div></li>)}</ol>;

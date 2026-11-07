@@ -164,7 +164,7 @@ export default function App() {
     const email=current.email, raw=email?.parsedRows?.find(r=>`${email.id}-${r.lineNo}`===key);
     if(email?.intakeBatchId && raw?.persistedLineId){
       try{
-        const allowed=['partNumber','description','quantity','uom','condition','requirement','dueDate','mpn','priority','manualPn','productScope'];
+        const allowed=['partNumber','description','quantity','uom','condition','requirement','dueDate','needByDate','quoteDeadline','mpn','priority','manualPn','productScope'];
         const savedPatch=Object.fromEntries(Object.entries(patch).filter(([k])=>allowed.includes(k)));
         const r=await fetch(`/api/inquiries/${email.intakeBatchId}/lines/${raw.persistedLineId}`,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify({version:(raw as RawRow & {version?:number}).version||1,patch:savedPatch,operator:userName})});
         const body=await r.json();if(!r.ok)throw new Error(body.error||'保存失败');const updated=batchEmail(body);

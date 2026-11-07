@@ -78,7 +78,8 @@ export function fromRaw(raw: RawRow, email: EmailSample, units?: Record<string, 
     dueDate: raw.dueDate ?? '',
   }, factor);
   line.resourceEvidence=raw.evidence;
-  line.needByDate = raw.dueDate ?? undefined; // 邮件 Due Date = 客户要货截止，用于运输时间估算
+  line.needByDate = raw.needByDate;
+  line.quoteDeadline = raw.quoteDeadline;
   line.issues = [...raw.issues, ...line.issues];
   if (raw.llmFixed) line.llmFixedMark = true;
   return line;
@@ -108,6 +109,7 @@ export function fromAttachment(
     condition: String(r['件状条件'] ?? ''),
     manualPn: String(r['手册件号'] ?? ''),
     productScope: String(r['产品范围'] ?? ''),
-    dueDate: String(r['截止报价日期'] ?? ''),
+    dueDate: '',
+    quoteDeadline: String(r['截止报价日期'] ?? ''),
   }, factor);
 }

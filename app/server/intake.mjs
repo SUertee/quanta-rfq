@@ -2,7 +2,7 @@ import { normalizeLine, normalizePartNumber, DOCUMENT_TYPES, NORMALIZATION_VERSI
 import { evaluateResource } from "./resource-match.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import { decodeFile, INTAKE_PARSER_VERSION } from "./intake-parser.mjs";
-import { extractStructured, extractSemantic } from "./intake-extract.mjs";
+import { extractStructured, extractSemantic, mergeExtractedRequirements, mergeSemanticLines, extractionFieldLabel } from "./intake-extract.mjs";
 const hash = (b) => createHash("sha256").update(b).digest("hex");
 export function rows(db, sql, args = []) {
   const s = db.prepare(sql);
@@ -472,12 +472,15 @@ export function createIntakeService(
       const result = extractStructured(chunks);
       let extra = { lines: [], issues: [] };
       try {
-        extra = await semantic(result.unresolved, modelConfig);
+        extra = await semantic(result.unresolved, modelConfig, {knownLines:result.lines});
       } catch (e) {
         extra.issues = [e.message];
       }
       issues.push(...extra.issues);
-      const covered = new Set(extra.lines.map((l) => l.contentId));
+      const semanticResult = mergeSemanticLines(result.lines,extra.lines);
+      issues.push(...semanticResult.issues);
+      const merged = mergeExtractedRequirements(semanticResult.lines, [...result.requirements, ...(extra.requirements || [])], chunks);
+      const covered = new Set([...extra.lines.map((l) => l.contentId), ...merged.applied]);
       const pending = result.unresolved.filter(
         (c) =>
           !covered.has(c.id) &&
@@ -489,7 +492,7 @@ export function createIntakeService(
         issues.push(
           `${pending.length}处原文包含未落实到物料行的要求或数据，需核对原文`,
         );
-      const all = [...result.lines, ...extra.lines];
+      const all = merged.lines;
       db.run("BEGIN");
       try {
         for (const [i, l] of all.entries()) {
@@ -687,6 +690,8 @@ export function createIntakeService(
         "condition",
         "requirement",
         "dueDate",
+        "needByDate",
+        "quoteDeadline",
         "mpn",
         "priority",
         "manualPn",
@@ -709,6 +714,7 @@ export function createIntakeService(
         throw Object.assign(new Error("字段类型无效"), { status: 400 });
       fields[k] = v;
     }
+    fields.issues = (fields.issues || []).filter(issue => !Object.keys(patch).some(key => issue === `共同要求与物料行的${extractionFieldLabel(key)}冲突，需核对原文` || issue === `语义提取与已识别的${extractionFieldLabel(key)}不一致，需核对原文`));
     const normalized = normalizeLine({ ...fields, fieldSources: { ...fields.fieldSources, ...Object.fromEntries(Object.keys(patch).map(key => [key, { contentId: null, originalContentId: old.content_id, method: "manual", operator: String(operator).slice(0, 100), value: patch[key] }])) } });
     Object.assign(fields, normalized);
     const issues = [...normalized.issues];

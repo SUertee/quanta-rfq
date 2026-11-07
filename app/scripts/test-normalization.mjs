@@ -44,7 +44,7 @@ console.log('PASS: raw and normalized fields, source locations, document roles, 
 const before = rows(db, 'SELECT fields,version FROM inquiry_line WHERE id=?', [saved.id])[0];
 const oldFields = { ...JSON.parse(before.fields), partNumber: 'an3-5a', uom: 'Each' };
 db.run('UPDATE inquiry_line SET fields=? WHERE id=?', [JSON.stringify(oldFields), saved.id]);
-db.run("DELETE FROM schema_migration WHERE id='normalization-v1'");
+db.run("DELETE FROM schema_migration WHERE id='normalization-v2'");
 initIntake(db);
 assert.equal(service.detail(inquiry.id).lines[0].version, before.version + 1);
 assert.ok(rows(db, "SELECT id FROM line_revision WHERE line_id=? AND operator='normalization_migration'", [saved.id]).length);

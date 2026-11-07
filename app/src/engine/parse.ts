@@ -26,6 +26,8 @@ export interface RawRow {
   manualPn?: string;
   productScope?: string;
   dueDate?: string;
+  needByDate?: string;
+  quoteDeadline?: string;
   issues: string[];
   /** 经 LLM 归一并通过 schema 校验的行（审计标记，依据链可回溯） */
   llmFixed?: boolean;

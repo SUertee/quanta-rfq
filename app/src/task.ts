@@ -61,7 +61,7 @@ export function buildTasks(ds: Dataset, opts: PriceOpts = {}, taskRows: Record<s
       urgent: false,
       total: lines.length,
       checkCount: priced.filter(isYellow).length,
-      due: lines.map((l) => l.dueDate).sort()[0] ?? '',
+      due: lines.map((l) => l.quoteDeadline).filter(Boolean).sort()[0] ?? '',
       source,
     });
   }
@@ -85,7 +85,7 @@ export function buildTasks(ds: Dataset, opts: PriceOpts = {}, taskRows: Record<s
       urgent: lines.some((l) => l.urgency === 'AOG'),
       total: lines.length,
       checkCount: priced.filter(isYellow).length,
-      due: lines.map((l) => l.dueDate).sort()[0] ?? '',
+      due: lines.map((l) => l.quoteDeadline).filter(Boolean).sort()[0] ?? '',
       source,
     });
   }

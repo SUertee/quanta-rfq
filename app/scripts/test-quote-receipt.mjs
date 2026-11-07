@@ -10,3 +10,8 @@ assert.throws(()=>validateQuoteReceipt(input({...line,requestedQty:999}),inquiry
 assert.throws(()=>validateQuoteReceipt(input(),{...inquiry,issues:['file failed']}));
 assert.throws(()=>validateQuoteReceipt(input({...line,skipped:true}),inquiry));
 console.log('PASS: reviewed snapshot accepted; missing review/price, stale scope, material failure and all-skipped rejected');
+assert.throws(()=>validateQuoteReceipt(input({...line,quoteDeadline:'2000-01-01'}),{...inquiry,lines:[{...inquiry.lines[0],quoteDeadline:'2000-01-01'}]}),/报价截止日期/);
+assert.equal(validateQuoteReceipt(input({...line,quoteDeadline:'2999-01-01',needByDate:'2999-02-01'}),{...inquiry,lines:[{...inquiry.lines[0],quoteDeadline:'2999-01-01',needByDate:'2999-02-01'}]}).fingerprint.length,64);
+console.log('PASS: server export rechecks quotation deadline even when the saved price and human review are unchanged');
+
+assert.throws(()=>validateQuoteReceipt(input({...line,quoteDeadline:'2999-01-01'}),inquiry),/询价要求已变更/);

@@ -24,3 +24,16 @@ assert.ok(referenceContext('x'.repeat(24000),resolved).length<=24000);
 assert.equal(referenceContext('原内容',[]),'原内容');
 assert.throws(()=>referenceContext('',[{label:'过长',text:'x'.repeat(18000)}]),error=>error.status===400);
 console.log('PASS: references resolve server facts, reject stale/cross-inquiry/forged identifiers, omit private fields and enforce count/context limits');
+
+inquiry.files.push({id:'requirements-file',name:'共同要求.txt'});
+inquiry.contents.push({id:'requirements-content',file_id:'requirements-file',locator:{line:1},text:'全部物料到货日期 2026-12-20'});
+inquiry.lines[0].needByDate='2026-12-20';
+inquiry.lines[0].quoteDeadline='2026-11-20';
+assert.throws(()=>resolveChatReferences([{...reference,contentId:'requirements-content'}],detail),error=>error.status===409);
+inquiry.lines[0].fieldSources={needByDate:{sources:[{contentId:'requirements-content',value:'2026-12-20'}]}};
+const sharedSource=resolveChatReferences([{...reference,contentId:'requirements-content'}],detail);
+assert.match(sharedSource[0].text,/共同要求.txt/);
+assert.match(sharedSource[0].text,/2026-12-20/);
+assert.match(sharedSource[0].text,/quoteDeadline/);
+assert.throws(()=>resolveChatReferences([{...reference,contentId:'requirements-content',version:1}],detail),error=>error.status===409);
+console.log('PASS: a linked requirement can be quoted with its material version, while unrelated and stale cross-file references remain blocked');

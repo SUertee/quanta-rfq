@@ -51,3 +51,14 @@ const first=priceLine({...demand,resourceEvidence:stable},{cost:[{...stock,lastP
 assert.equal(suggestPrice(first,DEFAULT_POLICY).target,125);
 assert.equal(calculateQuotePrice(100,demand,{marginFloor:.1}).floor,111.11);
 console.log('PASS: shared full-PN identity, chosen evidence, stock/supplier fallback, unit/currency/date/certificate/delivery gates, conversion, ambiguity, zero-price rejection and client/Agent parity');
+
+// A quotation reply deadline must never be interpreted as a delivery requirement.
+const dateStock={partNumber:'DATE-QA',uom:'EA',stockQty:10,stockCondition:'FN',lastPurchasePrice:10,currency:'CNY'};
+const dateDemand={partNumber:'DATE-QA',quantity:1,uom:'EA',condition:'FN',quoteDeadline:'2026-11-08'};
+const {evaluateResource:checkDates}=await import('../shared/rfq-rules.mjs');
+const validDeadline=checkDates(dateDemand,dateStock,{source:'inventory',asOf:'2026-11-08',freightDays:30});
+assert.equal(validDeadline.state,'usable');
+assert.ok(!validDeadline.checks.some(check=>check.code==='delivery'));
+assert.equal(checkDates(dateDemand,dateStock,{source:'inventory',asOf:'2026-11-09'}).state,'conflict');
+assert.equal(checkDates({...dateDemand,dueDate:'2026-12-01'},dateStock,{source:'inventory',asOf:'2026-11-08'}).state,'needs_review');
+console.log('PASS: quote deadlines have independent expiry checks and ambiguous dates require confirmation');

@@ -320,8 +320,9 @@ const withNote = await noteSvc.create({
     },
   ],
 });
-assert.equal(withNote.status, "needs_input");
-assert.ok(withNote.issues.some((i) => i.includes("未落实到物料行")));
+assert.equal(withNote.lines[0].needByDate,'2026-12-01');
+assert.match(withNote.lines[0].requirement,/FAA/);
+assert.ok(withNote.lines[0].fieldSources.needByDate.sources.some(source=>source.contentId!==withNote.lines[0].contentId));
 console.log("PASS: 未应用到物料行的全局证书/交期要求不静默放行");
 // Migrate a populated pre-rename database, preserving IDs, content, source, and FKs.
 const legacy = new SQL.Database(db.export());
@@ -343,5 +344,51 @@ console.log('PASS: 带数据旧表迁移、去除前缀、询价外键改名、�
 const labeledFull = extractStructured([{id:'full-labels',fileId:'full',locator:{line:1},text:'件号 AN3-5A 数量 10 单位 EA 件状 FN 描述 BOLT 证书 EASA Form 1 交期 2026-12-01'}]);
 assert.equal(labeledFull.lines[0].description,'BOLT');
 assert.equal(labeledFull.lines[0].requirement,'EASA Form 1');
-assert.equal(labeledFull.lines[0].dueDate,'2026-12-01');
+assert.equal(labeledFull.lines[0].needByDate,'2026-12-01');
 console.log('PASS: labeled extraction retains description, certificate and date alongside core fields');
+
+// Global requirements link to each standard line while keeping the original CSV row unchanged.
+const dates = await noteSvc.create({requestId:'global-dates-qa-01',files:[
+  {name:'parts.csv',base64:Buffer.from('PN,Quantity,Unit,Condition,证书,报价截止日期\nPN-0001,2,EA,FN,FAA 8130,2026-11-20').toString('base64')},
+  {name:'requirements.txt',base64:Buffer.from('全部物料 要求 FAA 8130 交期 2026-12-01 报价截止日期 2026-11-20').toString('base64')},
+]});
+assert.equal(dates.lines.length,1);
+assert.equal(dates.lines[0].needByDate,'2026-12-01');
+assert.equal(dates.lines[0].quoteDeadline,'2026-11-20');
+assert.equal(dates.lines[0].dueDate,null);
+assert.equal(dates.lines[0].rawFields.needByDate,undefined);
+assert.ok(dates.lines[0].fieldSources.needByDate.sources[0].contentId!==dates.lines[0].contentId);
+const conflicting = await noteSvc.create({requestId:'global-conflict-qa-01',files:[
+  {name:'parts.csv',base64:Buffer.from('PN,Quantity,Unit,Condition,到货日期\nPN-0001,2,EA,FN,2026-12-02').toString('base64')},
+  {name:'requirements.txt',base64:Buffer.from('全部物料 交期 2026-12-01').toString('base64')},
+]});
+assert.equal(conflicting.lines[0].needByDate,'2026-12-02');
+assert.ok(conflicting.lines[0].issues.some(issue=>issue.includes('交期冲突')));
+const corrected = noteSvc.updateLine(conflicting.id,conflicting.lines[0].id,{version:conflicting.lines[0].version,patch:{needByDate:'2026-12-01'},operator:'QA'});
+assert.ok(!corrected.lines[0].issues.some(issue=>issue.includes('交期冲突')));
+assert.equal(corrected.lines[0].fieldSources.needByDate.method,'manual');
+const {mergeSemanticLines,mergeExtractedRequirements}=await import('../server/intake-extract.mjs');
+const unknownColumn=extractStructured([{id:'head',fileId:'sheet',locator:{row:1},text:'PN\tQuantity\tUnit\tCondition\t备注',cells:['PN','Quantity','Unit','Condition','备注']},{id:'row',fileId:'sheet',locator:{row:2},text:'PN-0001\t2\tEA\tFN\t需追溯记录',cells:['PN-0001','2','EA','FN','需追溯记录']}]);
+assert.deepEqual(unknownColumn.unresolved.map(chunk=>chunk.id),['row']);
+const reread=await extractSemantic(unknownColumn.unresolved,{apiKey:'test',baseURL:'https://example.invalid',model:'offline'},{knownLines:unknownColumn.lines,fetchImpl:async()=>({ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({lines:[{contentId:'row',partNumber:'PN-0001',quantity:null,description:'invented description',requirement:'需追溯记录'}]})}}]})})});
+assert.ok(reread.issues.some(issue=>issue.includes('description')));
+const combined=mergeSemanticLines(unknownColumn.lines,reread.lines);
+assert.equal(combined.lines.length,1);
+assert.equal(combined.lines[0].quantity,2);
+assert.equal(combined.lines[0].requirement,'需追溯记录');
+assert.ok(!combined.lines[0].issues.includes('缺单位'));
+const separate=mergeSemanticLines(unknownColumn.lines,[{...reread.lines[0],contentId:'another-file'}]);
+assert.equal(separate.lines.length,2);
+assert.equal(mergeExtractedRequirements(unknownColumn.lines,[{contentId:'row',scope:'all',field:'condition',value:'forged'}],unknownColumn.unresolved).applied.size,0);
+console.log('PASS: cross-file certificate/date provenance, deadline/delivery separation, conflicts/manual correction, unknown-column reread, fabricated description rejection and same-source supplement without cross-file deduplication');
+
+const semanticFixture={apiKey:'test',baseURL:'https://example.invalid',model:'offline'};
+const reasoningText='Internal draft {"not":"output"}</think>\n'+JSON.stringify({lines:[{contentId:'safe',partNumber:'PN-0001',quantity:2,uom:'EA',condition:'FN'}]});
+const reasoningSafe=await extractSemantic([{id:'safe',fileId:'safe',locator:{line:1},text:'PN-0001 2 EA FN'}],semanticFixture,{fetchImpl:async()=>({ok:true,json:async()=>({choices:[{message:{content:reasoningText}}]})})});
+assert.equal(reasoningSafe.lines[0].partNumber,'PN-0001');
+await assert.rejects(()=>extractSemantic([{id:'safe',text:'PN-0001 2 EA FN'}],semanticFixture,{fetchImpl:async()=>({ok:true,json:async()=>({choices:[{message:{content:'private model reasoning with {broken JSON'}}]})})}),error=>!error.message.includes('private model')&&error.message.includes('原文已保留'));
+const sentence=extractStructured([{id:'mail',fileId:'mail',locator:{part:'body'},text:'All items require FAA 8130 certificates. Required by: 2026-12-20. Quote deadline: 2026-11-20.'}]);
+assert.ok(!sentence.requirements.some(row=>row.value==='s.'));
+assert.equal(sentence.requirements.find(row=>row.field==='needByDate').value,'2026-12-20');
+assert.equal(sentence.requirements.find(row=>row.field==='quoteDeadline').value,'2026-11-20');
+console.log('PASS: sentence label boundaries, terminal punctuation, reasoning-prefix JSON isolation and safe extraction errors');

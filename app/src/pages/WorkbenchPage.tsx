@@ -105,7 +105,7 @@ export function WorkbenchPage({
   }, [taskKey]);
   const [editError, setEditError] = useState('');
   const [adding, setAdding] = useState(false);
-  const [newLine, setNewLine] = useState({ pn: '', quantity: '1', uom: 'EA', description: '' });
+  const [newLine, setNewLine] = useState({ pn: '', quantity: '1', uom: 'EA', description: '', requirement: '', needByDate: '', quoteDeadline: '', dueDate: '' });
   const [open, setOpen] = useState<string | null>(null);
   const [showRaw, setShowRaw] = useState(false);
   const [llmBusy, setLlmBusy] = useState(false);
@@ -141,7 +141,7 @@ export function WorkbenchPage({
 
   const referenceForLine = (line: InquiryLine): ChatReference => {
     const stored = parseRows.find(row=>row.lineNo===line.lineNo);
-    const excerpt=[line.partNumber,line.description,`${line.quantity} ${line.uom}`,line.condition,line.requirement,line.dueDate].filter(Boolean).join(' · ');
+    const excerpt=[line.partNumber,line.description,`${line.quantity} ${line.uom}`,line.condition,line.requirement,line.needByDate,line.quoteDeadline,line.dueDate].filter(Boolean).join(' · ');
     return {
       id:`line:${line.key}:${stored?.version||1}`,
       label:`物料 · ${line.partNumber||'件号待补'}`,
@@ -188,12 +188,13 @@ export function WorkbenchPage({
 
   // 行级手工修改（AI 不可用时的兜底入口，也对所有行开放）
   const [editKey, setEditKey] = useState<string | null>(null);
-  const [draft, setDraft] = useState({ partNumber: '', quantity: '', uom: '', condition: '', description: '' });
+  const [draft, setDraft] = useState({ partNumber: '', quantity: '', uom: '', condition: '', description: '', requirement: '', needByDate: '', quoteDeadline: '', dueDate: '' });
   const startEdit = (p: PricedLine) => {
     setEditError(''); setEditKey(p.line.key);
     setDraft({
       partNumber: p.line.partNumber, quantity: String(p.line.quantity || ''),
       uom: p.line.uom, condition: p.line.condition, description: p.line.description,
+      requirement:p.line.requirement, needByDate:p.line.needByDate||'', quoteDeadline:p.line.quoteDeadline||'', dueDate:p.line.dueDate||'',
     });
   };
   const saveEdit = (key: string) => {
@@ -207,6 +208,7 @@ export function WorkbenchPage({
       quantity: Number(draft.quantity) || 0,
       uom: draft.uom, uomNormalized: u.norm, uomFactor: u.factor,
       condition: draft.condition, description: draft.description.trim(),
+      requirement:draft.requirement.trim(), needByDate:draft.needByDate.trim(), quoteDeadline:draft.quoteDeadline.trim(), dueDate:draft.dueDate.trim(),
       issues: [], manualFixedMark: true,
     });
     setEditKey(null);
@@ -356,7 +358,7 @@ export function WorkbenchPage({
   };
   const unsignedReceiptContent=JSON.stringify({schemaVersion:2,draftVersion:quoteVersion,policy,company:getCompany(),manualCost:estCost,lines:priced.map(p=>({
     key:p.line.key,pn:p.line.partNumber,desc:p.line.description,requestedQty:p.line.quantity,qty:quoteQtyOf(p).qty,
-    uom:p.line.uom,condition:p.line.condition,requirement:p.line.requirement,needByDate:p.line.needByDate||'',dueDate:p.line.dueDate,ruleVersion:p.ruleVersion,basisId:p.basisId,basisResource:p.basisResource,price:priceBook[p.line.key]??null,skipped:skipped.has(p.line.key),reviewed:resolved.has(p.line.key),flags:p.flags,
+    uom:p.line.uom,condition:p.line.condition,requirement:p.line.requirement,needByDate:p.line.needByDate||'',dueDate:p.line.dueDate,quoteDeadline:p.line.quoteDeadline||'',ruleVersion:p.ruleVersion,basisId:p.basisId,basisResource:p.basisResource,price:priceBook[p.line.key]??null,skipped:skipped.has(p.line.key),reviewed:resolved.has(p.line.key),flags:p.flags,
   }))});
   const quoteSignature=useQuoteSignature(taskKey,unsignedReceiptContent);
   const [signatureOpen,setSignatureOpen]=useState(false);
@@ -497,7 +499,7 @@ export function WorkbenchPage({
           </span>
         </div>
         <div className="wb-filterbar"><FilterTabs label="筛选物料" value={rowFilter} onChange={setRowFilter} items={[{value:'all',label:'全部',count:priced.length},{value:'review',label:'待核对',count:needCheck.length},{value:'unpriced',label:'待定价',count:unpriced.length}]} /><input aria-label="搜索物料" placeholder="搜索件号 / 描述" value={lineSearch} onChange={e=>setLineSearch(e.target.value)} /></div>
-        {adding && <form className="check-box" onSubmit={e => { e.preventDefault(); if (!newLine.pn.trim() || !Number.isFinite(Number(newLine.quantity)) || Number(newLine.quantity) <= 0) return; onAddLine(newLine.pn.trim(), Number(newLine.quantity), newLine.uom.trim(), newLine.description.trim()); setAdding(false); setNewLine({ pn: '', quantity: '1', uom: 'EA', description: '' }); }}><div className="edit-grid"><label>新增件号<input required value={newLine.pn} onChange={e => setNewLine({ ...newLine, pn: e.target.value })} /></label><label>新增数量<input required type="number" min="0.01" step="any" value={newLine.quantity} onChange={e => setNewLine({ ...newLine, quantity: e.target.value })} /></label><label>新增单位<input required value={newLine.uom} onChange={e => setNewLine({ ...newLine, uom: e.target.value })} /></label><label>新增描述<input value={newLine.description} onChange={e => setNewLine({ ...newLine, description: e.target.value })} /></label></div><div className="toolbar"><button className="btn primary" type="submit">添加到当前询价</button><button className="btn" type="button" onClick={() => setAdding(false)}>取消新增</button></div></form>}
+        {adding && <form className="check-box" onSubmit={e => { e.preventDefault(); if (!newLine.pn.trim() || !Number.isFinite(Number(newLine.quantity)) || Number(newLine.quantity) <= 0) return; onAddLine(newLine.pn.trim(), Number(newLine.quantity), newLine.uom.trim(), newLine.description.trim()); setAdding(false); setNewLine({ pn: '', quantity: '1', uom: 'EA', description: '', requirement: '', needByDate: '', quoteDeadline: '', dueDate: '' }); }}><div className="edit-grid"><label>新增件号<input required value={newLine.pn} onChange={e => setNewLine({ ...newLine, pn: e.target.value })} /></label><label>新增数量<input required type="number" min="0.01" step="any" value={newLine.quantity} onChange={e => setNewLine({ ...newLine, quantity: e.target.value })} /></label><label>新增单位<input required value={newLine.uom} onChange={e => setNewLine({ ...newLine, uom: e.target.value })} /></label><label>新增描述<input value={newLine.description} onChange={e => setNewLine({ ...newLine, description: e.target.value })} /></label></div><div className="toolbar"><button className="btn primary" type="submit">添加到当前询价</button><button className="btn" type="button" onClick={() => setAdding(false)}>取消新增</button></div></form>}
         <div className="table-wrap material-table-scroll">
           <table className="material-table">
             <colgroup>{[36,130,150,90,145,130,80,100].map((width,i)=><col key={i} style={{width}} />)}</colgroup>
@@ -572,6 +574,10 @@ export function WorkbenchPage({
                                 </select>
                               </label>
                               <label className="span2">描述<input value={draft.description} onChange={(e) => setDraft({ ...draft, description: e.target.value })} /></label>
+                              <label className="span2">证书与附加要求<input value={draft.requirement} onChange={e=>setDraft({...draft,requirement:e.target.value})} /></label>
+                              <label>到货日期<input type="date" value={draft.needByDate.slice(0,10)} onChange={e=>setDraft({...draft,needByDate:e.target.value})} /></label>
+                              <label>报价截止日期<input type="date" value={draft.quoteDeadline.slice(0,10)} onChange={e=>setDraft({...draft,quoteDeadline:e.target.value})} /></label>
+                              {draft.dueDate&&<label className="span2">待确认日期<input value={draft.dueDate} onChange={e=>setDraft({...draft,dueDate:e.target.value})} /><span>确认日期用途后，将日期填入对应字段并清空此项。</span></label>}
                             </div>
                             <div className="toolbar" style={{ marginTop: 8 }}>
                               <button className="btn primary" onClick={() => saveEdit(p.line.key)}>保存并重新核价</button>

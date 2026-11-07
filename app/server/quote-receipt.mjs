@@ -1,5 +1,5 @@
 import {validateSignature} from '../shared/signature.mjs';
-import {freightChargeFor} from '../shared/rfq-rules.mjs';
+import {businessToday,freightChargeFor} from '../shared/rfq-rules.mjs';
 import {createHash} from 'node:crypto';
 
 export function validateQuoteReceipt(value,inquiry) {
@@ -33,7 +33,8 @@ export function validateQuoteReceipt(value,inquiry) {
       const source=expected.get(line.key);
       if(!source||seen.has(line.key)||source.partNumber!==line.pn||source.quantity!==line.requestedQty||source.uom!==line.uom||source.condition!==line.condition)fail('询价已变更，请重新核对');
       seen.add(line.key);
-      if(content.signature&&(String(source.description||'')!==String(line.desc||'')||String(source.requirement||'')!==String(line.requirement||'')||String(source.dueDate||'')!==String(line.dueDate||'')))fail('询价要求已变更，请重新核对并签名');
+      if((String(source.description||'')!==String(line.desc||'')||String(source.requirement||'')!==String(line.requirement||'')||String(source.dueDate||'')!==String(line.dueDate||'')||String(source.needByDate||'')!==String(line.needByDate||'')||String(source.quoteDeadline||'')!==String(line.quoteDeadline||'')))fail('询价要求已变更，请重新核对');
+      if(!line.skipped&&source.quoteDeadline&&source.quoteDeadline.slice(0,10)<businessToday())fail('已超过报价截止日期，请重新确认询价要求');
       if(line.basisId){
         const evidence=source.evidence?.find(entry=>entry.id===line.basisId);
         if(!evidence||JSON.stringify(evidence.snapshot)!==JSON.stringify(line.basisResource))fail('报价依据已变化，请刷新后重新核对');

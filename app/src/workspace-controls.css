@@ -503,6 +503,15 @@ html:has(dialog[open]) { overflow:hidden; }
 .normalization-values table { width:100%;border-collapse:collapse;font-size:14px;text-align:left; }
 .normalization-values th,.normalization-values td { padding:10px 14px;border-bottom:1px solid var(--line);overflow-wrap:anywhere; }
 .normalization-values thead { background:var(--hal-hover); }
+.normalization-values td>small { display:block;margin-top:6px;font-size:14px;line-height:1.6;color:var(--ink-2);overflow-wrap:anywhere; }
+@media(max-width:600px) {
+ .normalization-values thead { display:none; }
+ .normalization-values table,.normalization-values tbody { display:block; }
+ .normalization-values tr { display:grid;grid-template-columns:minmax(64px,.65fr) minmax(0,1.35fr);border-bottom:1px solid var(--line); }
+ .normalization-values th { grid-column:1/-1;background:var(--hal-hover);border:0; }
+ .normalization-values td { border:0;min-width:0; }
+ .normalization-values td::before { content:attr(data-label);display:block;margin-bottom:6px;font-size:13px;color:var(--ink-2); }
+}
 .resource-checks { display:grid;gap:10px;margin:14px 0;font-size:14px; }
 .resource-checks>.badge { justify-self:start; }
 .resource-checks ul { margin:0;padding-left:20px;line-height:1.7; }
@@ -961,9 +970,9 @@ html:has(.layout-reference),body:has(.layout-reference) { height:100%;overflow:h
 .layout-reference .stage-export .export-checklist { display:flex;flex-wrap:wrap;gap:24px; }
 .layout-reference .stage-export .export-checklist>div { flex:1 1 170px;border:0;border-radius:0;padding:0;box-shadow:none;background:transparent; }
 .layout-reference .stage-export .export-checklist b { font-size:20px;line-height:1.4; }
-.layout-reference .stage-check-findings { display:flex;flex-direction:column;align-items:flex-start;gap:8px; }
-.layout-reference .stage-check-findings .check-finding { display:grid;grid-template-columns:20px 1fr;align-items:start;gap:8px; }
-.layout-reference .stage-check-findings .check-finding-mark { text-align:center; }
+.layout-reference .stage-check-findings { display:grid;grid-template-columns:minmax(0,1fr);gap:8px; }
+.layout-reference .stage-check-findings .check-finding { display:grid;grid-template-columns:20px minmax(0,1fr);align-items:start;gap:10px;flex:none;padding:4px 0;border:0;background:transparent; }
+.layout-reference .stage-check-findings .check-finding-mark { width:20px;height:20px;text-align:center;font-size:14px; }
 .layout-reference .export-blockers { flex:1 0 100%;padding:16px 20px;border-left:3px solid #bc7c16;border-radius:6px;background:#fff8e8;color:#725013; }
 .layout-reference .export-blockers ul { padding-left:20px;margin:8px 0 0;display:grid;gap:8px; }
 .layout-reference .export-blockers button { padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;text-decoration:underline;text-underline-offset:3px; }

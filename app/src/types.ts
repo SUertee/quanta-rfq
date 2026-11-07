@@ -56,7 +56,8 @@ export interface InquiryLine {
   manualPn: string;
   productScope: string;
   dueDate: string;
-  /** 需求日期（客户要货截止，用于运输时间估算；仅邮件 Due Date 语义明确时赋值） */
+  /** 报价回复截止与到货日期分别保存，含义不明的日期保留在 dueDate 待核对。 */
+  quoteDeadline?: string;
   needByDate?: string;
   issues: string[];
   /** 该行经 LLM 归一并通过校验（审计标记） */

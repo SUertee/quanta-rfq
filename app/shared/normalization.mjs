@@ -1,5 +1,5 @@
 /** Shared, conservative normalization. Part suffixes and condition distinctions are preserved. */
-export const NORMALIZATION_VERSION = '1';
+export const NORMALIZATION_VERSION = '2';
 export const DOCUMENT_TYPES = ['customer_inquiry', 'supplier_quote', 'inventory', 'certificate', 'unknown'];
 export const normalizePartNumber = value => String(value ?? '').trim().toUpperCase();
 export function normalizeUnit(value) {
@@ -13,15 +13,19 @@ export function normalizeLine(value, { contentId = value.contentId, method = val
   fields.uom = normalizeUnit(value.uom) || null;
   fields.condition = String(value.condition ?? '').trim().toUpperCase() || null;
   fields.quantity = normalizeQuantity(value.quantity);
-  const issues = (value.issues || []).filter(issue => !['缺件号', '缺少有效数量', '缺单位', '缺件状', '日期格式不明确，需人工确认', '按件计量的数量不是整数，需确认'].includes(issue));
+  const issues = (value.issues || []).filter(issue => !['缺件号', '缺少有效数量', '缺单位', '缺件状', '日期格式不明确，需人工确认', '到货日期格式不明确，需人工确认', '报价截止日期格式不明确，需人工确认', '截止日期用途不明确，请确认到货日期或报价截止日期', '按件计量的数量不是整数，需确认'].includes(issue));
   if (!fields.partNumber) issues.push('缺件号');
   if (fields.quantity === null) issues.push('缺少有效数量');
   if (fields.uom === 'EA' && fields.quantity !== null && !Number.isInteger(fields.quantity)) issues.push('按件计量的数量不是整数，需确认');
   if (!fields.uom) issues.push('缺单位');
   if (!fields.condition) issues.push('缺件状');
   if (fields.dueDate && !validDate(fields.dueDate)) issues.push('日期格式不明确，需人工确认');
+  if (fields.dueDate && validDate(fields.dueDate)) issues.push('截止日期用途不明确，请确认到货日期或报价截止日期');
+  for (const [key,label] of [['needByDate','到货日期'],['quoteDeadline','报价截止日期']]) {
+    if (fields[key] && !validDate(fields[key])) issues.push(`${label}格式不明确，需人工确认`);
+  }
   const fieldSources = { ...value.fieldSources };
-  for (const key of ['partNumber', 'description', 'quantity', 'uom', 'condition', 'requirement', 'dueDate', 'mpn']) {
+  for (const key of ['partNumber', 'description', 'quantity', 'uom', 'condition', 'requirement', 'dueDate', 'needByDate', 'quoteDeadline', 'mpn']) {
     if (value[key] != null && !fieldSources[key]) fieldSources[key] = { contentId, locator: locator || {}, method };
   }
   return { ...fields, issues, rawFields, fieldSources, normalizationVersion: NORMALIZATION_VERSION };

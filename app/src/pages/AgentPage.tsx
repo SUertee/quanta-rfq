@@ -147,7 +147,7 @@ export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOv
         return;
       }
       // Legacy field named margin stores markup rate (cost-based), matching Settings.
-      const response = await fetch('/api/agent/run', {method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({instruction,history,references:activeReferences,context:attachmentContext,inquiryId:current.email?.intakeBatchId,lines:current.lines.map(l => ({key:l.key,partNumber:l.partNumber || '',description:l.description,quantity:l.quantity,uom:l.uom,condition:l.condition,urgency:l.urgency,requirement:l.requirement,dueDate:l.dueDate,needByDate:l.needByDate||'',issues:l.issues})),policy:{condFnNe:policy.condFnNe,certMutual:policy.certMutual,freightDays:policy.freightDays,fxRates:{...(policy.fxUsd?{USD:policy.fxUsd}:{}),...(policy.fxEur?{EUR:policy.fxEur}:{}),...(policy.fxRates||{})},markupRate:policy.margin,aogPremium:policy.aogPremium,bulkDiscount:policy.bulkDiscount,bulkQty:policy.bulkQty}})});
+      const response = await fetch('/api/agent/run', {method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({instruction,history,references:activeReferences,context:attachmentContext,inquiryId:current.email?.intakeBatchId,lines:current.lines.map(l => ({key:l.key,partNumber:l.partNumber || '',description:l.description,quantity:l.quantity,uom:l.uom,condition:l.condition,urgency:l.urgency,requirement:l.requirement,dueDate:l.dueDate,needByDate:l.needByDate||'',quoteDeadline:l.quoteDeadline||'',issues:l.issues})),policy:{condFnNe:policy.condFnNe,certMutual:policy.certMutual,freightDays:policy.freightDays,fxRates:{...(policy.fxUsd?{USD:policy.fxUsd}:{}),...(policy.fxEur?{EUR:policy.fxEur}:{}),...(policy.fxRates||{})},markupRate:policy.margin,aogPremium:policy.aogPremium,bulkDiscount:policy.bulkDiscount,bulkQty:policy.bulkQty}})});
       const data = await readAgentStream<AgentResult>(response,(tool,state)=>{
         if(id!==generation.current)return;
         setSessions(old=>{
@@ -205,7 +205,7 @@ export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOv
                     <div><strong className="quote-part">{line.partNumber||'缺件号'}</strong><span className="quote-quantity">{line.quantity} {line.uom||'单位待补'}</span></div>
                     <div className="quote-unit-price"><span>建议单价</span><b>{fmtMoney(line.suggestedPrice,line.currency)||'待补依据'}</b></div>
                   </header>
-                  <dl className="quote-cost-basis"><div><dt>{line.basisSource==='supplier_price'?'供应商成本':'内部成本'}</dt><dd>{fmtMoney(line.cost,line.currency)||'待补充'}</dd></div><div><dt>报价依据</dt><dd>{line.basisSource==='supplier_price'?'供应商报价':line.source?'内部库存成本':'尚未匹配'}</dd></div></dl>
+                  <dl className="quote-cost-basis"><div><dt>{line.basisSource==='supplier_price'?'供应商成本':'内部成本'}</dt><dd>{fmtMoney(line.cost,line.currency)||'待补充'}</dd></div><div><dt>报价依据</dt><dd>{line.basisSource==='supplier_price'?'供应商报价':line.source?'内部库存成本':'暂无满足条件的依据'}</dd></div></dl>
                   {line.issues.length>0&&<ul className="quote-line-issues">{line.issues.map((issue,k)=><li key={k}>{issue}</li>)}</ul>}
                   <footer className="quote-line-actions">
                     <span className={`quote-price-state ${stale?'stale':applied?'applied':'pending'}`}>{stale?'需重新核对':applied?'✓ 已填入单价':line.suggestedPrice==null?'缺少报价依据':'待核对'}</span>

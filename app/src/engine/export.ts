@@ -180,12 +180,12 @@ ${pending.length ? `
 /** B13：非标品供应商询价单（CSV，发给供应商询价用） */
 export function exportSupplierRfqCsv(priced: PricedLine[], ctx: ExportCtx): void {
   const rows = priced.filter((p) => p.flags.includes('NO_MATCH'));
-  const head = ['询价单号', '件号', '描述', '数量', '单位', '件状要求', '产品要求', '需求日期', '备注'];
+  const head = ['询价单号', '件号', '描述', '数量', '单位', '件状要求', '产品要求', '到货日期', '报价截止日期', '备注'];
   const lines = [head.map(csvCell).join(',')];
   for (const p of rows) {
     lines.push([
       ctx.taskLabel, p.line.partNumber, p.line.description, p.line.quantity, p.line.uom,
-      p.line.condition, p.line.requirement, p.line.dueDate, '请报含税含运最优价与交期',
+      p.line.condition, p.line.requirement, p.line.needByDate || '', p.line.quoteDeadline || '', '请报含税含运最优价与交期',
     ].map(csvCell).join(','));
   }
   download(`${ctx.taskLabel || '询价'}_供应商询价单.csv`, '\ufeff' + lines.join('\r\n'), 'text/csv;charset=utf-8');
