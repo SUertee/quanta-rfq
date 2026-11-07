@@ -180,8 +180,20 @@ http.createServer(async (req, res) => {
     if(url.pathname==='/api/price-resources' && req.method==='GET'){res.end(JSON.stringify({prices:intake.prices()}));return;}
     const batchPath=url.pathname.match(/^\/api\/inquiries\/([^/]+)(\/evidence)?$/);
     if(batchPath && (req.method==='GET'||(req.method==='POST'&&batchPath[2]))){const result=batchPath[2]?intake.refresh(batchPath[1]):intake.detail(batchPath[1]);if(!result)res.writeHead(404);res.end(JSON.stringify(result||{error:'批次不存在'}));return;}
-    const rawPath=url.pathname.match(/^\/api\/files\/([^/]+)\/raw$/);
-    if(rawPath&&req.method==='GET'){const f=intake.rawFile(rawPath[1]);if(!f){res.writeHead(404);res.end(JSON.stringify({error:'文件不存在'}));return;}res.setHeader('Content-Type','application/octet-stream');res.setHeader('Content-Disposition',`attachment; filename*=UTF-8''${encodeURIComponent(f.name)}`);res.end(Buffer.from(f.raw));return;}
+    const rawPath = url.pathname.match(/^\/api\/files\/([^/]+)\/(raw|preview)$/);
+    if (rawPath && req.method === 'GET') {
+      const file = intake.rawFile(rawPath[1]);
+      if (!file) { res.writeHead(404); res.end(JSON.stringify({ error: '文件不存在' })); return; }
+      const inline = rawPath[2] === 'preview';
+      const extension = file.name.split('.').pop().toLowerCase();
+      const previewTypes = { png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', pdf: 'application/pdf' };
+      res.setHeader('Content-Type', inline ? previewTypes[extension] || 'text/plain; charset=utf-8' : 'application/octet-stream');
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      res.setHeader('Content-Security-Policy', inline && extension === 'pdf' ? "frame-ancestors 'self'" : "default-src 'none'; frame-ancestors 'self'; sandbox");
+      res.setHeader('Content-Disposition', `${inline ? 'inline' : 'attachment'}; filename*=UTF-8''${encodeURIComponent(file.name)}`);
+      res.end(Buffer.from(file.raw));
+      return;
+    }
     if(req.method==='GET'&&url.pathname==='/api/agents'){res.end(JSON.stringify({agents:agentAudit.listAgents()}));return;}
     if(req.method==='POST'&&url.pathname==='/api/assistant/files'){res.end(JSON.stringify(await readChatFiles(await readBody(req,36_000_000))));return;}
     if(req.method==='POST'&&url.pathname==='/api/assistant/chat'){

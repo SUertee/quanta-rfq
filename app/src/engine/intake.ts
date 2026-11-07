@@ -24,6 +24,7 @@ export interface IntakeBatch {
     id: string;
     file_id: string;
     text: string;
+    cells?: string[];
     locator: Record<string, unknown>;
   }[];
   lines: (Partial<RawRow> & {

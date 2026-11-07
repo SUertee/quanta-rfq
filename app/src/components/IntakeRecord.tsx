@@ -48,6 +48,7 @@ export function IntakeRecord({
     [busy, setBusy] = useState(false),
     [localPane, setPane] = useState<Pane | null>(null),
     [selected, setSelected] = useState("");
+  const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const pane = view === undefined ? localPane : view;
   const load = async (refresh = false) => {
     setError("");
@@ -73,6 +74,8 @@ export function IntakeRecord({
   useEffect(() => {
     void load();
   }, [batchId, revisionKey]);
+  const previewFile = record?.files.find(file => file.id === previewFileId);
+  const previewContents = record?.contents.filter(content => content.file_id === previewFileId) || [];
   const lines = record?.lines || [];
   const issueCount =
     (record?.issues.length || 0) + lines.filter((l) => l.issues?.length).length;
@@ -170,29 +173,48 @@ export function IntakeRecord({
             )}
           </div>
           {pane === "files" && (
-            <div className="intake-files">
-              {record.files.map((f) => (
-                <a
-                  className="intake-file"
-                  href={appUrl("/api/files/" + encodeURIComponent(f.id) + "/raw")}
-                  key={f.id}
-                  download
-                >
-                  <span className="intake-file-icon">
-                    {f.name.split(".").pop()?.toUpperCase()}
-                  </span>
-                  <span>
-                    <b>{f.name}</b>
-                    <small>
-                      {documentTypes[f.document_type] || "待分类"} · {f.file_type?.toUpperCase()} · {f.parent_id ? "邮件附件 · " : ""}
-                      {fileStates[f.status] || f.status}
-                      {f.error ? " · " + f.error : ""}
-                    </small>
-                  </span>
-                  <span aria-hidden="true">↓</span>
-                </a>
-              ))}
-            </div>
+            <>
+              <div className="intake-file-strip" aria-label="原始文件">
+                {record.files.map(file => (
+                  <button
+                    type="button"
+                    className="intake-file-chip"
+                    key={file.id}
+                    title={`${documentTypes[file.document_type] || '待分类'} · ${fileStates[file.status] || file.status}`}
+                    aria-expanded={previewFileId === file.id}
+                    aria-controls={`file-preview-${batchId}`}
+                    onClick={() => setPreviewFileId(current => current === file.id ? null : file.id)}
+                  >
+                    <span className="intake-file-icon" aria-hidden="true">{file.file_type?.toUpperCase() || file.name.split('.').pop()?.toUpperCase()}</span>
+                    <b>{file.name}</b>
+                    {file.status !== 'parsed' && <span className="badge badge-amber">{fileStates[file.status] || file.status}</span>}
+                  </button>
+                ))}
+              </div>
+              {previewFile && (
+                <section className="intake-inline-preview" id={`file-preview-${batchId}`} aria-label={`预览 ${previewFile.name}`}>
+                  <header>
+                    <strong>{previewFile.name}</strong>
+                    <div>
+                      <a className="btn" href={appUrl(`/api/files/${encodeURIComponent(previewFile.id)}/raw`)} download>下载</a>
+                      <button className="btn" type="button" onClick={() => setPreviewFileId(null)}>关闭</button>
+                    </div>
+                  </header>
+                  <div className="intake-inline-preview-body">
+                    {['png', 'jpg', 'jpeg', 'webp'].includes(previewFile.file_type) ? (
+                      <img src={appUrl(`/api/files/${encodeURIComponent(previewFile.id)}/preview`)} alt={previewFile.name} />
+                    ) : previewFile.file_type === 'pdf' ? (
+                      <iframe src={appUrl(`/api/files/${encodeURIComponent(previewFile.id)}/preview`)} title={previewFile.name} />
+                    ) : previewContents.some(content => content.cells?.length) ? (
+                      <table><tbody>{previewContents.map(content => <tr key={content.id}><th>{position(content.locator)}</th>{(content.cells || [content.text]).map((cell, index) => <td key={index}>{cell}</td>)}</tr>)}</tbody></table>
+                    ) : (
+                      <pre>{previewContents.map(content => content.text).join('\n') || '尚无可读正文，请下载原文件核对。'}</pre>
+                    )}
+                  </div>
+                  {previewFile.error && <p role="alert">{previewFile.error}</p>}
+                </section>
+              )}
+            </>
           )}
           {pane === "issues" && (
             <div className="intake-issues">

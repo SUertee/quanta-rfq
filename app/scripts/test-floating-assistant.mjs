@@ -34,3 +34,25 @@ console.log('PASS: Enter send, IME guard, arrow send and expanded-input visibili
 props.open=true;tree=render();assert.ok(tree.props.children[1],'the same orb stays mounted while the panel opens');assert.equal(tree.props.children[1].props.style.width,52);const anchorRight=tree.props.children[1].props.style.right;assert.equal(tree.props.children[0].props.style['--assistant-anchor-x'],`${context.innerWidth-anchorRight-52}px`);assert.ok(tree.props.children[0].props.style.top<=tree.props.children[1].props.style.top,'panel contains the original anchor');console.log('PASS: open panel retains stable right-anchored orb and shared send coordinate');
 
 const panel=tree.props.children[0].props.style,control=tree.props.children[1].props.style;assert.equal(panel.left+parseFloat(panel['--panel-start-x']),context.innerWidth-control.right-52);assert.equal(panel.top+parseFloat(panel['--panel-start-y']),control.top);assert.equal(panel.width*panel['--panel-start-scale-x'],52);assert.equal(panel.height*panel['--panel-start-scale-y'],52);assert.match(css,/transform-origin:0 0;animation:assistant-anchor-reveal 480ms/);console.log('PASS: expansion starts at the exact 52px orb bounds, then grows on both axes');
+
+const beforeDock=tree.props.children[1].props.style.top;
+props.docked=true;tree=render();
+assert.ok(tree.props.className.includes('docked'));
+assert.equal(tree.props.children[1],false,'docked chat uses its native send button, not the floating orb');
+assert.equal(tree.props.children[0].props.children,props.children,'docking preserves the same mounted conversation');
+assert.equal(tree.props.children[0].props.style.width,context.innerWidth-24,'narrow dock fits viewport');
+const collapseBeforeDock=collapsed;
+tree.props.onPointerDown(event(100,100));tree.props.onPointerMove(event(200,200));
+assert.equal(collapsed,collapseBeforeDock,'docked header is not draggable');
+props.docked=false;tree=render();
+assert.equal(tree.props.children[1].props.style.top,beforeDock,'return to floating preserves saved orb anchor');
+assert.match(css,/\.floating-assistant\.docked:not\(\.expanded\)[\s\S]*visibility:visible/);
+assert.match(css,/prefers-reduced-motion:reduce/);
+console.log('PASS: dock/float preserves mounted chat and anchor, native send, narrow viewport and drag guard');
+
+const appSource=fs.readFileSync(new URL('../src/App.tsx',import.meta.url),'utf8');
+assert.ok(appSource.includes("docked={assistantDocked && assistantOpen && mode==='workbench'}"),'closed dock always restores orb access');
+assert.ok(appSource.includes("setAssistantDocked(mode==='agent'?false:!assistantDocked)"),'full page can restore floating mode');
+context.innerWidth=1600;props.docked=true;tree=render();
+assert.equal(tree.props.children[0].props.style.width,624,'desktop dock occupies 40% of workspace');
+assert.equal(tree.props.children[0].props.style.left,956,'desktop dock aligns to workspace right edge');

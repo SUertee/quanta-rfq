@@ -38,6 +38,7 @@ export default function App() {
   const [activeChat,setActiveChat]=useStoredState<string|null>('active-chat-v1',null);
   const [quickMessage,setQuickMessage]=useState<{id:number;text:string}|null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
+  const [assistantDocked, setAssistantDocked] = useState(false);
   const [agentLineKey, setAgentLineKey] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [userName, setUserName] = useState(() => localStorage.getItem('quanta-user-name') || '林');
@@ -170,7 +171,7 @@ export default function App() {
   };
 
   return (
-    <div className={`layout layout-reference mode-${mode} view-${view}`}>
+    <div className={`layout layout-reference mode-${mode} view-${view} ${assistantDocked && assistantOpen && mode==='workbench' ? 'assistant-docked' : ''}`}>
       <aside className="sidebar">
         <button className="brand" aria-label="返回询价任务" onClick={()=>{setMode('workbench');setView('home');setAssistantOpen(false);}}>
           <img className="quanta-wordmark" src={appUrl('images/brand/quanta-logo-light.svg')} alt="Quanta" width="136" height="43" />
@@ -198,15 +199,15 @@ export default function App() {
         {saveError && <div role="alert" className="panel">本机保存失败，可能是浏览器存储空间不足。请暂时不要刷新或关闭页面，先导出当前报价备份。</div>}
 
 
-        <FloatingAssistant onSend={text=>{setQuickMessage({id:Date.now(),text});setAssistantOpen(true);}} open={assistantOpen} expanded={mode==='agent'} onOpen={()=>setAssistantOpen(true)} onCollapse={()=>{setAssistantOpen(false);setMode('workbench');}}>
+        <FloatingAssistant onSend={text=>{setQuickMessage({id:Date.now(),text});setAssistantOpen(true);}} open={assistantOpen} expanded={mode==='agent'} docked={assistantDocked && assistantOpen && mode==='workbench'} onOpen={()=>setAssistantOpen(true)} onCollapse={()=>{setAssistantOpen(false);setAssistantDocked(false);setMode('workbench');}}>
         <div className={mode === 'agent' ? "agent-mode-host" : "embedded-agent-host"} hidden={mode !== 'agent' && !assistantOpen}>
           {mode==='agent'&&<ConversationList tasks={tasks} selected={activeChat||(source?sourceKey(source)+(agentLineKey?':line:'+agentLineKey:''):'__no_task__')} onNew={()=>{const key=newConversation();if(key){setActiveChat(key);setSource(null);setAgentLineKey(null);}}} onSelect={(key)=>{setQuickMessage(null);setActiveChat(key.startsWith('chat:')?key:null);const linked=conversationMeta()[key]?.taskKey;if(key.startsWith('chat:')||Object.prototype.hasOwnProperty.call(conversationMeta()[key]||{},'taskKey')){setActiveChat(key);const linkedTask=tasks.find(t=>t.key===linked);setSource(linkedTask?.source||null);setAgentLineKey(null);return;}if(key==='__no_task__'){setSource(null);setAgentLineKey(null);return;}const task=tasks.find(t=>key===t.key||key.startsWith(t.key+':line:'));if(task){setSource(task.source);setAgentLineKey(key.startsWith(task.key+':line:')?key.slice(task.key.length+6):null);}}} />}
-          {!source && <PlatformChat onNewInquiry={()=>{setMode('workbench');setView('home');setImportRequested(true);}} standalone={mode==='agent'} key={activeChat||'__no_task__'} conversationKey={activeChat||'__no_task__'} onQuickHandled={()=>setQuickMessage(null)} quickMessage={quickMessage} onClose={()=>{setMode('workbench');setAssistantOpen(false);}} onHistory={()=>{setMode('agent');setAssistantOpen(true);}} />}
+          {!source && <PlatformChat onNewInquiry={()=>{setMode('workbench');setView('home');setImportRequested(true);}} standalone={mode==='agent'} docked={assistantDocked} onDock={()=>setAssistantDocked(value=>!value)} key={activeChat||'__no_task__'} conversationKey={activeChat||'__no_task__'} onQuickHandled={()=>setQuickMessage(null)} quickMessage={quickMessage} onClose={()=>{setMode('workbench');setAssistantOpen(false);setAssistantDocked(false);}} onHistory={()=>{setMode('agent');setAssistantOpen(true);}} />}
           {source&&<div className="copilot-body"><AgentPage key={(activeChat||'')+sourceKey(source)+(agentLineKey||'')}
-            sessionOverride={activeChat||undefined} onQuickHandled={()=>setQuickMessage(null)} quickMessage={source?quickMessage:null} onHistory={()=>{setMode('agent');setAssistantOpen(true);}} embedded expanded={mode === 'agent'} selectedLineKey={agentLineKey}
+            sessionOverride={activeChat||undefined} onQuickHandled={()=>setQuickMessage(null)} quickMessage={source?quickMessage:null} onHistory={()=>{setMode('agent');setAssistantOpen(true);}} embedded expanded={mode === 'agent'} docked={assistantDocked} selectedLineKey={agentLineKey}
             onClearLine={() => setAgentLineKey(null)}
-            onClose={() => { setMode('workbench'); setAssistantOpen(false); }}
-            onExpand={() => { setAssistantOpen(true); setMode(mode === 'agent' ? 'workbench' : 'agent'); }}
+            onClose={() => { setMode('workbench'); setAssistantOpen(false); setAssistantDocked(false); }}
+            onExpand={() => { setAssistantOpen(true); setMode('workbench'); setAssistantDocked(mode==='agent'?false:!assistantDocked); }}
             onApplyPrice={(line, price) => {
               if (!current.lines.some(l => l.key === line.key && l.partNumber === line.partNumber && l.quantity === line.quantity) || skipped.has(line.key) || !Number.isFinite(price) || price <= 0) return;
               setManualPrices(old => new Set([...old,line.key]));

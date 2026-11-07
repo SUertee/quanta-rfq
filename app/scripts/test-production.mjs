@@ -19,5 +19,16 @@ try{
  assert.equal((await fetch(origin+base+'api/agents',{headers:{...headers,Origin:'https://untrusted.invalid'}})).status,403);
  assert.equal((await fetch(origin+base+'.env.local',{headers})).status,404);
  assert.equal((await fetch(origin+base+'missing.js',{headers})).status,404);
+ const upload=await fetch(origin+base+'api/inquiries',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:'production-preview-01',files:[{name:'preview.txt',mime:'text/html',base64:Buffer.from('件号: TEST 数量: 1 单位: EA 件状: FN <script>alert(1)</script>').toString('base64')}]})});
+ assert.equal(upload.status,200);const material=await upload.json();assert.equal(material.files.length,1);
+ const preview=await fetch(origin+base+'api/files/'+material.files[0].id+'/preview');
+ assert.equal(preview.status,200);assert.equal(preview.headers.get('content-type'),'text/plain; charset=utf-8');
+ assert.ok(preview.headers.get('content-disposition').startsWith('inline;'));
+ assert.equal(preview.headers.get('x-content-type-options'),'nosniff');
+ assert.ok(preview.headers.get('content-security-policy').includes('sandbox'));
+ assert.ok((await preview.text()).includes('<script>'));
+ const download=await fetch(origin+base+'api/files/'+material.files[0].id+'/raw');
+ assert.ok(download.headers.get('content-disposition').startsWith('attachment;'));
+ console.log('PASS: inline preview preserves source bytes, MIME allowlist prevents HTML execution, original download remains available');
  console.log('PASS: production boot, health, anonymous assets/API without login challenge, origin rejection and hidden-file isolation');
 }finally{const exited=new Promise(resolve=>child.once('exit',resolve));child.kill('SIGTERM');await exited;await rm(dir,{recursive:true,force:true});}
