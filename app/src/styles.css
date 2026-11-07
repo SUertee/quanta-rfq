@@ -1197,15 +1197,16 @@ tr.clickable:hover td { background:var(--hal-hover); }
 @media(max-width:860px) {
  :root { --workspace-gutter:20px; }
  .layout.layout-reference { padding-top:12px; }
- .layout.layout-reference .sidebar { grid-template-columns:minmax(0,1fr) auto;grid-template-areas:'brand settings' 'nav nav';padding:12px 14px 8px;border-radius:22px;width:calc(100% - 24px); }
+ .layout.layout-reference .sidebar { grid-template-columns:minmax(0,1fr) auto;grid-template-areas:'brand settings' 'nav nav';padding:10px 14px;border-radius:22px;width:calc(100% - var(--workspace-gutter)*2); }
  .layout-reference .sidebar .brand { grid-area:brand;padding:0; }
  .layout-reference .sidebar .brand-name { font-size:15px; }
  .layout-reference .sidebar-foot { grid-area:settings;gap:6px;padding:0; }
  .layout-reference .sidebar-settings { width:40px;min-height:40px;padding:0; }
  .layout-reference .sidebar-settings>span { display:none; }
  .layout-reference .avatar { width:34px;height:34px; }
- .layout-reference .sidebar nav { display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:3px;padding-top:12px; }
- .layout-reference .sidebar .nav-item { font-size:11px;padding:8px 4px;gap:5px;min-height:44px; }
+ .layout-reference .sidebar nav { display:flex;flex-wrap:nowrap;justify-content:flex-start;gap:4px;padding:8px 0 0;min-width:0;overflow-x:auto;overscroll-behavior-x:contain;scrollbar-width:none; }
+ .layout-reference .sidebar nav::-webkit-scrollbar { display:none; }
+ .layout-reference .sidebar .nav-item { flex:0 0 auto;font-size:14px;padding:10px 14px;gap:6px;min-height:44px; }
  .layout-reference .nav-icon svg { width:14px;height:14px; }
  .layout-reference .nav-count { font-size:9px; }
  .layout-reference .content,.layout-reference .content.with-copilot { padding:0 var(--workspace-gutter) calc(88px + env(safe-area-inset-bottom)); }

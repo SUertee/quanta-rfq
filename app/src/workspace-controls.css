@@ -194,9 +194,6 @@
  .settings-layout .settings-body { padding:14px; }
 }
 
-@media(max-width:650px) {
- .layout-reference .sidebar nav { width:100%;grid-template-columns:repeat(4,minmax(0,1fr)); }
-}
 .platform-chat { display:flex;flex-direction:column;height:100%;min-height:0; }
 .platform-chat-messages { flex:1;min-height:0;overflow:auto;padding:16px; }
 .platform-chat p,.history-content p { white-space:pre-wrap;overflow-wrap:anywhere;font-size:14px;line-height:1.7; }
@@ -493,3 +490,10 @@ html:has(dialog[open]) { overflow:hidden; }
 /* Quanta option 02 geometric lockup. Asset outlines keep lettering consistent. */
 .layout-reference .sidebar .quanta-wordmark { display:block;width:136px;height:43px;object-fit:contain;flex-shrink:0; }
 @media(max-width:860px) { .layout-reference .sidebar .quanta-wordmark { width:118px;height:37px; } }
+
+/* Compact header navigation keeps every destination on one scrollable row. */
+@media(max-width:860px) {
+ .layout.layout-reference .sidebar nav { justify-self:stretch;justify-content:flex-start; }
+ .layout.layout-reference .sidebar .nav-item { flex:0 0 auto;font-size:14px;line-height:1.5;padding:10px 14px; }
+ .layout-reference .sidebar .nav-count { font-size:12px; }
+}
