@@ -14,7 +14,7 @@ function harness(overrides={}){
  function nodes(n){if(!n||typeof n!=='object')return[];if(Array.isArray(n))return n.flatMap(nodes);return[n,...nodes(n.props?.children)]}
  function text(n){if(n==null||typeof n==='boolean')return'';if(Array.isArray(n))return n.map(text).join('');return typeof n==='object'?text(n.props?.children):String(n)}
  const button=name=>{const b=nodes(tree).find(n=>n.type==='button'&&text(n)===name);assert.ok(b,name);return b.props};
- render();return{render,button,uploads:()=>uploads,dialog:()=>nodes(tree).some(n=>n.props?.role==='dialog'),input:()=>nodes(tree).find(n=>n.type==='textarea').props,requests,props,session:()=>store['rfq-chat-v1'][props.selectedLineKey?`task1:line:${props.selectedLineKey}`:'task1'],writes:()=>writes,text:()=>text(tree),respond:(i,mode='draft')=>requests[i].resolve({ok:true,json:async()=>({runId:'qa',status:'needs_review',summary:'QA draft',model:'test',draft:{mode,lines:[{key:'line1',partNumber:'TEST',quantity:2,cost:10,suggestedPrice:12.5,currency:'CNY',issues:[]}],questions:[]},events:[]})})};
+ render();return{render,button,uploads:()=>uploads,dialog:()=>nodes(tree).some(n=>n.props?.role==='dialog'),input:()=>nodes(tree).find(n=>n.type==='textarea').props,requests,props,session:()=>store['rfq-chat-v1'][props.selectedLineKey?`task1:line:${props.selectedLineKey}`:'task1'],writes:()=>writes,text:()=>text(tree),respond:(i,mode='draft',status='needs_review')=>requests[i].resolve({ok:true,json:async()=>({runId:'qa',status,summary:'QA draft',model:'test',draft:{mode,lines:[{key:'line1',partNumber:'TEST',quantity:2,cost:10,suggestedPrice:12.5,currency:'CNY',issues:[]}],questions:[]},events:[]})})};
 }
 const h=harness();
 h.button('＋ 上传询价').onClick();assert.equal(h.uploads(),1,'upload invokes actual import callback');
@@ -44,3 +44,10 @@ scoped.props.selectedLineKey=null;scoped.render();assert.ok(!scoped.text().inclu
 console.log('PASS: embedded line scope, explicit price acceptance, stale-price rejection and whole-task isolation.');
 
 const greeting=harness();greeting.input().onChange({target:{value:'你好你能做什么'}});greeting.render();const greetingRun=greeting.button('↑').onClick();assert.equal(greeting.requests[0].url,'/api/assistant/chat');greeting.requests[0].resolve(new Response('{"type":"delta","text":"可以帮助核对询价。"}\n{"type":"done","answer":"可以帮助核对询价。"}\n'));await greetingRun;assert.equal(greeting.session().turns.at(-1).content,'可以帮助核对询价。');assert.equal(greeting.session().turns.at(-1).result,undefined);console.log('PASS: selected-inquiry greeting streams as chat without a false failed quotation artifact');
+
+const failedRun=harness();
+failedRun.input().onChange({target:{value:'生成报价草稿'}});failedRun.render();
+const failedReply=failedRun.button('↑').onClick();failedRun.respond(0,'analysis','failed');await failedReply;failedRun.render();
+assert.equal(failedRun.session().state,'failed');
+assert.ok(failedRun.text().includes('本次处理未完成，请重新发送'));
+console.log('PASS: incomplete tool result keeps the chat in a recoverable failure state');

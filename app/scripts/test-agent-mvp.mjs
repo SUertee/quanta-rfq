@@ -28,6 +28,8 @@ const analysis=await runAgent({...input,instruction:'仅分析，不要出价'},
 assert.equal(analysis.draft.lines[0].suggestedPrice,undefined);
 const skipped=await runAgent(input,[cost],{modelOverride:new ScriptModel([])});
 assert.deepEqual(skipped.draft.lines,[]);
+assert.equal(skipped.status,'failed');
+assert.equal(skipped.outcome,'incomplete');
 console.log('PASS: real createAgent loop enforces tool order, analysis-only survives model draft request, skipped tool cannot create quote');
 
 assert.equal(analysis.draft.lines[0].cost,100);
@@ -59,6 +61,9 @@ console.log('PASS: source and missing-evidence follow-ups return deterministic e
 const lookupOnly=await runAgent({...input,instruction:'这些成本来自哪里？'},[cost],{modelOverride:new ScriptModel([{name:'read_inquiry'},{name:'lookup_costs'}])});
 assert.ok(lookupOnly.answer.includes('内部成本 100 CNY'));
 assert.deepEqual(lookupOnly.draft.lines,[]);
+assert.equal(lookupOnly.outcome,'evidence');
+assert.equal(lookupOnly.status,'needs_review');
+assert.ok(!lookupOnly.summary.includes('未完成'));
 console.log('PASS: evidence-only question answers without requiring quote generation');
 
 const marginInput=validateAgentInput({...input,policy:{marginRate:0.25}});
@@ -84,3 +89,14 @@ assert.equal(resourceAudit.resources.one[0].snapshot.lastPurchasePrice,100);
 assert.ok(!JSON.stringify(resourceAudit.resources).includes('must-not-copy'));
 assert.ok(!JSON.stringify(resourceRun.draft.lines[0].candidates).includes('must-not-copy'));
 console.log('PASS: candidate/pricing snapshot consistency, evidence identity, persisted resource audit and private-extra exclusion');
+
+const unfinished=await runAgent(input,[cost],{modelOverride:new ScriptModel([]),audit:{store:resourceStore}});
+assert.equal(resourceStore.getRun(unfinished.runId).status,'failed');
+assert.equal(resourceStore.getRun(unfinished.runId).error.code,'model_or_tool_failed');
+const unfinishedDraft=await runAgent({...input,instruction:'生成报价草稿，缺少依据的行留空'},[cost],{modelOverride:new ScriptModel([{name:'read_inquiry'},{name:'lookup_costs'}]),audit:{store:resourceStore}});
+assert.equal(unfinishedDraft.status,'failed');
+assert.equal(resourceStore.getRun(unfinishedDraft.runId).status,'failed');
+const evidenceAudit=await runAgent({...input,instruction:'这些成本来自哪里？'},[cost],{modelOverride:new ScriptModel([{name:'read_inquiry'},{name:'lookup_costs'}]),audit:{store:resourceStore}});
+assert.equal(resourceStore.getRun(evidenceAudit.runId).status,'completed');
+assert.equal(evidenceAudit.outcome,'evidence');
+console.log('PASS: absent/incomplete quote tools fail the run and audit; successful evidence-only questions remain completed');

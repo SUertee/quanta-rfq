@@ -21,7 +21,7 @@ import {ExecutionSteps} from '../components/ExecutionSteps';
 import {MessageRail} from '../components/MessageRail';
 
 type DraftLine = { key: string; partNumber: string; quantity: number; uom?: string; cost?: number; basisSource?:string; basisId?:string; suggestedPrice?: number; currency: string; source?: string; issues: string[] };
-type AgentResult = { runId: string; status: 'needs_review'; summary: string; answer?: string; model: string; draft: { lines: DraftLine[]; questions: string[]; mode?: string; limitations?: string[] }; events: { tool: string; state: string; detail: string }[] };
+type AgentResult = { runId: string; status: 'needs_review' | 'failed'; summary: string; answer?: string; model: string; draft: { lines: DraftLine[]; questions: string[]; mode?: string; limitations?: string[] }; events: { tool: string; state: string; detail: string }[] };
 type Turn = { references?:ChatReference[]; attachments?:ChatAttachment[]; createdAt?:string; role: 'user' | 'assistant'; content: string; basis: string; result?: AgentResult; elapsed?: number };
 type Session = { state: 'idle' | 'running' | 'failed' | 'stopped'; input: string; turns: Turn[]; error?: string; progressEvents?:{tool:string;state:string}[] };
 const fresh = (): Session => ({ state: 'idle', input: '', turns: [] });
@@ -126,7 +126,7 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
       if (!data.draft || !Array.isArray(data.draft.lines) || !Array.isArray(data.events)) throw new Error('服务返回不完整，请重试。');
       append(sessionKey,{role:'assistant',content:((/生成.{0,8}(报价|草稿)/.test(instruction) ? data.summary : data.answer) || data.summary || '核对完成，请查看本轮结果。'),basis,result:data,elapsed:performance.now()-started});
       references.clear();
-      patch(sessionKey,{state:'idle'});
+      patch(sessionKey,{state:data.status==='failed'?'failed':'idle',error:data.status==='failed'?'本次处理未完成，请重新发送。':undefined});
     } catch(error) {
       if (id !== generation.current) return;
       patch(sessionKey,{state:controller.signal.aborted ? 'stopped':'failed',error:error instanceof Error ? error.message : String(error)});

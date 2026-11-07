@@ -70,9 +70,14 @@ async function executeAgent(value,costs,{signal,modelOverride,onAuditEvent,resou
  await agent.invoke({messages:[...(input.history||[]),{role:'user',content:input.instruction}]},{signal,recursionLimit:12});
  // Never return raw model prose: upstream gateways may mix reasoning text into content.
  const finalDraft=draft||{mode:'analysis',lines:[],questions:['Agent 未完成工具流程，未生成报价，请检查委托后重试。'],limitations:[]};
+ const evidenceQuestion=/(来源|来自哪里|哪来的|依据|出处|缺什么|缺少什么|缺哪些|哪些.*(不能|无法|缺)|不能报价|信息缺口|风险)/.test(input.instruction);
+ const requestsDraft=!/(只|仅).{0,8}(分析|检查|核对)|不要.{0,5}(报价|出价)|不生成.{0,5}(价格|报价)/.test(input.instruction)&&/(生成|形成|输出|制作|出具|计算|填入).{0,12}(报价|草稿|价格|单价)/.test(input.instruction);
+ const evidenceComplete=!draft&&!!evidenceLines&&evidenceQuestion&&!requestsDraft;
+ if(evidenceComplete)finalDraft.questions=[];
+ const incomplete=!draft&&!evidenceComplete;
  const priced=finalDraft.lines.filter(l=>Number.isFinite(l.suggestedPrice)).length;
  const unresolved=finalDraft.lines.filter(l=>l.issues.length>0).length;
- const summary=!draft?'工具流程未完成，未生成报价草稿。':`已${finalDraft.mode==='analysis'?'分析':'处理'} ${finalDraft.lines.length} 行，生成建议价 ${priced} 行，存在信息缺口 ${unresolved} 行。${finalDraft.mode==='analysis'?'本次仅分析，不生成价格。':''}全部结果待人工核对，未写入或发送报价。`;
+ const summary=incomplete?'本次处理未完成，请重试。':evidenceComplete?'已查询当前物料的报价依据。':`已${finalDraft.mode==='analysis'?'分析':'处理'} ${finalDraft.lines.length} 行，生成建议价 ${priced} 行，存在信息缺口 ${unresolved} 行。${finalDraft.mode==='analysis'?'本次仅分析，不生成价格。':''}全部结果待人工核对，未写入或发送报价。`;
  let answer=summary;
  const answerLines=draft?.lines||evidenceLines;
  if(answerLines && /(来源|来自哪里|哪来的|依据|出处)/.test(input.instruction)) {
@@ -81,7 +86,7 @@ async function executeAgent(value,costs,{signal,modelOverride,onAuditEvent,resou
   const gaps=answerLines.filter(l=>l.issues.length);
   answer=gaps.length?'以下行仍有信息缺口：\n'+gaps.map(l=>`${l.partNumber||l.key}：${l.issues.join('；')}。`).join('\n'):'本次精确件号成本检查未发现阻断项；证书、交期、报价有效期及最终售价尚需人工核实，不能视为全部业务条件通过。';
  }
- return {runId:randomUUID(),status:'needs_review',summary,answer,model:cfg.model,draft:finalDraft,events};
+ return {runId:randomUUID(),status:incomplete?'failed':'needs_review',outcome:incomplete?'incomplete':draft?'draft':'evidence',summary,answer,model:cfg.model,draft:finalDraft,events};
 }
 
 export const RFQ_AGENT_DEFINITION=Object.freeze({agentId:'rfq-quote',version:'1.3.0',promptSha256:createHash('sha256').update(RFQ_SYSTEM_PROMPT).digest('hex'),tools:['read_inquiry','lookup_costs','build_quote_draft']});
@@ -103,7 +108,7 @@ export async function runAgent(value,costs,options={}) {
   if(options.signal?.aborted)throw new Error('cancelled');
   const result=await executeAgent(value,costs,{...options,onAuditEvent:event=>{store.appendEvent(runId,event);options.onAuditEvent?.(event);}});
   if(options.signal?.aborted)throw new Error('cancelled');
-  store.finishRun(runId,{status:'completed',resultFingerprint:hash(result.draft),result:{lineCount:result.draft.lines.length,pricedCount:result.draft.lines.filter(l=>Number.isFinite(l.suggestedPrice)).length,issueCount:result.draft.lines.filter(l=>l.issues.length).length,mode:result.draft.mode}});
+  store.finishRun(runId,{status:result.status==='failed'?'failed':'completed',errorCode:result.status==='failed'?'model_or_tool_failed':null,resultFingerprint:hash(result.draft),result:{lineCount:result.draft.lines.length,pricedCount:result.draft.lines.filter(l=>Number.isFinite(l.suggestedPrice)).length,issueCount:result.draft.lines.filter(l=>l.issues.length).length,mode:result.draft.mode}});
   return {...result,runId};
  } catch(error) {
   const cancelled=!!options.signal?.aborted;
