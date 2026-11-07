@@ -29,6 +29,7 @@ export interface IntakeBatch {
   }[];
   lines: (Partial<RawRow> & {
     id: string;
+    version?: number;
     contentId: string;
     method: string;
     rawFields?: Record<string, unknown>;

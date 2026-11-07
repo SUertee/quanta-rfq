@@ -1,3 +1,4 @@
+import {citeReference,dragReference,type ChatReference} from '../engine/chatReferences';
 import {appFetch as fetch,appUrl} from '../engine/appUrl';
 import { useEffect, useState } from "react";
 import type { IntakeBatch } from "../engine/intake";
@@ -92,6 +93,18 @@ export function IntakeRecord({
   });
   const evidence =
     (line as typeof line & { evidence?: Evidence[] })?.evidence || [];
+  const sourceReference: ChatReference = {
+    id:`content:${content?.id||''}:${line?.version||1}`,
+    label:`原文 · ${file?.name||'材料'} · ${position(content?.locator)}`,
+    excerpt:content?.text||'无原文',
+    inquiryId:batchId,lineId:line?.id,contentId:content?.id,version:line?.version,
+  };
+  const evidenceReference = (entry: Evidence): ChatReference => ({
+    id:`evidence:${entry.id}:${entry.matched_at||''}`,
+    label:entry.source==='inventory'?'内部库存与成本':String(entry.snapshot.supplierName||'供应商报价'),
+    excerpt:JSON.stringify({partNumber:line?.partNumber,source:entry.source_key,...Object.fromEntries(Object.entries(entry.snapshot).filter(([field])=>['unitPrice','lastPurchasePrice','stockQty','currency','moq','uom','condition','certType','leadDays','validUntil'].includes(field)))}),
+    inquiryId:batchId,lineId:line?.id,version:line?.version,evidenceId:entry.id,matchedAt:entry.matched_at,
+  });
   const toggle = (next: Pane) => setPane((old) => (old === next ? null : next));
   return (
     <section
@@ -275,9 +288,9 @@ export function IntakeRecord({
                 <div className="intake-evidence-body">
                   {line ? (
                     <>
-                      <section className="intake-source" aria-label="原文依据">
+                      <section className="intake-source reference-source" aria-label="原文依据" draggable onDragStart={event=>dragReference(event,sourceReference)}>
                         <div className="intake-source-label">
-                          原文 · {file?.name} · {position(content?.locator)}
+                          <span>原文 · {file?.name} · {position(content?.locator)}</span><button type="button" className="reference-cite" onClick={()=>citeReference(sourceReference)}>引用</button>
                         </div>
                         <pre>{content?.text || "无原文"}</pre>
                       </section>
@@ -301,20 +314,20 @@ export function IntakeRecord({
                       )}
                       {evidence.length ? (
                         evidence.map((e) => (
-                          <article className="evidence-card" key={e.id}>
+                          <article className="evidence-card reference-source" key={e.id} draggable onDragStart={event=>dragReference(event,evidenceReference(e))}>
                             <header>
                               <strong>
                                 {e.source === "inventory"
                                   ? "内部库存与成本"
                                   : (e.snapshot.supplierName ? String(e.snapshot.supplierName) : "供应商报价")}
                               </strong>
-                              <span>
+                              <div className="reference-actions"><span>
                                 {e.snapshot.dataSource === "official_demo"
                                   ? "演示数据"
                                   : e.source === "inventory"
                                     ? "库存记录"
                                     : "供应商报价"}
-                              </span>
+                              </span><button type="button" className="reference-cite" aria-label={`引用依据 ${e.source_key}`} onClick={()=>citeReference(evidenceReference(e))}>引用</button></div>
                             </header>
                             {e.current_match && (
                               <section className="resource-checks" aria-label="候选适用条件">

@@ -1,3 +1,4 @@
+import {resolveChatReferences,referenceContext} from './chat-references.mjs';
 import { normalizePartNumber } from "./normalization.mjs";
 import {readChatFiles} from './chat-files.mjs';
 import {platformChat} from './platform-chat.mjs';
@@ -199,6 +200,10 @@ http.createServer(async (req, res) => {
     if(req.method==='POST'&&url.pathname==='/api/assistant/chat'){
       const controller=new AbortController();res.on('close',()=>{if(!res.writableEnded)controller.abort();});
       const body=await readBody(req,100000),streaming=req.headers.accept?.includes('application/x-ndjson');
+      const references=resolveChatReferences(body.references,id=>intake.detail(id),{inquiryId:body.inquiryId});
+      body.context=referenceContext(body.context,references);
+      const referencedInquiries=new Set(references.filter(reference=>reference.inquiryId).map(reference=>reference.inquiryId));
+      if(referencedInquiries.size===1)body.inquiryTitle=references.find(reference=>reference.inquiryId)?.inquiryTitle;
       if(!streaming){res.end(JSON.stringify(await platformChat(body,{signal:controller.signal})));return;}
       res.setHeader('Content-Type','application/x-ndjson; charset=utf-8');res.setHeader('Cache-Control','no-cache, no-transform');res.setHeader('X-Accel-Buffering','no');res.flushHeaders();
       const write=event=>{if(!res.destroyed&&!res.writableEnded)res.write(JSON.stringify(event)+'\n');};
@@ -216,9 +221,10 @@ http.createServer(async (req, res) => {
       try {
         let body=await readBody(req,300000);
         if(body.inquiryId||body.batchId){const b=intake.detail(body.inquiryId||body.batchId);if(!b)throw new Error('询价不存在');inquiryId=b.id;body=resolveAgentScope(body,b);const selectedKeys=new Set(body.lines.map(line=>line.key));resources=Object.fromEntries(b.lines.filter(line=>selectedKeys.has(`intake-${b.id}-${line.lineNo}`)).map(line=>[`intake-${b.id}-${line.lineNo}`,line.evidence]));}
+        body.context=referenceContext(body.context,resolveChatReferences(body.references,id=>intake.detail(id),{inquiryId}));
         input = validateAgentInput(body);
       }
-      catch (error) { if (!res.destroyed && !res.writableEnded) { if (!res.headersSent) res.writeHead(error?.status === 413 ? 413 : 400); res.end(JSON.stringify({ error: error?.status === 413 ? '请求超过 300KB 限制' : '指令或询价数据无效：需 1–150 行、正数数量及有效指令' })); } return; }
+      catch (error) { if (!res.destroyed && !res.writableEnded) { if (!res.headersSent) res.writeHead(error?.status === 413 ? 413 : error?.status===409?409:400); res.end(JSON.stringify({ error: error?.status===409?error.message:error?.status === 413 ? '请求超过 300KB 限制' : '指令或询价数据无效：需 1–150 行、正数数量及有效指令' })); } return; }
       const controller = new AbortController();
       res.on('close', () => { if (!res.writableEnded) controller.abort(); });
       const timer = setTimeout(() => controller.abort(), 90000);

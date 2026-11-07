@@ -1,3 +1,4 @@
+import {citeReference,dragReference,type ChatReference} from '../engine/chatReferences';
 import {appFetch as fetch} from '../engine/appUrl';
 import {useStageNavigation} from '../engine/useStageNavigation';
 import {inquiryStages} from '../engine/workflow';
@@ -130,6 +131,17 @@ export function WorkbenchPage({
     if (source.kind === 'email' && source.llmRows) return source.llmRows;
     return parseEmailBody(email).rows;
   }, [email, source]);
+
+  const referenceForLine = (line: InquiryLine): ChatReference => {
+    const stored = parseRows.find(row=>row.lineNo===line.lineNo);
+    const excerpt=[line.partNumber,line.description,`${line.quantity} ${line.uom}`,line.condition,line.requirement,line.dueDate].filter(Boolean).join(' · ');
+    return {
+      id:`line:${line.key}:${stored?.version||1}`,
+      label:`物料 · ${line.partNumber||'件号待补'}`,
+      excerpt,
+      ...(email?.intakeBatchId&&stored?.persistedLineId?{inquiryId:email.intakeBatchId,lineId:stored.persistedLineId,contentId:stored.contentId,version:stored.version}:{}),
+    };
+  };
 
   // 原文定位：当前展开行 → 原文片段（优先整行原文，退件号）
   const rawBoxRef = useRef<HTMLPreElement>(null);
@@ -495,7 +507,7 @@ export function WorkbenchPage({
                     <tr className={`clickable ${selectedAgentLine===p.line.key?'agent-selected-row':''} ${checking ? 'row-yellow' : isResolved ? 'row-resolved' : ''}`}
                       onClick={() => setOpen(open === p.line.key ? null : p.line.key)}>
                       <td>{p.line.lineNo}</td>
-                      <td><b>{p.line.partNumber}</b></td>
+                      <td><div className="material-reference-name reference-source" draggable onDragStart={event=>dragReference(event,referenceForLine(p.line))}><b>{p.line.partNumber}</b><button type="button" className="reference-cite" aria-label={`引用物料 ${p.line.partNumber}`} onClick={event=>{event.stopPropagation();citeReference(referenceForLine(p.line));}}>引用</button></div></td>
                       <td>{p.line.description}</td>
                       <td>{p.line.quantity} {p.line.uom}</td>
                       <td>

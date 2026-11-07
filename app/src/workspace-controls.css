@@ -971,3 +971,26 @@ html:has(.layout-reference),body:has(.layout-reference) { height:100%;overflow:h
 .layout-reference .workflow-record-content { max-height:60dvh;overflow:auto;margin-top:16px; }
 .layout-reference .record-filters:has(.issue-filter) { overflow:visible;height:auto; }
 .layout-reference .issue-filter-menu { max-height:min(440px,65dvh);overflow-y:auto;overscroll-behavior:contain; }
+
+/* A reference stays separate from the instruction and retains its source after sending. */
+.chat-reference-drafts { grid-column:1 / -1;min-width:0; }
+.chat-references { display:grid;gap:8px;width:100%;min-width:0; }
+.chat-reference { margin:0;padding:10px 12px;border:1px solid var(--line);border-left:3px solid #5b7cf0;border-radius:10px;background:#f6f8fd;text-align:left; }
+.chat-reference>div { display:flex;align-items:center;justify-content:space-between;gap:12px; }
+.chat-reference strong { font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.chat-reference p { margin:5px 0 0!important;font-size:14px!important;line-height:1.5!important;color:var(--ink-2);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere; }
+.chat-reference button { flex-shrink:0;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--ink);font-size:20px;cursor:pointer; }
+.chat-reference button:hover { background:#e9eef9; }
+.rfq-chat-text>.chat-references { margin-bottom:12px; }
+.platform-chat[data-reference-drop],.rfq-chat[data-reference-drop] { outline:2px solid #5b7cf0;outline-offset:-3px; }
+.reference-source { cursor:grab; }
+.reference-source:active { cursor:grabbing; }
+.reference-actions { display:flex;align-items:center;gap:8px; }
+.reference-cite { display:inline-flex;align-items:center;justify-content:center;min-height:36px;padding:6px 10px;border:1px solid var(--line);border-radius:10px;color:var(--ink-2);background:var(--panel);font:inherit;font-size:14px;cursor:pointer;white-space:nowrap; }
+.reference-cite:hover,.reference-cite:focus-visible { color:var(--ink);background:#eef2fd; }
+.material-reference-name { display:flex;align-items:center;gap:8px; }
+.material-reference-name>.reference-cite { opacity:0; }
+tr:hover .material-reference-name>.reference-cite,.material-reference-name:focus-within>.reference-cite { opacity:1; }
+@media(hover:none) { .material-reference-name>.reference-cite { opacity:1; } }
+.layout-reference .intake-source-label { display:flex;align-items:center;justify-content:space-between;gap:12px; }
+.layout-reference .evidence-card>header { display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap; }

@@ -1,3 +1,5 @@
+import {ReferenceList,useChatReferences} from '../components/ChatReferences';
+import {conversationReferences,type ChatReference} from '../engine/chatReferences';
 import {fmtMoney} from '../engine/amount';
 import {readChatStream,readAgentStream} from '../engine/chatStream';
 import {useChatScroll} from '../engine/useChatScroll';
@@ -20,7 +22,7 @@ import {MessageRail} from '../components/MessageRail';
 
 type DraftLine = { key: string; partNumber: string; quantity: number; uom?: string; cost?: number; suggestedPrice?: number; currency: string; source?: string; issues: string[] };
 type AgentResult = { runId: string; status: 'needs_review'; summary: string; answer?: string; model: string; draft: { lines: DraftLine[]; questions: string[]; mode?: string; limitations?: string[] }; events: { tool: string; state: string; detail: string }[] };
-type Turn = { attachments?:ChatAttachment[]; createdAt?:string; role: 'user' | 'assistant'; content: string; basis: string; result?: AgentResult; elapsed?: number };
+type Turn = { references?:ChatReference[]; attachments?:ChatAttachment[]; createdAt?:string; role: 'user' | 'assistant'; content: string; basis: string; result?: AgentResult; elapsed?: number };
 type Session = { state: 'idle' | 'running' | 'failed' | 'stopped'; input: string; turns: Turn[]; error?: string; progressEvents?:{tool:string;state:string}[] };
 const fresh = (): Session => ({ state: 'idle', input: '', turns: [] });
 const money = (v?: number) => v == null ? '—' : `¥${v.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`;
@@ -53,6 +55,7 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
   const taskKey = task?.key ?? '';
   const sessionKey = sessionOverride || (embedded && activeSource === null ? '__no_task__' : selectedLineKey ? `${taskKey}:line:${selectedLineKey}` : taskKey);
   const session = {...fresh(),...sessions[sessionKey]};
+  const references=useChatReferences(sessionKey,session.state==='running');
   const request = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const busy = useRef(false);
@@ -83,30 +86,32 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
   const basis = JSON.stringify({ lines: current?.lines, policy, inventory: ds.cost });
   const latestBasis = useRef(basis); latestBasis.current = basis;
   const run = async (preset?: string) => {
-    const instruction = (preset ?? (session.input || (attachments.length?'请核对附件与当前询价；附件中未读取的信息保持待补充，不编造价格。':''))).trim();
+    const instruction = (preset ?? (session.input || (references.items.length?'请核对引用内容。':attachments.length?'请核对附件与当前询价；附件中未读取的信息保持待补充，不编造价格。':''))).trim();
     if (!task || !current?.lines.length || busy.current || attachments.some(f=>f.status==='reading') || !instruction) return;
     busy.current = true;chatScroll.follow.current=true;
     const id = ++generation.current;
     const controller = new AbortController(); request.current = controller;
     const started = performance.now();
+    const activeReferences=conversationReferences(references.items,session.turns);
     const history = session.turns.filter(t => t.basis === basis && t.content.trim()).slice(-6).map(t => ({role:t.role,content:t.content.slice(0,2000)}));
-    append(sessionKey, {role:'user',content:instruction,basis,attachments});setAttachments([]);setAttachmentEpoch(n=>n+1);
+    append(sessionKey, {role:'user',content:instruction,basis,attachments,references:references.items});setAttachments([]);setAttachmentEpoch(n=>n+1);
     patch(sessionKey,{state:'running',input:'',error:undefined,progressEvents:[]});
     try {
       const greeting = /^(你好|您好|嗨|hello\b|hi\b|你能做什么|你可以做什么|你能帮我|你是谁|介绍一下你|谢谢|感谢)/i.test(instruction);
       const requestsWork = /(生成|计算|核对|检查|查询|分析|报价草稿|单价|库存)/.test(instruction);
-      if(greeting&&!requestsWork&&!attachments.length&&!attachmentContext){
+      const explainReference=activeReferences.length>0&&/(解释|为什么|什么|如何|怎么|来源|说明)/.test(instruction)&&!/(生成|计算|填入|执行)/.test(instruction);
+      if((greeting&&!requestsWork&&!attachments.length&&!attachmentContext)||explainReference){
         append(sessionKey,{role:'assistant',content:'',basis});
-        const response=await fetch('/api/assistant/chat',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({instruction,history,inquiryTitle:task.title.slice(0,300)})});
+        const response=await fetch('/api/assistant/chat',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({instruction,history,references:activeReferences,inquiryId:current.email?.intakeBatchId,inquiryTitle:task.title.slice(0,300)})});
         await readChatStream(response,content=>{
           if(id!==generation.current||latestBasis.current!==basis)return;
           setSessions(old=>{const saved=old[sessionKey];if(!saved)return old;const turns=[...saved.turns];const last=turns.length-1;if(turns[last]?.role!=='assistant')return old;turns[last]={...turns[last],content};return {...old,[sessionKey]:{...saved,turns}};});
         });
-        if(id===generation.current)patch(sessionKey,{state:'idle'});
+        if(id===generation.current){references.clear();patch(sessionKey,{state:'idle'});}
         return;
       }
       // Legacy field named margin stores markup rate (cost-based), matching Settings.
-      const response = await fetch('/api/agent/run', {method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({instruction,history,context:attachmentContext,inquiryId:current.email?.intakeBatchId,lines:current.lines.map(l => ({key:l.key,partNumber:l.partNumber || '',description:l.description,quantity:l.quantity,uom:l.uom,condition:l.condition,urgency:l.urgency})),policy:{markupRate:policy.margin,aogPremium:policy.aogPremium,bulkDiscount:policy.bulkDiscount,bulkQty:policy.bulkQty}})});
+      const response = await fetch('/api/agent/run', {method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({instruction,history,references:activeReferences,context:attachmentContext,inquiryId:current.email?.intakeBatchId,lines:current.lines.map(l => ({key:l.key,partNumber:l.partNumber || '',description:l.description,quantity:l.quantity,uom:l.uom,condition:l.condition,urgency:l.urgency,requirement:l.requirement,dueDate:l.dueDate})),policy:{markupRate:policy.margin,aogPremium:policy.aogPremium,bulkDiscount:policy.bulkDiscount,bulkQty:policy.bulkQty}})});
       const data = await readAgentStream<AgentResult>(response,(tool,state)=>{
         if(id!==generation.current)return;
         setSessions(old=>{
@@ -120,6 +125,7 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
       if (latestBasis.current !== basis) throw new Error('询价或策略已修改，本轮结果未采用。请重新提问。');
       if (!data.draft || !Array.isArray(data.draft.lines) || !Array.isArray(data.events)) throw new Error('服务返回不完整，请重试。');
       append(sessionKey,{role:'assistant',content:((/生成.{0,8}(报价|草稿)/.test(instruction) ? data.summary : data.answer) || data.summary || '核对完成，请查看本轮结果。'),basis,result:data,elapsed:performance.now()-started});
+      references.clear();
       patch(sessionKey,{state:'idle'});
     } catch(error) {
       if (id !== generation.current) return;
@@ -152,7 +158,7 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
       {!session.turns.length && <div className="rfq-chat-welcome">{expanded&&<h1>处理这份询价</h1>}{!embedded&&<span className="rfq-chat-avatar">Q</span>}{!embedded&&<h2>{embedded ? (selectedLineKey ? '一起核对这行物料' : '这份询价，交给我核对') : '这份询价，先帮你做什么？'}</h2>}<div className="rfq-chat-suggestions">{embedded&&selectedLineKey&&<button disabled={session.state==='running'} onClick={onClearLine}>处理整单</button>}<button onClick={() => run('仅使用已有内部成本生成报价草稿，缺少依据的行保留缺口，不估价。')}>生成报价草稿 ↗</button><button onClick={() => run('只检查询价和成本缺口，不生成价格。')}>检查缺失信息 ↗</button></div></div>}
       {session.turns.map((turn,i) => {
         const result=turn.result, stale=turn.basis!==basis;
-        return <article key={i} className={`rfq-chat-turn ${turn.role}`}>{turn.role==='assistant'&&<div className="rfq-chat-speaker">Quanta{stale&&<span>旧询价记录</span>}</div>}{result&&<ExecutionSteps events={result.events} lines={result.draft.lines} mode={result.draft.mode}/>}<div className="rfq-chat-text">{turn.attachments&&<div className="chat-attachment-strip">{turn.attachments.map(file=><ChatAttachmentPreview key={file.id} attachment={file}/>)}</div>}<ChatMarkdown text={(result && /生成.{0,8}(报价|草稿)/.test(session.turns[i-1]?.content || '') ? result.summary : turn.content)} /></div>
+        return <article key={i} className={`rfq-chat-turn ${turn.role}`}>{turn.role==='assistant'&&<div className="rfq-chat-speaker">Quanta{stale&&<span>旧询价记录</span>}</div>}{result&&<ExecutionSteps events={result.events} lines={result.draft.lines} mode={result.draft.mode}/>}<div className="rfq-chat-text">{turn.references&&<ReferenceList items={turn.references}/ >}{turn.attachments&&<div className="chat-attachment-strip">{turn.attachments.map(file=><ChatAttachmentPreview key={file.id} attachment={file}/>)}</div>}<ChatMarkdown text={(result && /生成.{0,8}(报价|草稿)/.test(session.turns[i-1]?.content || '') ? result.summary : turn.content)} /></div>
           {result && <>{result.draft.lines.length>0 && result.draft.mode!=='analysis' && !embedded && <button className="rfq-chat-output" disabled={stale} onClick={openDraft}><span>▤</span><strong>{result.draft.mode==='analysis'?'缺口清单':'报价草稿'} · {result.draft.lines.length} 行</strong><small>{stale?'旧记录':'查看当前草稿 →'}</small></button>}
             {embedded && result.draft.mode!=='analysis' && result.draft.lines.length>0 && <section className="copilot-results" aria-label="报价建议">
               <header className="copilot-result-title"><strong>报价建议</strong><span>{result.draft.lines.length} 项物料</span></header>
@@ -182,6 +188,6 @@ export function AgentPage({ sessionOverride, quickMessage, onQuickHandled, onHis
 
     </div>
     {!embedded&&<MessageRail container={chatScroll.containerRef} turns={session.turns}/>}
-    <footer className="rfq-chat-footer"><div className="rfq-chat-composer"><ChatFiles showPicker key={attachmentEpoch} disabled={session.state==='running'} onChange={setAttachments} excerptLimit={1400} onRead={setAttachmentContext}/><textarea aria-label="给智能体的指令" placeholder="输入消息…" maxLength={2000} value={session.input} disabled={session.state==='running'} onChange={e=>patch(sessionKey,{input:e.target.value})} onCompositionStart={()=>{composing.current=true;}} onCompositionEnd={()=>{composing.current=false;}} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&!composing.current&&e.keyCode!==229){e.preventDefault();void run();}}} />{session.state==='running' ? <button className="stop-btn" onClick={stop}>停止</button> : <button aria-label="发送消息" className="send-btn" disabled={(!session.input.trim()&&!attachments.length)||attachments.some(f=>f.status==='reading')||!current.lines.length} onClick={()=>run()}>↑</button>}</div></footer>
+    <footer className="rfq-chat-footer"><div className="rfq-chat-composer">{references.composer}<ChatFiles showPicker key={attachmentEpoch} disabled={session.state==='running'} onChange={setAttachments} excerptLimit={1400} onRead={setAttachmentContext}/><textarea aria-label="给智能体的指令" placeholder="输入消息…" maxLength={2000} value={session.input} disabled={session.state==='running'} onChange={e=>patch(sessionKey,{input:e.target.value})} onCompositionStart={()=>{composing.current=true;}} onCompositionEnd={()=>{composing.current=false;}} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&!composing.current&&e.keyCode!==229){e.preventDefault();void run();}}} />{session.state==='running' ? <button className="stop-btn" onClick={stop}>停止</button> : <button aria-label="发送消息" className="send-btn" disabled={(!session.input.trim()&&!attachments.length&&!references.items.length)||attachments.some(f=>f.status==='reading')||!current.lines.length} onClick={()=>run()}>↑</button>}</div></footer>
   </section><aside className="rfq-current-draft" ref={draftAside} tabIndex={-1} aria-label="当前报价草稿">{draftPanel}</aside>{drawerOpen&&<div className="rfq-draft-overlay" onClick={()=>setDrawerOpen(false)}><aside className="rfq-draft-drawer" role="dialog" aria-modal="true" aria-label="报价草稿" tabIndex={-1} onKeyDown={e=>{if(e.key==='Escape')setDrawerOpen(false);}} onClick={e=>e.stopPropagation()}><button autoFocus className="rfq-drawer-close" onClick={()=>setDrawerOpen(false)}>关闭 ×</button>{draftPanel}</aside></div>}</div>;
 }

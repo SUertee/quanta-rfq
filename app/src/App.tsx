@@ -41,6 +41,7 @@ export default function App() {
   const [quickMessage,setQuickMessage]=useState<{id:number;text:string}|null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantDocked, setAssistantDocked] = useState(false);
+  useEffect(()=>{const cite=()=>setAssistantOpen(true);window.addEventListener('quanta-reference',cite);return()=>window.removeEventListener('quanta-reference',cite);},[]);
   const [agentLineKey, setAgentLineKey] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [userName, setUserName] = useState(() => localStorage.getItem('quanta-user-name') || '林');
