@@ -897,10 +897,21 @@ html:has(.layout-reference),body:has(.layout-reference) { height:100%;overflow:h
 @media(max-width:550px) { .layout-reference .quote-line-top { gap:12px; }.layout-reference .quote-unit-price b { font-size:19px; }.layout-reference .copilot-price-card { padding:16px; }.layout-reference .quote-cost-basis { gap:10px 20px; } }
 
 /* Full-page chat owns a stable layout; launcher geometry transitions apply only to floating mode. */
-.layout-reference.mode-agent .content { display:flex;flex-direction:column; }
+.layout-reference.mode-agent .content { display:flex;flex-direction:column;flex:1 1 0;height:auto;transition:none; }
 .mode-agent .floating-assistant.expanded { display:flex;flex-direction:column;width:100%;height:100%;min-height:0; }
 .mode-agent .floating-assistant.expanded .floating-assistant-panel { position:static;display:flex;flex-direction:column;width:100%;height:100%;min-height:0;transition:none;animation:none;transform:none; }
 .mode-agent .floating-assistant.expanded .agent-mode-host { flex:1;min-height:0;height:100%; }
 .mode-agent .platform-chat,.mode-agent .rfq-chat { min-height:0;height:100%; }
 .mode-agent .platform-chat-messages,.mode-agent .rfq-chat-messages { min-height:0;flex:1;overflow-y:auto;overflow-anchor:none; }
 .mode-agent .platform-chat-form,.mode-agent .rfq-chat-footer { flex-shrink:0; }
+
+/* History opens below its left-hand entry; creating a conversation is the right-hand action. */
+.mode-agent .ai-conversation-tools>.chat-history-open { grid-column:1;grid-row:1;justify-self:start; }
+.mode-agent .ai-conversation-tools>.chat-new { grid-column:2;grid-row:1;justify-self:end; }
+.mode-agent .chat-history-panel { --history-max:min(280px,34dvh);animation:none; }
+.mode-agent .chat-history-panel nav { grid-template-columns:minmax(0,1fr);gap:6px; }
+.mode-agent .chat-history-panel .conversation-list-row { border-radius:var(--radius-control); }
+.mode-agent .chat-history-panel nav .conversation-list-row>button:first-child { min-height:58px;padding:10px 76px 10px 14px; }
+.mode-agent .chat-history-panel .ai-conversation-list { box-sizing:border-box;height:var(--history-max);grid-template-rows:44px minmax(0,1fr); }
+.mode-agent .chat-history-panel nav { min-height:0;overflow-y:auto;align-content:start;grid-auto-rows:min-content; }
+@media(max-width:650px) { .mode-agent .chat-history-panel .ai-conversation-list { grid-template-rows:44px 36px minmax(0,1fr); } }
