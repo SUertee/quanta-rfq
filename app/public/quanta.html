@@ -3,6 +3,15 @@
 <head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#ffffff">
 <title>Quanta · AI 报价搭档</title>
+<script id="landing-entry-scroll">
+// Start fresh visits, reloads and history restores at the hero; explicit section links stay usable.
+(()=>{
+  history.scrollRestoration='manual';
+  const reset=()=>{if(!location.hash)window.scrollTo({top:0,left:0,behavior:'instant'});};
+  reset();
+  addEventListener('pageshow',()=>{reset();requestAnimationFrame(reset);});
+})();
+</script>
 <link href="https://fonts.googleapis.com/css2?family=Inter+Tight:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
 /* finesse · register=brand · A=sky-cyan+navy · B=400/500 · C=bowl-hero+scroll-statement+dark-split · D=canvas+scroll-reveal · E=Halden-reference · SOUL=7 SPECTACLE=7 DENSITY=3 */
