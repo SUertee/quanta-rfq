@@ -85,7 +85,12 @@ export async function createIntake(
   text: string,
   operator: string,
   requestId: string,
+  options: {source?: 'manual_upload' | 'paste' | 'chat'; signal?: AbortSignal} = {},
 ) {
+  const signal = options.signal
+    ? AbortSignal.any([options.signal, AbortSignal.timeout(240000)])
+    : AbortSignal.timeout(240000);
+  signal.throwIfAborted();
   const entries = await Promise.all(
     files.map(async (f) => ({
       name: f.name,
@@ -109,15 +114,29 @@ export async function createIntake(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       requestId,
-      source: files.length ? "manual_upload" : "paste",
+      source: options.source || (files.length ? "manual_upload" : "paste"),
       operator,
       files: entries,
     }),
-    signal: AbortSignal.timeout(240000),
+    signal,
   });
   const j = await r.json();
   if (!r.ok) throw new Error(j.error || "接收失败");
-  return j as IntakeBatch;
+  let batch = j as IntakeBatch;
+  // A retry can arrive while the original request is still parsing its files.
+  while (batch.status === 'processing') {
+    await new Promise<void>((resolve, reject) => {
+      const finish = () => { signal.removeEventListener('abort', abort); resolve(); };
+      const timer = setTimeout(finish, 600);
+      const abort = () => { clearTimeout(timer); signal.removeEventListener('abort', abort); reject(signal.reason); };
+      signal.addEventListener('abort', abort, {once:true});
+      if (signal.aborted) abort();
+    });
+    const response = await fetch('/api/inquiries/' + encodeURIComponent(batch.id), {signal});
+    if (!response.ok) throw new Error('询价已接收，读取处理结果失败，请重试。');
+    batch = await response.json() as IntakeBatch;
+  }
+  return batch;
 }
 function bytesBase64(bytes: Uint8Array) {
   let binary = "";

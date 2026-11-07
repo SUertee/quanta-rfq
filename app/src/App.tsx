@@ -1,11 +1,11 @@
 import {useInquiryQuote} from './engine/useInquiryQuote';
 import {appFetch as fetch,appUrl} from './engine/appUrl';
-import {conversationMeta,newConversation} from './engine/conversations';
+import {conversationMeta,newConversation,updateConversation} from './engine/conversations';
 import {PlatformChat,ConversationList} from './components/AssistantConversations';
 import {AccountMenu} from './components/AccountMenu';
 import {Modal} from './components/Modal';
 import {FloatingAssistant} from './components/FloatingAssistant';
-import {batchEmail} from './engine/intake';
+import {batchEmail,type IntakeBatch} from './engine/intake';
 import { useEffect, useMemo, useState } from 'react';
 import { loadData, type Dataset } from './data';
 import type { RawRow } from './engine/parse';
@@ -184,6 +184,19 @@ export default function App() {
     setView('workbench');
   };
 
+  const receiveChatInquiry = (batch: IntakeBatch, conversationKey: string) => {
+    const email = batchEmail(batch);
+    newTask(email);
+    updateConversation(conversationKey, {taskKey: `email:${email.id}`});
+    setActiveChat(conversationKey);
+    setAgentLineKey(null);
+    if (mode === 'workbench') setAssistantOpen(true);
+  };
+  const openChatInquiry = (id: string, conversationKey: string) => {
+    setActiveChat(conversationKey);
+    openTask({kind: 'email', id: `intake-${id}`});
+  };
+
   return (
     <div className={`layout layout-reference mode-${mode} view-${view} ${assistantDocked && assistantOpen && mode==='workbench' ? 'assistant-docked' : ''}`}>
       <aside className="sidebar">
@@ -215,8 +228,8 @@ export default function App() {
         <FloatingAssistant onSend={text=>{setQuickMessage({id:Date.now(),text});setAssistantOpen(true);}} open={assistantOpen} expanded={mode==='agent'} docked={assistantDocked && assistantOpen && mode==='workbench'} onOpen={()=>setAssistantOpen(true)} onCollapse={()=>{setAssistantOpen(false);setAssistantDocked(false);setMode('workbench');}}>
         <div className={mode === 'agent' ? "agent-mode-host" : "embedded-agent-host"}>
           {mode==='agent'&&<ConversationList tasks={tasks} selected={activeChat||(source?sourceKey(source)+(agentLineKey?':line:'+agentLineKey:''):'__no_task__')} onNew={()=>{const key=newConversation();if(key){setActiveChat(key);setSource(null);setAgentLineKey(null);}}} onSelect={(key)=>{setQuickMessage(null);setActiveChat(key.startsWith('chat:')?key:null);const linked=conversationMeta()[key]?.taskKey;if(key.startsWith('chat:')||Object.prototype.hasOwnProperty.call(conversationMeta()[key]||{},'taskKey')){setActiveChat(key);const linkedTask=tasks.find(t=>t.key===linked);setSource(linkedTask?.source||null);setAgentLineKey(null);return;}if(key==='__no_task__'){setSource(null);setAgentLineKey(null);return;}const task=tasks.find(t=>key===t.key||key.startsWith(t.key+':line:'));if(task){setSource(task.source);setAgentLineKey(key.startsWith(task.key+':line:')?key.slice(task.key.length+6):null);}}} />}
-          {!source && <PlatformChat onNewInquiry={()=>{setMode('workbench');setView('home');setImportRequested(true);setAssistantOpen(false);setAssistantDocked(false);}} standalone={mode==='agent'} docked={assistantDocked} onDock={()=>setAssistantDocked(value=>!value)} key={activeChat||'__no_task__'} conversationKey={activeChat||'__no_task__'} onQuickHandled={()=>setQuickMessage(null)} quickMessage={quickMessage} onClose={()=>{setMode('workbench');setAssistantOpen(false);setAssistantDocked(false);}} onHistory={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}} />}
-          {source&&quoteSync.ready&&<div className="copilot-body"><AgentPage key={(activeChat||'')+sourceKey(source)+(agentLineKey||'')}
+          {!source && <PlatformChat operator={userName} onInquiryCreated={receiveChatInquiry} onOpenInquiry={openChatInquiry} standalone={mode==='agent'} docked={assistantDocked} onDock={()=>setAssistantDocked(value=>!value)} key={activeChat||'__no_task__'} conversationKey={activeChat||'__no_task__'} onQuickHandled={()=>setQuickMessage(null)} quickMessage={quickMessage} onClose={()=>{setMode('workbench');setAssistantOpen(false);setAssistantDocked(false);}} onHistory={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}} />}
+          {source&&quoteSync.ready&&<div className="copilot-body"><AgentPage operator={userName} onInquiryCreated={receiveChatInquiry} key={(activeChat||'')+sourceKey(source)+(agentLineKey||'')}
             sessionOverride={activeChat||undefined} onQuickHandled={()=>setQuickMessage(null)} quickMessage={source?quickMessage:null} onHistory={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}} embedded expanded={mode === 'agent'} docked={assistantDocked} selectedLineKey={agentLineKey}
             onClearLine={() => setAgentLineKey(null)}
             onClose={() => { setMode('workbench'); setAssistantOpen(false); setAssistantDocked(false); }}

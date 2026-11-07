@@ -1,3 +1,6 @@
+import {shouldCreateChatInquiry, submitChatInquiry, type ChatIntakeRequest} from '../engine/chatIntake';
+import type {IntakeBatch} from '../engine/intake';
+import {ChatInquiryReceipt, chatInquiryResult, type ChatInquiryResult} from './ChatInquiryReceipt';
 import {ReferenceList,useChatReferences} from './ChatReferences';
 import {conversationReferences,type ChatReference} from '../engine/chatReferences';
 import {MessageRail} from './MessageRail';
@@ -12,34 +15,182 @@ import {conversationMeta,updateConversation} from '../engine/conversations';
 import {useEffect,useRef,useState} from 'react';
 import {readStored,useStoredState} from '../engine/persistence';
 import type {TaskSummary} from '../task';
-type Turn={references?:ChatReference[];attachments?:ChatAttachment[];role:'user'|'assistant';content:string;createdAt?:string};
-type Session={context?:string;turns:Turn[];state?:string;input?:string};
-export function PlatformChat({standalone=false,docked=false,onDock,onNewInquiry,conversationKey='__no_task__',quickMessage,onQuickHandled,onClose,onHistory}:{standalone?:boolean;docked?:boolean;onDock?:()=>void;onNewInquiry?:()=>void;conversationKey?:string;quickMessage:{id:number;text:string}|null;onQuickHandled:()=>void;onClose:()=>void;onHistory:()=>void}){
- const [sessions,setSessions]=useStoredState<Record<string,Session>>('rfq-chat-v1',{});
- const [attachments,setAttachments]=useState<ChatAttachment[]>([]),[attachmentEpoch,setAttachmentEpoch]=useState(0);
- const [input,setInputState]=useState(sessions[conversationKey]?.input||''),[busy,setBusy]=useState(false),[error,setError]=useState('');
- const setInput=(value:string)=>{setInputState(value);setSessions(old=>({...old,[conversationKey]:{...old[conversationKey],turns:old[conversationKey]?.turns||[],input:value}}));};
- const seen=useRef<number|null>(null),request=useRef<AbortController|null>(null),pending=useRef(false),composing=useRef(false);
- useEffect(()=>{window.dispatchEvent(new Event('rfq-chat-updated'));},[sessions]);
- const references=useChatReferences(conversationKey,busy);
- const turns=sessions[conversationKey]?.turns||[];
- const chatScroll=useChatScroll(turns);
- const append=(turn:Turn)=>setSessions(old=>({...old,[conversationKey]:{...old[conversationKey],turns:[...(old[conversationKey]?.turns||[]),{...turn,createdAt:new Date().toISOString()}]}}));
- const send=async(text=input)=>{
-  if((!text.trim()&&!attachments.length&&!references.items.length)||attachments.some(f=>f.status==='reading')||pending.current)return;pending.current=true;chatScroll.follow.current=true;setBusy(true);setError('');setInput('');
-  const controller=new AbortController();request.current=controller;
-  const activeReferences=conversationReferences(references.items,turns);
-  append({role:'user',content:text.trim()||(references.items.length?'请核对引用内容。':''),attachments,references:references.items});setAttachments([]);setAttachmentEpoch(n=>n+1);append({role:'assistant',content:''});
-  try{
-   const r=await fetch('/api/assistant/chat',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({references:activeReferences,instruction:text.trim()||(references.items.length?'请解释引用的内容和需要核对的条件。':attachments.some(f=>f.status==='ready')?'请根据附件内容简洁总结需求；未识别的附件不要推断。':'附件未能读取，请说明需要提供清晰图片或文字。'),context:sessions[conversationKey]?.context,history:turns.filter(t=>t.content.trim()).slice(-6).map(t=>({role:t.role,content:t.content.slice(0,2000)}))})});
-   await readChatStream(r,content=>{if(controller.signal.aborted)return;setSessions(old=>{const session=old[conversationKey];if(!session)return old;const updated=[...session.turns];const last=updated.length-1;if(updated[last]?.role!=='assistant')return old;updated[last]={...updated[last],content};return {...old,[conversationKey]:{...session,turns:updated}};});});
-   references.clear();
-  }catch(e){if(!controller.signal.aborted)setError(e instanceof Error?e.message:String(e));}
-  finally{pending.current=false;setBusy(false);}
- };
- useEffect(()=>{if(quickMessage&&seen.current!==quickMessage.id){seen.current=quickMessage.id;onQuickHandled();void send(quickMessage.text);}},[quickMessage]);
- useEffect(()=>()=>request.current?.abort(),[]);
- return <section className={`platform-chat ${standalone?'standalone-chat':''}`} aria-label="AI 对话">{!standalone&&<header className="copilot-header"><strong>报价助手</strong><div><button className="copilot-icon" aria-label="打开 AI 对话页" title="打开 AI 对话页" onClick={onHistory}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 16 18 6M8 6h10v10"/></svg></button><button className="copilot-icon" aria-label={docked?'恢复浮窗':'展开到右侧'} title={docked?'恢复浮窗':'展开到右侧'} onClick={onDock}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={docked?'M4 9h5V4m11 5h-5V4M4 15h5v5m11-5h-5v5':'M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5'} /></svg></button><button className="copilot-icon" aria-label="收起报价助手" title="收起报价助手" onClick={onClose}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button></div></header>}<div className="platform-chat-messages" ref={chatScroll.containerRef} onScroll={chatScroll.onScroll}>{!turns.length&&<div className="chat-start">{standalone&&<h1>今天需要处理哪份询价？</h1>}<div>{onNewInquiry&&<button className="btn" onClick={onNewInquiry}>上传询价 ↗</button>}<button className="btn" onClick={()=>send('怎样从上传询价到生成报价单？')}>了解报价流程 ↗</button></div></div>}{turns.map((turn,i)=><article className={`rfq-chat-turn ${turn.role}`} key={i}>{turn.role==='assistant'&&<div className="rfq-chat-speaker">Quanta</div>}<div className="rfq-chat-text">{turn.references&&<ReferenceList items={turn.references}/ >}{turn.attachments&&<div className="chat-attachment-strip">{turn.attachments.map(file=><ChatAttachmentPreview key={file.id} attachment={file}/>)}</div>}<ChatMarkdown text={turn.content}/></div></article>)}{busy&&<p role="status">正在回复…</p>}{error&&<p role="alert">{error}</p>}</div>{standalone&&<MessageRail container={chatScroll.containerRef} turns={turns}/>}<form className="platform-chat-form" onSubmit={e=>{e.preventDefault();void send();}}>{references.composer}<ChatFiles showPicker key={attachmentEpoch} disabled={busy} onChange={setAttachments} onRead={text=>setSessions(old=>({...old,[conversationKey]:{...old[conversationKey],turns:old[conversationKey]?.turns||[],context:text}}))}/><textarea rows={2} aria-label="向平台助手提问" placeholder="输入消息…" maxLength={2000} onCompositionStart={()=>{composing.current=true;}} onCompositionEnd={()=>{composing.current=false;}} value={input} onChange={e=>setInput(e.target.value)} onKeyDown={e=>{if(e.key==='Enter'&&!e.shiftKey&&!e.nativeEvent.isComposing&&!composing.current&&e.keyCode!==229&&!e.repeat){e.preventDefault();void send();}}}/>{busy?<button type="button" className="btn" onClick={()=>{request.current?.abort();}}>停止</button>:<button aria-label="发送消息" className="chat-send" disabled={(!input.trim()&&!attachments.length&&!references.items.length)||attachments.some(f=>f.status==='reading')}>↑</button>}</form></section>;
+type Turn = {
+  references?: ChatReference[];
+  attachments?: ChatAttachment[];
+  role: 'user' | 'assistant';
+  content: string;
+  createdAt?: string;
+  inquiry?: ChatInquiryResult;
+};
+type Session = {context?: string; turns: Turn[]; state?: string; input?: string; creation?: ChatIntakeRequest};
+interface PlatformChatProps {
+  standalone?: boolean;
+  docked?: boolean;
+  onDock?: () => void;
+  onInquiryCreated?: (batch: IntakeBatch, conversationKey: string) => void;
+  onOpenInquiry?: (id: string, conversationKey: string) => void;
+  operator?: string;
+  conversationKey?: string;
+  quickMessage: {id: number; text: string} | null;
+  onQuickHandled: () => void;
+  onClose: () => void;
+  onHistory: () => void;
+}
+
+export function PlatformChat({standalone=false, docked=false, onDock, onInquiryCreated, onOpenInquiry,
+  operator='本机用户', conversationKey='__no_task__', quickMessage, onQuickHandled, onClose, onHistory}: PlatformChatProps) {
+  const [sessions, setSessions] = useStoredState<Record<string, Session>>('rfq-chat-v1', {});
+  const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [attachmentEpoch, setAttachmentEpoch] = useState(0);
+  const [input, setInputState] = useState(sessions[conversationKey]?.input || '');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const seen = useRef<number | null>(null);
+  const request = useRef<AbortController | null>(null);
+  const pending = useRef(false);
+  const composing = useRef(false);
+  const form = useRef<HTMLFormElement>(null);
+  const references = useChatReferences(conversationKey, busy);
+  const session = sessions[conversationKey];
+  const turns = session?.turns || [];
+  const chatScroll = useChatScroll(turns);
+  const patch = (change: Partial<Session>) => setSessions(old => ({
+    ...old, [conversationKey]: {...old[conversationKey], turns: old[conversationKey]?.turns || [], ...change},
+  }));
+  const setInput = (value: string) => { setInputState(value); patch({input: value}); };
+  const append = (turn: Turn) => setSessions(old => ({
+    ...old, [conversationKey]: {...old[conversationKey], turns: [
+      ...(old[conversationKey]?.turns || []), {...turn, createdAt: new Date().toISOString()},
+    ]},
+  }));
+
+  useEffect(() => { window.dispatchEvent(new Event('rfq-chat-updated')); }, [sessions]);
+  useEffect(() => () => request.current?.abort(), []);
+
+  const receiveInquiry = async (creation: ChatIntakeRequest) => {
+    if (pending.current) return;
+    pending.current = true;
+    setBusy(true);
+    setError('');
+    patch({creation});
+    const controller = new AbortController();
+    request.current = controller;
+    try {
+      const batch = await submitChatInquiry(creation, controller.signal);
+      controller.signal.throwIfAborted();
+      append({role: 'assistant', content: '', inquiry: chatInquiryResult(batch)});
+      patch({creation: undefined, context: undefined});
+      references.clear();
+      onInquiryCreated?.(batch, conversationKey);
+    } catch (failure) {
+      setError(controller.signal.aborted ? '已停止等待，可重试读取接收结果。' : failure instanceof Error ? failure.message : '接收未完成，请重试。');
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  };
+
+  const send = async (text=input) => {
+    if ((!text.trim() && !attachments.length && !references.items.length) ||
+      attachments.some(file => file.status === 'reading') || pending.current) return;
+    if (session?.creation) { setError('上次接收尚未完成，请先重试或取消。'); return; }
+    chatScroll.follow.current = true;
+    const instruction = text.trim();
+    append({role: 'user', content: instruction || (references.items.length ? '请核对引用内容。' : attachments.map(file => file.name).join('、')), attachments, references: references.items});
+    setInput('');
+    setAttachments([]);
+    setAttachmentEpoch(number => number + 1);
+    if (shouldCreateChatInquiry(instruction, attachments.length)) {
+      await receiveInquiry({requestId: crypto.randomUUID(), instruction, attachments, operator});
+      return;
+    }
+    pending.current = true;
+    setBusy(true);
+    setError('');
+    const controller = new AbortController();
+    request.current = controller;
+    const activeReferences = conversationReferences(references.items, turns);
+    append({role: 'assistant', content: ''});
+    try {
+      const response = await fetch('/api/assistant/chat', {
+        method: 'POST', headers: {'Content-Type': 'application/json', Accept: 'application/x-ndjson'}, signal: controller.signal,
+        body: JSON.stringify({
+          references: activeReferences,
+          instruction: instruction || (references.items.length ? '请解释引用的内容和需要核对的条件。' : '请根据附件内容简洁总结需求，未识别的附件不要推断。'),
+          context: session?.context,
+          history: turns.filter(turn => turn.content.trim()).slice(-6).map(turn => ({role: turn.role, content: turn.content.slice(0, 2000)})),
+        }),
+      });
+      await readChatStream(response, content => {
+        if (controller.signal.aborted) return;
+        setSessions(old => {
+          const saved = old[conversationKey];
+          if (!saved) return old;
+          const updated = [...saved.turns];
+          const last = updated.length - 1;
+          if (updated[last]?.role !== 'assistant') return old;
+          updated[last] = {...updated[last], content};
+          return {...old, [conversationKey]: {...saved, turns: updated}};
+        });
+      });
+      references.clear();
+    } catch (failure) {
+      if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : String(failure));
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  };
+  useEffect(() => {
+    if (quickMessage && seen.current !== quickMessage.id) {
+      seen.current = quickMessage.id;
+      onQuickHandled();
+      void send(quickMessage.text);
+    }
+  }, [quickMessage]);
+
+  return <section className={`platform-chat ${standalone ? 'standalone-chat' : ''}`} aria-label="AI 对话">
+    {!standalone && <header className="copilot-header"><strong>报价助手</strong><div>
+      <button className="copilot-icon" aria-label="打开 AI 对话页" title="打开 AI 对话页" onClick={onHistory}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 16 18 6M8 6h10v10"/></svg></button>
+      <button className="copilot-icon" aria-label={docked ? '恢复浮窗' : '展开到右侧'} title={docked ? '恢复浮窗' : '展开到右侧'} onClick={onDock}><svg viewBox="0 0 24 24" aria-hidden="true"><path d={docked ? 'M4 9h5V4m11 5h-5V4M4 15h5v5m11-5h-5v5' : 'M9 4H4v5m11-5h5v5M4 15v5h5m11-5v5h-5'}/></svg></button>
+      <button className="copilot-icon" aria-label="收起报价助手" title="收起报价助手" onClick={onClose}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14"/></svg></button>
+    </div></header>}
+    <div className="platform-chat-messages" ref={chatScroll.containerRef} onScroll={chatScroll.onScroll}>
+      {!turns.length && <div className="chat-start">{standalone && <h1>今天需要处理哪份询价？</h1>}<div>
+        <button className="btn" onClick={() => form.current?.querySelector<HTMLInputElement>('input[type=file]')?.click()}>上传询价</button>
+        <button className="btn" onClick={() => send('怎样从上传询价到生成报价单？')}>了解报价流程 ↗</button>
+      </div></div>}
+      {turns.map((turn, index) => <article className={`rfq-chat-turn ${turn.role}`} key={index}>
+        {turn.role === 'assistant' && <div className="rfq-chat-speaker">Quanta</div>}
+        <div className="rfq-chat-text">
+          {turn.references && <ReferenceList items={turn.references}/>}
+          {turn.attachments && <div className="chat-attachment-strip">{turn.attachments.map(file => <ChatAttachmentPreview key={file.id} attachment={file}/>)}</div>}
+          {turn.inquiry ? <ChatInquiryReceipt result={turn.inquiry} onOpen={() => onOpenInquiry?.(turn.inquiry!.id, conversationKey)}/> : <ChatMarkdown text={turn.content}/>}
+        </div>
+      </article>)}
+      {busy && <p role="status">{session?.creation ? '正在接收原件、提取物料并查询依据…' : '正在回复…'}</p>}
+      {error && <p role="alert">{error}</p>}
+      {session?.creation && !busy && <div className="chat-intake-recovery">
+        <button className="btn" onClick={() => receiveInquiry(session.creation!)}>重试接收</button>
+        <button className="btn" onClick={() => {patch({creation: undefined}); setError('');}}>放弃重试</button>
+      </div>}
+    </div>
+    {standalone && <MessageRail container={chatScroll.containerRef} turns={turns}/>}
+    <form ref={form} className="platform-chat-form" onSubmit={event => {event.preventDefault(); void send();}}>
+      {references.composer}
+      <ChatFiles showPicker key={attachmentEpoch} disabled={busy || !!session?.creation} onChange={setAttachments} onRead={context => patch({context})}/>
+      <textarea rows={2} aria-label="向平台助手提问" placeholder="输入消息…" maxLength={2000} disabled={!!session?.creation}
+        onCompositionStart={() => {composing.current = true;}} onCompositionEnd={() => {composing.current = false;}}
+        value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => {
+          if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing && !composing.current && event.keyCode !== 229 && !event.repeat) {
+            event.preventDefault(); void send();
+          }
+        }}/>
+      {busy ? <button type="button" className="btn" onClick={() => request.current?.abort()}>停止</button> :
+        <button aria-label="发送消息" className="chat-send" disabled={!!session?.creation || (!input.trim() && !attachments.length && !references.items.length) || attachments.some(file => file.status === 'reading')}>↑</button>}
+    </form>
+  </section>;
 }
 export function ConversationList({tasks,selected,onSelect,onNew}:{tasks:TaskSummary[];selected:string;onSelect:(key:string)=>void;onNew:()=>void}){
  const [sessions,setSessions]=useState(()=>readStored<Record<string,Session>>('rfq-chat-v1',{}));

@@ -994,3 +994,13 @@ tr:hover .material-reference-name>.reference-cite,.material-reference-name:focus
 @media(hover:none) { .material-reference-name>.reference-cite { opacity:1; } }
 .layout-reference .intake-source-label { display:flex;align-items:center;justify-content:space-between;gap:12px; }
 .layout-reference .evidence-card>header { display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap; }
+
+/* Intake receipts share the existing quotation and message component geometry. */
+.chat-inquiry-receipt { display:grid;gap:12px;min-width:0; }
+.chat-inquiry-receipt header { display:flex;align-items:center;justify-content:space-between;gap:16px; }
+.chat-inquiry-receipt header strong { min-width:0;overflow-wrap:anywhere; }
+.chat-inquiry-receipt header span { color:var(--ink-2);white-space:nowrap;font-size:14px; }
+.chat-inquiry-receipt p { margin:0; }
+.chat-inquiry-receipt ul { margin:0;padding-left:20px;display:grid;gap:6px; }
+.chat-inquiry-receipt .btn { justify-self:start; }
+.chat-intake-recovery { display:flex;flex-wrap:wrap;gap:8px; }

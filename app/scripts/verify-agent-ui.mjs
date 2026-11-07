@@ -5,16 +5,16 @@ import ts from 'typescript';
 const source=ts.transpileModule(fs.readFileSync(new URL('../src/pages/AgentPage.tsx',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,jsx:ts.JsxEmit.ReactJSX,target:ts.ScriptTarget.ES2022}}).outputText;
 const streamModule={};vm.runInNewContext(ts.transpileModule(fs.readFileSync(new URL('../src/engine/chatStream.ts',import.meta.url),'utf8'),{compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2022}}).outputText,{exports:streamModule,TextDecoder,Error});
 function harness(overrides={}){
- const store={},refs=[],requests=[];let cursor=0,tree,writes=0,uploads=0;
+ const store={'rfq-chat-v1':overrides.initialSessions||{}},refs=[],requests=[],intakes=[];let cursor=0,tree,writes=0,uploads=0;
  const props={tasks:[{key:'task1',title:'QA',source:{kind:'email',id:'qa'},total:1}],ds:{},policy:{margin:.25},lineEdits:{},resolved:new Set(),priceBook:{},estCost:{},onNewInquiry(){uploads++},onOpenTask(){},onOpenSettings(){},onSelectTask(){},setPriceBook(){writes++},setResolved(){writes++},setEstCost(){writes++}};
  Object.assign(props,overrides);
- const modules={'../engine/chatReferences':{conversationReferences:(drafts)=>drafts},'../components/ChatReferences':{ReferenceList:()=>null,useChatReferences:()=>({items:[],clear(){},composer:null})},'../engine/amount':{fmtMoney:(n,c='CNY')=>n==null?'':`${c} ${n}`},'../engine/chatStream':streamModule,'../engine/useChatScroll':{useChatScroll:()=>({containerRef:{current:null},onScroll(){},follow:{current:true}})},'../engine/appUrl':{appFetch:(...args)=>context.fetch(...args)},'../components/ChatAttachmentPreview':{ChatAttachmentPreview:()=>null},'../components/ChatMarkdown':{ChatMarkdown:()=>null},'../components/ChatFiles':{ChatFiles:()=>null},'../components/ExecutionSteps':{ExecutionSteps:()=>null},'../components/MessageRail':{MessageRail:()=>null},react:{useState:v=>{const i=cursor++;refs[i]??={current:v};return[refs[i].current,a=>{refs[i].current=a}]},useEffect(){},useMemo:f=>f(),useRef:v=>refs[cursor++]??={current:v}},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})},'../engine/persistence':{useStoredState:(k,v)=>{store[k]??=v;return[store[k],a=>{store[k]=typeof a==='function'?a(store[k]):a}]}},'../task':{linesOf:ds=>({lines:ds.testLines||[{key:'line1',partNumber:'TEST',quantity:2,uom:'EA'}]})},'../engine/pricing':{priceAll:lines=>lines.map(line=>({line})),isYellow:()=>true}};
- const context={exports:{},require:n=>{assert.ok(modules[n],n);return modules[n]},performance,AbortController,fetch:(url,options)=>new Promise(resolve=>requests.push({url,options,resolve}))};vm.runInNewContext(source,context);
+ const modules={'../engine/chatIntake':{shouldCreateChatInquiry:()=>!!overrides.enableIntake,submitChatInquiry:async(request)=>{intakes.push(request);return overrides.createdBatch;}},'../components/ChatInquiryReceipt':{ChatInquiryReceipt:()=>null,chatInquiryResult:batch=>({...batch,fileCount:batch.files.length,lineCount:batch.lines.length})},'../engine/chatReferences':{conversationReferences:(drafts)=>drafts},'../components/ChatReferences':{ReferenceList:()=>null,useChatReferences:()=>({items:[],clear(){},composer:null})},'../engine/amount':{fmtMoney:(n,c='CNY')=>n==null?'':`${c} ${n}`},'../engine/chatStream':streamModule,'../engine/useChatScroll':{useChatScroll:()=>({containerRef:{current:null},onScroll(){},follow:{current:true}})},'../engine/appUrl':{appFetch:(...args)=>context.fetch(...args)},'../components/ChatAttachmentPreview':{ChatAttachmentPreview:()=>null},'../components/ChatMarkdown':{ChatMarkdown:()=>null},'../components/ChatFiles':{ChatFiles:()=>null},'../components/ExecutionSteps':{ExecutionSteps:()=>null},'../components/MessageRail':{MessageRail:()=>null},react:{useState:v=>{const i=cursor++;refs[i]??={current:v};return[refs[i].current,a=>{refs[i].current=a}]},useEffect(){},useMemo:f=>f(),useRef:v=>refs[cursor++]??={current:v}},'react/jsx-runtime':{jsx:(type,props)=>({type,props}),jsxs:(type,props)=>({type,props})},'../engine/persistence':{useStoredState:(k,v)=>{store[k]??=v;return[store[k],a=>{store[k]=typeof a==='function'?a(store[k]):a}]}},'../task':{linesOf:ds=>({lines:ds.testLines||[{key:'line1',partNumber:'TEST',quantity:2,uom:'EA'}]})},'../engine/pricing':{priceAll:lines=>lines.map(line=>({line})),isYellow:()=>true}};
+ const context={exports:{},require:n=>{assert.ok(modules[n],n);return modules[n]},performance,crypto,AbortController,fetch:(url,options)=>new Promise(resolve=>requests.push({url,options,resolve}))};vm.runInNewContext(source,context);
  function render(){cursor=0;tree=context.exports.AgentPage(props)}
  function nodes(n){if(!n||typeof n!=='object')return[];if(Array.isArray(n))return n.flatMap(nodes);return[n,...nodes(n.props?.children)]}
  function text(n){if(n==null||typeof n==='boolean')return'';if(Array.isArray(n))return n.map(text).join('');return typeof n==='object'?text(n.props?.children):String(n)}
  const button=name=>{const b=nodes(tree).find(n=>n.type==='button'&&text(n)===name);assert.ok(b,name);return b.props};
- render();return{render,button,uploads:()=>uploads,dialog:()=>nodes(tree).some(n=>n.props?.role==='dialog'),input:()=>nodes(tree).find(n=>n.type==='textarea').props,requests,props,session:()=>store['rfq-chat-v1'][props.selectedLineKey?`task1:line:${props.selectedLineKey}`:'task1'],writes:()=>writes,text:()=>text(tree),respond:(i,mode='draft',status='needs_review')=>requests[i].resolve({ok:true,json:async()=>({runId:'qa',status,summary:'QA draft',model:'test',draft:{mode,lines:[{key:'line1',partNumber:'TEST',quantity:2,cost:10,suggestedPrice:12.5,currency:'CNY',issues:[]}],questions:[]},events:[]})})};
+ render();return{render,button,intakes,files:()=>nodes(tree).find(n=>n.props?.excerptLimit===1400)?.props,uploads:()=>uploads,dialog:()=>nodes(tree).some(n=>n.props?.role==='dialog'),input:()=>nodes(tree).find(n=>n.type==='textarea').props,requests,props,session:()=>store['rfq-chat-v1'][props.selectedLineKey?`task1:line:${props.selectedLineKey}`:'task1'],writes:()=>writes,text:()=>text(tree),respond:(i,mode='draft',status='needs_review')=>requests[i].resolve({ok:true,json:async()=>({runId:'qa',status,summary:'QA draft',model:'test',draft:{mode,lines:[{key:'line1',partNumber:'TEST',quantity:2,cost:10,suggestedPrice:12.5,currency:'CNY',issues:[]}],questions:[]},events:[]})})};
 }
 const h=harness();
 h.button('＋ 上传询价').onClick();assert.equal(h.uploads(),1,'upload invokes actual import callback');
@@ -51,3 +51,23 @@ const failedReply=failedRun.button('↑').onClick();failedRun.respond(0,'analysi
 assert.equal(failedRun.session().state,'failed');
 assert.ok(failedRun.text().includes('本次处理未完成，请重新发送'));
 console.log('PASS: incomplete tool result keeps the chat in a recoverable failure state');
+
+const noLines=harness({ds:{testLines:[]},initialSessions:{task1:{state:'idle',input:'',turns:[{role:'assistant',content:'已接收原件，尚未提取物料。'}]}}});
+noLines.input().onChange({target:{value:'接下来要补什么？'}});noLines.render();
+assert.equal(noLines.button('↑').disabled,false);
+const explainEmpty=noLines.button('↑').onClick();
+assert.equal(noLines.requests[0].url,'/api/assistant/chat');
+assert.equal(JSON.parse(JSON.parse(noLines.requests[0].options.body).context).lineCount,0);
+noLines.requests[0].resolve(new Response('{"type":"delta","text":"请在工作台核对原文并补全物料。"}\n{"type":"done","answer":"请在工作台核对原文并补全物料。"}\n'));await explainEmpty;
+assert.equal(noLines.session().state,'idle');
+console.log('PASS: received inquiry with zero extracted lines can still ask for clarification without invoking quotation tools');
+
+const received=[];
+const bound=harness({enableIntake:true,createdBatch:{id:'new-inquiry',title:'bound.csv',status:'evidence_ready',files:[{}],lines:[{partNumber:'TEST',issues:[]}],issues:[]},onInquiryCreated:(batch,key)=>received.push({batch,key})});
+bound.files().onChange([{id:'bound-file',name:'bound.csv',status:'ready'}]);bound.render();
+await bound.button('↑').onClick();bound.render();
+assert.equal(bound.requests.length,0,'bound attachments use formal intake instead of an excerpt-only quotation run');
+assert.equal(bound.intakes.length,1);assert.equal(bound.intakes[0].instruction,'');assert.equal(received[0].key,'task1');
+assert.equal(bound.session().turns.at(-1).inquiry.id,'new-inquiry');
+assert.equal(bound.session().creation,undefined);
+console.log('PASS: already-bound assistant creates a formal inquiry from original attachments, preserves its conversation key and clears its pending receipt');
