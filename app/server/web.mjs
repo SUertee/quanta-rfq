@@ -8,7 +8,7 @@ const host=process.env.RFQ_WEB_HOST||'127.0.0.1',port=Number(process.env.RFQ_WEB
 const base=process.env.RFQ_BASE_PATH||'/';
 const root=fileURLToPath(new URL('../dist/',import.meta.url)),runtime=getRuntimeConfig();
 await import('./index.mjs');
-const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.ico':'image/x-icon','.woff2':'font/woff2'};
+const types={'.html':'text/html; charset=utf-8','.js':'text/javascript; charset=utf-8','.css':'text/css; charset=utf-8','.json':'application/json; charset=utf-8','.svg':'image/svg+xml','.png':'image/png','.jpg':'image/jpeg','.jpeg':'image/jpeg','.ico':'image/x-icon','.woff2':'font/woff2'};
 function proxy(req,res,target,authorization){
  const headers={...req.headers,host:target.host};delete headers.authorization;delete headers.cookie;
  if(authorization)headers.authorization='Bearer '+authorization;
