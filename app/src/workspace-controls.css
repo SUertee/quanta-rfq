@@ -419,3 +419,49 @@ html:has(dialog[open]) { overflow:hidden; }
 .inquiry-link-dialog .conversation-task-choices { display:grid;gap:6px;overflow:auto; }
 .inquiry-link-dialog .conversation-task-choices>.btn { justify-content:flex-start;text-align:left;white-space:normal;border-radius:10px; }
 @media(max-width:700px) { .mode-agent .conversation-task-link>span { display:none; } }
+
+/* Stable assistant anchor: the same 52px button survives hover and panel expansion. */
+.assistant-capsule { height:52px;padding:0; }
+.assistant-capsule .assistant-orb { position:absolute;right:0;top:0;width:52px;height:52px;min-width:52px;margin:0; }
+.assistant-capsule input { padding-right:66px; }
+.assistant-capsule.is-open .assistant-orb { background:var(--hal-cyan);color:var(--ink); }
+.assistant-capsule.is-open .assistant-orb-q { display:none; }
+.assistant-capsule.is-open .assistant-orb-arrow { display:inline; }
+/* One title scale across business pages, with the primary action next to its records. */
+.layout-reference .page-heading h1,.layout-reference .home-overview .page-heading h1 { margin:0;font-size:30px;font-weight:500;line-height:1.3;letter-spacing:-.6px; }
+.layout-reference .sidebar .nav-item { font-family:inherit;font-weight:500; }
+.layout-reference .home-overview { align-items:center;padding-block:42px 28px; }
+.layout-reference .home-overview .task-metrics b { font-size:32px; }
+.page-home .inquiry-records .list-toolbar { display:flex;align-items:center;gap:12px;flex-wrap:wrap; }
+.page-home .inquiry-records .search-input { margin-left:auto; }
+.page-home .inquiry-create { flex-shrink:0;min-height:42px;padding:10px 18px; }
+.page-home .inquiry-create::after { content:none;display:none; }
+@media(max-width:700px) {
+ .page-home .inquiry-records .list-toolbar { display:grid;grid-template-columns:minmax(0,1fr) auto; }
+ .page-home .inquiry-records .filter-tabs { grid-column:1 / -1; }
+ .page-home .inquiry-records .search-input { width:100%;min-width:0;margin:0; }
+}
+
+/* History belongs on the right; no explicit task-association control in chat. */
+.mode-agent .ai-conversation-tools { grid-column:1 / -1;justify-content:space-between; }
+/* The persistent orb becomes the panel's send button at the identical viewport anchor. */
+.assistant-capsule { transition:width 200ms cubic-bezier(.2,.8,.2,1); }
+.assistant-capsule.is-open { overflow:visible;background:transparent;border-color:transparent;box-shadow:none; }
+.assistant-capsule input { padding-right:0; }
+.assistant-capsule .assistant-orb[aria-disabled=true] { opacity:.45;cursor:default; }
+.floating-assistant:not(.expanded) .floating-assistant-panel .chat-send,
+.floating-assistant:not(.expanded) .floating-assistant-panel .send-btn,
+.floating-assistant:not(.expanded) .floating-assistant-panel .stop-btn,
+.floating-assistant:not(.expanded) .floating-assistant-panel .platform-chat-form>button { visibility:hidden; }
+.floating-assistant:not(.expanded) .floating-assistant-panel .platform-chat-form,
+.floating-assistant:not(.expanded) .floating-assistant-panel .rfq-chat-composer { padding-right:64px; }
+.floating-assistant-panel.is-open { transform:none;animation:assistant-anchor-reveal 240ms cubic-bezier(.2,.8,.2,1) both; }
+@keyframes assistant-anchor-reveal { from { clip-path:circle(26px at var(--anchor-local-x) var(--anchor-local-y)); } to { clip-path:circle(150% at var(--anchor-local-x) var(--anchor-local-y)); } }
+@media(prefers-reduced-motion:reduce) { .floating-assistant-panel.is-open { animation:none; } }
+.assistant-capsule { border:0; }
+.floating-assistant:not(.expanded) .platform-chat-form { margin:12px 4px 4px 12px; }
+.floating-assistant:not(.expanded) .rfq-chat-footer { padding:0 4px 4px 12px; }
+.floating-assistant:not(.expanded) .rfq-chat-composer { margin:12px 0 0; }
+
+.assistant-capsule.grows-right .assistant-orb { left:0;right:auto; }
+.assistant-capsule.grows-right input { left:66px;width:calc(100% - 80px); }
