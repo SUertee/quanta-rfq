@@ -180,7 +180,7 @@ export default function App() {
         </button>
         <nav aria-label="主要导航">
           <button className={`nav-item ${mode === 'workbench' && (view === 'home' || view === 'workbench') ? 'active' : ''}`} onClick={() => { setMode('workbench'); setView('home'); }}>
-            <span className="nav-label">询价任务</span><span className="nav-count">{tasks.length}</span>
+            <span className="nav-label">询价任务</span>
           </button>
           <button className={`nav-item ${mode === 'workbench' && view === 'inspect' ? 'active' : ''}`} onClick={() => { setMode('workbench'); setView('inspect'); }}>
             <span className="nav-label">异常巡检</span>
