@@ -54,3 +54,7 @@ git config core.hooksPath .githooks
 只提交源码、文档和明确的样例文件。`.env.local`、数据库、上传原件、导出记录、依赖及构建产物被忽略。原始资料和旧工程仍在本地版本对比目录，未纳入本仓库。
 
 [设计文档](docs/README.md) · [整理说明](docs/整理与发布说明.md) · [密钥处理约定](SECURITY.md)
+
+## 服务器运行
+
+生产静态服务和API入口使用 `npm start`，需配置访问凭据与来源白名单。Docker与myserver发布/回滚说明见 [部署说明](deploy/README.md)。本地开发继续使用 `npm run server` 和 `npm run dev`。
