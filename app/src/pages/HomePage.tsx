@@ -40,7 +40,7 @@ export function HomePage({
     catch(e){setErr(e instanceof Error?e.message:String(e));}
     finally{setBusy(false);}
   };
-  const statusOf=(t:TaskSummary)=>t.intakeStatus==='processing'?<Badge text="处理中" tone="blue" />:['failed','interrupted'].includes(t.intakeStatus||'')?<Badge text="处理未完成" tone="amber" />:t.intakeStatus==='needs_input'?<Badge text="待补充材料或字段" tone="amber" />:t.inquiryError?<Badge text="询价错误 · 可转手工单" tone="amber" />:t.total===0?<Badge text="待解析 · 无询价行" tone="amber" />:t.checkCount>0?<Badge text={`${t.checkCount} 行需核对`} tone="amber" />:<Badge text="待核价" tone="blue" />;
+  const statusOf=(t:TaskSummary)=>t.intakeStatus==='processing'?<Badge text="处理中" tone="blue" />:['failed','interrupted'].includes(t.intakeStatus||'')?<Badge text="处理未完成" tone="amber" />:t.intakeStatus==='needs_input'?<Badge text="待补充材料或字段" tone="amber" />:t.inquiryError?<Badge text="待核对原文" tone="amber" />:t.total===0?<Badge text="待解析 · 无询价行" tone="amber" />:t.checkCount>0?<Badge text={`${t.checkCount} 行需核对`} tone="amber" />:<Badge text="待核价" tone="blue" />;
   return (
     <div className="page-home">
       <section className="home-overview" aria-label="询价工作台">

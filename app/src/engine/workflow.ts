@@ -47,7 +47,7 @@ export function inquiryStages(v: WorkflowInput) {
           : "done",
       detail: !v.lineCount
         ? "待查询"
-        : `${v.matchedLines}/${v.lineCount} 行有依据`,
+        : `${v.matchedLines} 行有依据，${v.lineCount-v.matchedLines} 行待补全`,
     },
     {
       id: 4 as InquiryStage,
@@ -58,7 +58,7 @@ export function inquiryStages(v: WorkflowInput) {
           ? "done"
           : "attention",
       detail: v.activeLines
-        ? `${v.reviewedLines}/${v.activeLines} 行人工核对`
+        ? `${v.reviewedLines} 行已核对，${v.activeLines-v.reviewedLines} 行待核对`
         : "待核对",
     },
     {
@@ -72,7 +72,7 @@ export function inquiryStages(v: WorkflowInput) {
             ? "attention"
             : "pending",
       detail: v.activeLines
-        ? `${v.pricedLines}/${v.activeLines} 行已填单价`
+        ? `${v.pricedLines} 行已定价，${v.activeLines-v.pricedLines} 行待定价`
         : "待生成",
     },
     {

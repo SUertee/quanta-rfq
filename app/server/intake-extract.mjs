@@ -45,6 +45,13 @@ function normalize(row, chunk, method) {
     issues,
   });
 }
+// Keep the other labeled requirements when a line is handled by deterministic rules.
+// Each field ends at the next explicit label, preserving certificate names and dates.
+function labeledValue(text, labels) {
+  const boundary = '(?:件号|料号|P/?N|Part\\s*Number|数量|QTY|Quantity|单位|UOM|Unit|件状|Condition|描述|名称|Description|证书|Certificate|Cert(?:ification)?|要求|Requirement|交期|需求日期|截止日期|Due\\s*Date)';
+  const match = text.match(new RegExp('(?:^|[\\s，,；;])(?:' + labels + ')\\s*[:：=]?\\s*(.*?)(?=[\\s，,；;]+' + boundary + '(?:\\s|[:：=])|$)', 'i'));
+  return match?.[1]?.trim() || null;
+}
 export function extractStructured(chunks) {
   const lines = [],
     unresolved = [];
@@ -95,6 +102,12 @@ export function extractStructured(chunks) {
             quantity: qty?.[1],
             uom: unit?.[1],
             condition: cond?.[1],
+            description: labeledValue(c.text, '描述|名称|Description'),
+            requirement: [
+              labeledValue(c.text, '证书|Certificate|Cert(?:ification)?'),
+              labeledValue(c.text, '要求|Requirement'),
+            ].filter(Boolean).join('；') || null,
+            dueDate: labeledValue(c.text, '交期|需求日期|截止日期|Due\\s*Date'),
           },
           c,
           "labeled_rules",

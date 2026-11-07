@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Dataset } from '../data';
 import type { EstCost, InquiryLine, PricedLine } from '../types';
 import type { TaskSummary } from '../task';
@@ -6,7 +6,7 @@ import { linesOf } from '../task';
 import { isYellow, priceAll } from '../engine/pricing';
 import { suggestPrice, type PricingPolicy } from '../engine/pricingPolicy';
 import { FLAG_PLAIN } from '../plain';
-import { Badge, DataTable, FilterTabs, RecordToolbar } from '../components/ui';
+import { Badge, DataTable, RecordToolbar } from '../components/ui';
 import type { Source } from '../App';
 
 type IssueType = '过期价' | '缺证书' | '毛利不足' | '未命中' | '待报价滞留' | '未核对' | '未定价';
@@ -41,7 +41,17 @@ export function InspectPage({
   onOpenTask: (s: Source) => void;
 }) {
   const [query,setQuery]=useState('');
-  const [filter, setFilter] = useState<IssueType | ''>('');
+  const [filters, setFilters] = useState<IssueType[]>([]);
+  const [filterOpen, setFilterOpen] = useState(false);
+  const filterMenu = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!filterOpen) return;
+    const outside = (event: PointerEvent) => { if (!filterMenu.current?.contains(event.target as Node)) setFilterOpen(false); };
+    const escape = (event: KeyboardEvent) => { if (event.key === 'Escape') { setFilterOpen(false); filterMenu.current?.querySelector<HTMLButtonElement>('button')?.focus(); } };
+    document.addEventListener('pointerdown', outside);
+    document.addEventListener('keydown', escape);
+    return () => { document.removeEventListener('pointerdown', outside); document.removeEventListener('keydown', escape); };
+  }, [filterOpen]);
 
   const rows = useMemo(() => {
     const opts = {
@@ -81,12 +91,19 @@ export function InspectPage({
     return m;
   }, [rows]);
 
-  const shown = rows.filter(r=>(!filter||r.type===filter)&&`${r.taskTitle} ${r.pn} ${r.desc} ${r.orderId}`.toLowerCase().includes(query.toLowerCase()));
+  const shown = rows.filter(r=>(!filters.length||filters.includes(r.type))&&`${r.taskTitle} ${r.pn} ${r.desc} ${r.orderId}`.toLowerCase().includes(query.toLowerCase()));
 
   return (
     <div className="page-inspect">
       <div className="page-heading"><div><h1>异常巡检</h1></div></div>
-      <RecordToolbar filters={<FilterTabs label="风险类型筛选" value={filter} onChange={value=>setFilter(value===filter?'':value)} items={[{value:'',label:'全部事项',count:rows.length},...ISSUE_ORDER.map(t=>({value:t,label:t,count:counts.get(t)??0}))]} />}><input className="search-input" aria-label="搜索风险物料" placeholder="搜索件号、询价、描述…" value={query} onChange={e=>setQuery(e.target.value)} /></RecordToolbar>
+      <RecordToolbar filters={<div className="issue-filter" ref={filterMenu}>
+        <button className="btn issue-filter-trigger" aria-expanded={filterOpen} aria-controls="issue-filter-options" onClick={()=>setFilterOpen(!filterOpen)}>筛选{filters.length ? ` · ${filters.length} 类` : ''}</button>
+        <span className="issue-filter-count" role="status">{shown.length} 项</span>
+        {filterOpen&&<div className="issue-filter-menu" id="issue-filter-options" role="group" aria-label="异常类型">
+          <div className="issue-filter-heading"><strong>异常类型</strong><button className="btn" disabled={!filters.length} onClick={()=>setFilters([])}>清空</button></div>
+          {ISSUE_ORDER.map(type=><label key={type}><input type="checkbox" checked={filters.includes(type)} onChange={event=>setFilters(current=>event.target.checked?[...current,type]:current.filter(value=>value!==type))}/><span>{type}</span><span>{counts.get(type)??0}</span></label>)}
+        </div>}
+      </div>}><input className="search-input" aria-label="搜索风险物料" placeholder="搜索件号、询价、描述…" value={query} onChange={e=>setQuery(e.target.value)} /></RecordToolbar>
       <div className="panel">
         <DataTable
           rows={shown}

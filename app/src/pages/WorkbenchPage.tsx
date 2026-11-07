@@ -2,6 +2,7 @@ import {appFetch as fetch} from '../engine/appUrl';
 import {useStageNavigation} from '../engine/useStageNavigation';
 import {inquiryStages} from '../engine/workflow';
 import type {IntakeBatch} from '../engine/intake';
+import {Modal} from '../components/Modal';
 import {IntakeRecord} from '../components/IntakeRecord';
 import { Fragment, useEffect, useMemo, useRef, useState, type SetStateAction } from 'react';
 import type { Dataset } from '../data';
@@ -107,23 +108,20 @@ export function WorkbenchPage({
   const [summary, setSummary] = useState('');
   const [tab, setTab] = useState<'quote' | 'cn'>('quote');
   const [reviewRows, setReviewRows] = useState<{ pn: string; action: string; detail: string; operator: string; created_at: string }[] | null>(null);
-  const toggleReviewLog = async () => {
-    if (reviewRows) { setReviewRows(null); return; }
-    try {
-      const r = await fetch(`/api/review?task=${encodeURIComponent(orderId)}`);
-      const j = await r.json();
-      setReviewRows(j.rows ?? []);
-    } catch { setReviewRows([]); }
-  };
   const [snapshots, setSnapshots] = useState<{ id: number; kind: string; total: number; operator: string; created_at: string }[] | null>(null);
 
-  const toggleSnapshots = async () => {
-    if (snapshots) { setSnapshots(null); return; }
+  const [recordTab, setRecordTab] = useState<'actions'|'quotes'|null>(null);
+  const [recordBusy, setRecordBusy] = useState(false);
+  const [recordError, setRecordError] = useState('');
+  const loadRecords = async (kind: 'actions'|'quotes') => {
+    setRecordTab(kind); setRecordBusy(true); setRecordError('');
     try {
-      const r = await fetch(`/api/snapshots?order_id=${encodeURIComponent(orderId)}`);
-      const j = await r.json();
-      setSnapshots(j.rows ?? []);
-    } catch { setSnapshots([]); }
+      const response = await fetch(kind==='actions' ? `/api/review?task=${encodeURIComponent(orderId)}` : `/api/snapshots?order_id=${encodeURIComponent(orderId)}`);
+      if (!response.ok) throw new Error('记录读取失败，请重试');
+      const data = await response.json();
+      if (kind==='actions') setReviewRows(data.rows ?? []); else setSnapshots(data.rows ?? []);
+    } catch (error) { setRecordError(error instanceof Error ? error.message : '记录读取失败'); }
+    finally { setRecordBusy(false); }
   };
 
   const parseRows = useMemo(() => {
@@ -477,11 +475,11 @@ export function WorkbenchPage({
         {adding && <form className="check-box" onSubmit={e => { e.preventDefault(); if (!newLine.pn.trim() || !Number.isFinite(Number(newLine.quantity)) || Number(newLine.quantity) <= 0) return; onAddLine(newLine.pn.trim(), Number(newLine.quantity), newLine.uom.trim(), newLine.description.trim()); setAdding(false); setNewLine({ pn: '', quantity: '1', uom: 'EA', description: '' }); }}><div className="edit-grid"><label>新增件号<input required value={newLine.pn} onChange={e => setNewLine({ ...newLine, pn: e.target.value })} /></label><label>新增数量<input required type="number" min="0.01" step="any" value={newLine.quantity} onChange={e => setNewLine({ ...newLine, quantity: e.target.value })} /></label><label>新增单位<input required value={newLine.uom} onChange={e => setNewLine({ ...newLine, uom: e.target.value })} /></label><label>新增描述<input value={newLine.description} onChange={e => setNewLine({ ...newLine, description: e.target.value })} /></label></div><div className="toolbar"><button className="btn primary" type="submit">添加到当前询价</button><button className="btn" type="button" onClick={() => setAdding(false)}>取消新增</button></div></form>}
         <div className="table-wrap material-table-scroll">
           <table className="material-table">
-            <colgroup>{[36,110,120,80,145,130,70,100,100].map((width,i)=><col key={i} style={{width}} />)}</colgroup>
+            <colgroup>{[36,130,150,90,145,130,80,100].map((width,i)=><col key={i} style={{width}} />)}</colgroup>
             <thead>
               <tr>
                 <th>#</th><th>件号</th><th>描述</th><th>数量</th><th>建议售价</th>
-                <th>您的定价</th><th>毛利率</th><th>状态</th><th>操作</th>
+                <th>您的定价</th><th>毛利率</th><th>状态</th>
               </tr>
             </thead>
             <tbody>
@@ -529,10 +527,9 @@ export function WorkbenchPage({
                               ? <Badge text="已核对" tone="green" />
                               : <Badge text="待核价" tone="blue" />}
                       </td>
-                      <td className="material-row-action" onClick={e=>e.stopPropagation()}><button className="ask-line-agent" aria-label={`让助手核对 ${p.line.partNumber}`} onClick={()=>onAskAgent?.(p.line.key)}>问助手</button></td>
                     </tr>
                     {open === p.line.key && (
-                      <tr className="expand-row"><td colSpan={9}>
+                      <tr className="expand-row"><td colSpan={8}>
                         {editKey === p.line.key ? (
                           <div className="check-box">
                             <b>修改本行（手工）</b>{editError && <p role="alert" className="margin-low">{editError}</p>}
@@ -669,9 +666,9 @@ export function WorkbenchPage({
                   </Fragment>
                 );
               })}
-              {!visibleRows.length && priced.length>0 && <tr><td colSpan={9} className="empty-cell">没有符合筛选条件的物料。<button className="btn" onClick={()=>{setRowFilter('all');setLineSearch('');}}>显示全部</button></td></tr>}
+              {!visibleRows.length && priced.length>0 && <tr><td colSpan={8} className="empty-cell">没有符合筛选条件的物料。<button className="btn" onClick={()=>{setRowFilter('all');setLineSearch('');}}>显示全部</button></td></tr>}
               {!priced.length && (
-                <tr><td colSpan={9} className="empty-cell">
+                <tr><td colSpan={8} className="empty-cell">
                   <div style={{ marginBottom: 8 }}>该任务没有解析出行项目</div>
                   {email?.body && !email.intakeBatchId && aiOk === true ? (
                     <button className="btn primary" disabled={llmBusy || estBusy !== ''} onClick={runLlmExtract}>
@@ -697,7 +694,7 @@ export function WorkbenchPage({
       </section>
       <section className="workflow-section" data-current={stage===4} id="inquiry-stage-4" tabIndex={-1} data-inquiry-stage="4" aria-labelledby="inquiry-stage-title-4">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-4">{stageItems[3].label}</h2></header>
-      {<section className="panel stage-checks"><div className="stage-check-filters"><FilterTabs label="条件检查筛选" value={checkFilter} onChange={setCheckFilter} items={[{value:'pending',label:'待核对',count:activePriced.filter(p=>!resolved.has(p.line.key)).length},{value:'all',label:'全部',count:activePriced.length}]} /></div>{activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).map(p=><article className="stage-check-row" key={p.line.key}><div><b>{p.line.partNumber||'件号待补'}</b><span>{p.line.quantity} {p.line.uom}</span></div><div className="stage-check-findings">{yellowReasons(p).length?yellowReasons(p).map(f=><span className="check-finding" key={f}><span className="check-finding-mark" aria-hidden="true">!</span><span>{FLAG_PLAIN[f]}</span></span>):<span className="check-neutral">规则未发现阻断项 · 待人工核对</span>}</div><div className="stage-check-actions"><button className="btn" onClick={()=>{goToStage(2);setOpen(p.line.key)}}>查看物料</button><button className="btn" onClick={()=>onAskAgent?.(p.line.key)}>问助手</button><button className="btn" onClick={()=>toggleResolved(p.line.key)}>{resolved.has(p.line.key)?'撤销核对':'标记人工已核对'}</button></div></article>)}{!activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).length&&<div className="stage-empty"><span>✓</span><strong>{activePriced.length?'当前没有待核对行':'暂无物料'}</strong><button className="btn" onClick={()=>goToStage(2)}>打开物料表</button></div>}</section>}
+      {<section className="panel stage-checks"><div className="stage-check-filters"><FilterTabs label="条件检查筛选" value={checkFilter} onChange={setCheckFilter} items={[{value:'pending',label:'待核对',count:activePriced.filter(p=>!resolved.has(p.line.key)).length},{value:'all',label:'全部',count:activePriced.length}]} /></div>{activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).map(p=><article className="stage-check-row" key={p.line.key}><div><b>{p.line.partNumber||'件号待补'}</b><span>{p.line.quantity} {p.line.uom}</span></div><div className="stage-check-findings">{yellowReasons(p).length?yellowReasons(p).map(f=><span className="check-finding" key={f}><span className="check-finding-mark" aria-hidden="true">!</span><span>{FLAG_PLAIN[f]}</span></span>):<span className="check-neutral">规则未发现阻断项 · 待人工核对</span>}</div><div className="stage-check-actions"><button className="btn" onClick={()=>{goToStage(2);setOpen(p.line.key)}}>查看物料</button><button className="btn" onClick={()=>toggleResolved(p.line.key)}>{resolved.has(p.line.key)?'撤销核对':'标记人工已核对'}</button></div></article>)}{!activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).length&&<div className="stage-empty"><span>✓</span><strong>{activePriced.length?'当前没有待核对行':'暂无物料'}</strong><button className="btn" onClick={()=>goToStage(2)}>打开物料表</button></div>}</section>}
 
       </section>
       <section className="workflow-section" data-current={stage===5} id="inquiry-stage-5" tabIndex={-1} data-inquiry-stage="5" aria-labelledby="inquiry-stage-title-5">
@@ -721,8 +718,7 @@ export function WorkbenchPage({
           {email && !email.intakeBatchId && (
             <button className="btn" onClick={() => setShowRaw(!showRaw)}>{showRaw ? '收起原始邮件' : '查看原始邮件'}</button>
           )}
-          <button className="btn" onClick={toggleReviewLog}>{reviewRows ? '收起处理记录' : '处理记录'}</button>
-          <button className="btn" onClick={toggleSnapshots}>{snapshots ? '收起历史快照' : '历史快照'}</button>
+          <button className="btn" onClick={()=>void loadRecords('actions')}>记录</button>
         </div>
         {llmNote && <div className="hint">{llmNote}</div>}
         {summary && <pre className="summary-box">{summary}</pre>}
@@ -731,7 +727,10 @@ export function WorkbenchPage({
             <RawHighlight body={email.body || '（空正文，内容在附件）'} needle={hlNeedle} />
           </pre>
         )}
-        {reviewRows && (
+        {recordTab&&<Modal title="询价记录" onClose={()=>setRecordTab(null)} className="workflow-record-dialog">
+          <FilterTabs label="记录类型" value={recordTab} onChange={value=>void loadRecords(value)} items={[{value:'actions',label:'操作记录'},{value:'quotes',label:'报价版本'}]} />
+          {recordBusy?<p role="status">正在读取记录…</p>:recordError?<div role="alert"><p>{recordError}</p><button className="btn" onClick={()=>void loadRecords(recordTab)}>重试</button></div>:<div className="workflow-record-content">
+        {recordTab==='actions' && reviewRows && (
           reviewRows.length ? (
             <table className="sub-table" style={{ marginTop: 8 }}>
               <thead><tr><th>时间</th><th>件号</th><th>操作</th><th>说明</th><th>操作人</th></tr></thead>
@@ -746,7 +745,7 @@ export function WorkbenchPage({
             </table>
           ) : <div className="hint">暂无处理记录</div>
         )}
-        {snapshots && (
+        {recordTab==='quotes' && snapshots && (
           snapshots.length ? (
             <table className="sub-table" style={{ marginTop: 8 }}>
               <thead><tr><th>时间</th><th>版本</th><th>整单合计</th><th>操作人</th></tr></thead>
@@ -763,6 +762,8 @@ export function WorkbenchPage({
             </table>
           ) : <div className="hint">暂无导出记录</div>
         )}
+          </div>}
+        </Modal>}
       </div>
 
       </section>
@@ -865,7 +866,7 @@ export function WorkbenchPage({
       <section className="workflow-section" data-current={stage===6} id="inquiry-stage-6" tabIndex={-1} data-inquiry-stage="6" aria-labelledby="inquiry-stage-title-6">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-6">{stageItems[5].label}</h2></header>
       <section className="panel stage-export">
-        <div className="export-checklist"><div><span>有效物料</span><b>{activePriced.length-invalidLines.length}/{activePriced.length}</b><button className="btn" onClick={()=>goToStage(2)}>核对物料</button></div><div><span>人工核对</span><b>{activePriced.filter(p=>resolved.has(p.line.key)).length}/{activePriced.length}</b><button className="btn" onClick={()=>goToStage(4)}>检查条件</button></div><div><span>已填单价</span><b>{activePriced.filter(p=>validUnitPrice(confirmOf(p))).length}/{activePriced.length}</b><button className="btn" onClick={()=>goToStage(5)}>查看草稿</button></div></div>
+        <div className="export-checklist"><div><span>物料信息</span><b>{invalidLines.length ? `${invalidLines.length} 行待补全` : `${activePriced.length} 行已完整`}</b><button className="btn" onClick={()=>goToStage(2)}>核对物料</button></div><div><span>人工核对</span><b>{activePriced.filter(p=>!resolved.has(p.line.key)).length} 行待核对</b><button className="btn" onClick={()=>goToStage(4)}>检查条件</button></div><div><span>报价单价</span><b>{activePriced.filter(p=>!validUnitPrice(confirmOf(p))).length} 行待定价</b><button className="btn" onClick={()=>goToStage(5)}>查看草稿</button></div></div>
         {invalidLines.length > 0 && <div role="alert" className="check-box">有 {invalidLines.length} 行缺少件号、单位或大于零的数量，请展开该行并修改。</div>}
         {exportError&&<div role="alert" className="check-box">{exportError}</div>}
         {exportBusy&&<div role="status">正在保存审核快照…</div>}
@@ -877,15 +878,18 @@ export function WorkbenchPage({
           <button className="btn primary" disabled={!stageExportable||exportBusy} onClick={doExportCustomer}>
             下载客户报价单
           </button>
-          {!stageExportable && (
-            <Badge
-              text={`${extractionGaps} 项需求缺口 · ${activePriced.filter(p=>!resolved.has(p.line.key)).length} 行待人工核对 · ${unpriced.length} 行待定价`}
-              tone="amber"
-            />
-          )}
+          {!stageExportable && <div className="export-blockers" role="status">
+            <strong>完成以下事项后可导出</strong>
+            <ul>
+              {extractionGaps>0&&<li><button onClick={()=>goToStage(2)}>补全 {extractionGaps} 项需求信息</button></li>}
+              {activePriced.some(p=>!resolved.has(p.line.key))&&<li><button onClick={()=>goToStage(4)}>核对 {activePriced.filter(p=>!resolved.has(p.line.key)).length} 行物料条件</button></li>}
+              {unpriced.length>0&&<li><button onClick={()=>goToStage(5)}>填写 {unpriced.length} 行报价单价</button></li>}
+              {!activePriced.length&&<li>至少保留一行可报价物料</li>}
+            </ul>
+          </div>}
           {stageExportable && <Badge text="可导出" tone="green" />}
         </div>
-        <div className="export-financials"><dl><div><dt>已定价小计</dt><dd>{fmtMoney(Math.round(confirmedSum*100)/100)}</dd></div><div><dt>客户运费</dt><dd>{fmtMoney(freightCharge)}</dd></div><div><dt>内部预计毛利</dt><dd>{fmtMoney(Math.round(estMargin*100)/100)}</dd></div><div><dt>成本覆盖</dt><dd>{marginKnown.length}/{activePriced.length} 行</dd></div></dl>{exported&&<div role="status" className="export-receipt">✓ 导出文件已生成</div>}</div>
+        <div className="export-financials"><dl><div><dt>已定价小计</dt><dd>{fmtMoney(Math.round(confirmedSum*100)/100)}</dd></div><div><dt>客户运费</dt><dd>{fmtMoney(freightCharge)}</dd></div><div><dt>内部预计毛利</dt><dd>{fmtMoney(Math.round(estMargin*100)/100)}</dd></div><div><dt>成本覆盖</dt><dd>{marginKnown.length} 行有成本，共 {activePriced.length} 行</dd></div></dl>{exported&&<div role="status" className="export-receipt">✓ 导出文件已生成</div>}</div>
       </section>
       </section>
 

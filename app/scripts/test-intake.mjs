@@ -1,3 +1,4 @@
+import {extractStructured} from '../server/intake-extract.mjs';
 import assert from "node:assert/strict";
 import initSqlJs from "sql.js";
 import ExcelJS from "exceljs";
@@ -337,3 +338,10 @@ assert.ok(rows(legacy,'SELECT name FROM pragma_table_info(?)',['file']).some(c=>
 initIntake(legacy);assert.equal(rows(legacy,'SELECT count(*) n FROM inquiry')[0].n,beforeCount);
 legacy.run('CREATE TABLE rfq_batch(id TEXT)');assert.throws(()=>initIntake(legacy),/同时存在/);assert.equal(rows(legacy,'SELECT count(*) n FROM inquiry')[0].n,beforeCount);legacy.close();
 console.log('PASS: 带数据旧表迁移、去除前缀、询价外键改名、重复迁移与名称冲突保护');
+
+// Regression: a labeled line must retain requirements beyond PN/quantity/unit/condition.
+const labeledFull = extractStructured([{id:'full-labels',fileId:'full',locator:{line:1},text:'件号 AN3-5A 数量 10 单位 EA 件状 FN 描述 BOLT 证书 EASA Form 1 交期 2026-12-01'}]);
+assert.equal(labeledFull.lines[0].description,'BOLT');
+assert.equal(labeledFull.lines[0].requirement,'EASA Form 1');
+assert.equal(labeledFull.lines[0].dueDate,'2026-12-01');
+console.log('PASS: labeled extraction retains description, certificate and date alongside core fields');

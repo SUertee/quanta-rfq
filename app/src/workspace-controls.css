@@ -946,3 +946,28 @@ html:has(.layout-reference),body:has(.layout-reference) { height:100%;overflow:h
 .history-popover>.history-filters { margin-top:10px; }
 @media(max-width:850px) { .history-popover { max-height:calc(100dvh - 260px); } }
 .history-popover .history-records { flex:0 1 auto;max-height:min(420px,52dvh);margin:10px 0 0;overflow-y:auto;scrollbar-width:thin; }
+
+/* Workflow controls share the same spacing and alignment at every stage. */
+.layout-reference .issue-filter { position:relative;display:flex;align-items:center;gap:12px; }
+.layout-reference .issue-filter-trigger { min-width:96px;justify-content:center; }
+.layout-reference .issue-filter-count { color:var(--muted);white-space:nowrap; }
+.layout-reference .issue-filter-menu { position:absolute;top:calc(100% + 8px);left:0;z-index:35;width:280px;max-width:calc(100vw - 48px);padding:12px;border:1px solid var(--line);border-radius:12px;background:var(--panel);box-shadow:0 12px 30px #0b1d3a14; }
+.layout-reference .issue-filter-heading { display:flex;align-items:center;justify-content:space-between;padding:0 8px 8px; }
+.layout-reference .issue-filter-menu label { display:grid;grid-template-columns:20px 1fr auto;align-items:center;gap:12px;min-height:44px;padding:8px;border-radius:8px;cursor:pointer; }
+.layout-reference .issue-filter-menu label:hover { background:var(--bg); }
+.layout-reference .issue-filter-menu input { width:18px;height:18px;accent-color:#0b1d3a; }
+.layout-reference .issue-filter-menu label>span:last-child { color:var(--muted);font-variant-numeric:tabular-nums; }
+.layout-reference .material-table td:nth-child(2),.layout-reference .quote-doc td:nth-child(2) { white-space:nowrap; }
+.layout-reference .stage-export .export-checklist { display:flex;flex-wrap:wrap;gap:24px; }
+.layout-reference .stage-export .export-checklist>div { flex:1 1 170px;border:0;border-radius:0;padding:0;box-shadow:none;background:transparent; }
+.layout-reference .stage-export .export-checklist b { font-size:20px;line-height:1.4; }
+.layout-reference .stage-check-findings { display:flex;flex-direction:column;align-items:flex-start;gap:8px; }
+.layout-reference .stage-check-findings .check-finding { display:grid;grid-template-columns:20px 1fr;align-items:start;gap:8px; }
+.layout-reference .stage-check-findings .check-finding-mark { text-align:center; }
+.layout-reference .export-blockers { flex:1 0 100%;padding:16px 20px;border-left:3px solid #bc7c16;border-radius:6px;background:#fff8e8;color:#725013; }
+.layout-reference .export-blockers ul { padding-left:20px;margin:8px 0 0;display:grid;gap:8px; }
+.layout-reference .export-blockers button { padding:0;border:0;background:transparent;color:inherit;font:inherit;text-align:left;cursor:pointer;text-decoration:underline;text-underline-offset:3px; }
+.layout-reference .workflow-record-dialog { width:min(860px,calc(100vw - 32px)); }
+.layout-reference .workflow-record-content { max-height:60dvh;overflow:auto;margin-top:16px; }
+.layout-reference .record-filters:has(.issue-filter) { overflow:visible;height:auto; }
+.layout-reference .issue-filter-menu { max-height:min(440px,65dvh);overflow-y:auto;overscroll-behavior:contain; }
