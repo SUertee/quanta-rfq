@@ -1,4 +1,4 @@
-import {appFetch as fetch,appUrl} from './engine/appUrl';
+import {appFetch as fetch} from './engine/appUrl';
 import {conversationMeta,newConversation,updateConversation} from './engine/conversations';
 import {PlatformChat,ConversationList,ConversationTaskLink} from './components/AssistantConversations';
 import {FloatingAssistant} from './components/FloatingAssistant';
@@ -172,13 +172,13 @@ export default function App() {
   return (
     <div className={`layout layout-reference mode-${mode} view-${view}`}>
       <aside className="sidebar">
-        <a className="brand" href={appUrl('quanta.html')} aria-label="Quanta 首页" style={{textDecoration:'none',color:'inherit'}}>
+        <button className="brand" aria-label="返回询价任务" onClick={()=>{setMode('workbench');setView('home');setAssistantOpen(false);}}>
           <div className="brand-mark"><span>Q</span></div>
           <div>
             <div className="brand-name">Quanta 报价台</div>
             <div className="brand-sub">RFQ WORKSPACE</div>
           </div>
-        </a>
+        </button>
         <nav aria-label="主要导航">
           <button className={`nav-item ${mode === 'workbench' && (view === 'home' || view === 'workbench') ? 'active' : ''}`} onClick={() => { setMode('workbench'); setView('home'); }}>
             <span className="nav-label">询价任务</span><span className="nav-count">{tasks.length}</span>
@@ -201,12 +201,12 @@ export default function App() {
       <main className={`content ${mode === 'workbench' && view === 'workbench' && assistantOpen ? 'with-copilot' : ''}`}>
         {saveError && <div role="alert" className="panel">本机保存失败，可能是浏览器存储空间不足。请暂时不要刷新或关闭页面，先导出当前报价备份。</div>}
 
-        {mode==='agent'&&<div className="ai-page-heading"><h1>AI 对话</h1></div>}
+
         <FloatingAssistant onSend={text=>{setQuickMessage({id:Date.now(),text});setAssistantOpen(true);}} open={assistantOpen} expanded={mode==='agent'} onOpen={()=>setAssistantOpen(true)} onCollapse={()=>{setAssistantOpen(false);setMode('workbench');}}>
         <div className={mode === 'agent' ? "agent-mode-host" : "embedded-agent-host"} hidden={mode !== 'agent' && !assistantOpen}>
           {mode==='agent'&&<ConversationList tasks={tasks} selected={activeChat||(source?sourceKey(source)+(agentLineKey?':line:'+agentLineKey:''):'__no_task__')} onNew={()=>{const key=newConversation();if(key){setActiveChat(key);setSource(null);setAgentLineKey(null);}}} onSelect={(key)=>{setQuickMessage(null);setActiveChat(key.startsWith('chat:')?key:null);const linked=conversationMeta()[key]?.taskKey;if(key.startsWith('chat:')||Object.prototype.hasOwnProperty.call(conversationMeta()[key]||{},'taskKey')){setActiveChat(key);const linkedTask=tasks.find(t=>t.key===linked);setSource(linkedTask?.source||null);setAgentLineKey(null);return;}if(key==='__no_task__'){setSource(null);setAgentLineKey(null);return;}const task=tasks.find(t=>key===t.key||key.startsWith(t.key+':line:'));if(task){setSource(task.source);setAgentLineKey(key.startsWith(task.key+':line:')?key.slice(task.key.length+6):null);}}} />}
           {mode==='agent'&&<ConversationTaskLink tasks={tasks} taskKey={source?sourceKey(source):undefined} onLink={key=>{const task=tasks.find(t=>t.key===key);const id=activeChat|| (source?sourceKey(source):'__no_task__');if(!updateConversation(id,{taskKey:key||null}))return;setActiveChat(id);setSource(task?.source||null);setAgentLineKey(null);}} />}
-          {!source && <PlatformChat key={activeChat||'__no_task__'} conversationKey={activeChat||'__no_task__'} onQuickHandled={()=>setQuickMessage(null)} quickMessage={quickMessage} onClose={()=>{setMode('workbench');setAssistantOpen(false);}} onHistory={()=>{setMode('agent');setAssistantOpen(true);}} />}
+          {!source && <PlatformChat standalone={mode==='agent'} key={activeChat||'__no_task__'} conversationKey={activeChat||'__no_task__'} onQuickHandled={()=>setQuickMessage(null)} quickMessage={quickMessage} onClose={()=>{setMode('workbench');setAssistantOpen(false);}} onHistory={()=>{setMode('agent');setAssistantOpen(true);}} />}
           {source&&<div className="copilot-body"><AgentPage key={(activeChat||'')+sourceKey(source)+(agentLineKey||'')}
             sessionOverride={activeChat||undefined} onQuickHandled={()=>setQuickMessage(null)} quickMessage={source?quickMessage:null} onHistory={()=>{setMode('agent');setAssistantOpen(true);}} embedded expanded={mode === 'agent'} selectedLineKey={agentLineKey}
             onClearLine={() => setAgentLineKey(null)}
