@@ -1,5 +1,6 @@
+import {matchResources} from '../shared/rfq-rules.mjs';
 import {resolveChatReferences,referenceContext} from './chat-references.mjs';
-import { normalizePartNumber } from "./normalization.mjs";
+import { normalizePartNumber,normalizeUnit } from "./normalization.mjs";
 import {readChatFiles} from './chat-files.mjs';
 import {platformChat} from './platform-chat.mjs';
 if (Number(process.versions.node.split('.')[0]) < 22) {
@@ -222,7 +223,12 @@ http.createServer(async (req, res) => {
         let body=await readBody(req,300000);
         if(body.inquiryId||body.batchId){const b=intake.detail(body.inquiryId||body.batchId);if(!b)throw new Error('询价不存在');inquiryId=b.id;body=resolveAgentScope(body,b);const selectedKeys=new Set(body.lines.map(line=>line.key));resources=Object.fromEntries(b.lines.filter(line=>selectedKeys.has(`intake-${b.id}-${line.lineNo}`)).map(line=>[`intake-${b.id}-${line.lineNo}`,line.evidence]));}
         body.context=referenceContext(body.context,resolveChatReferences(body.references,id=>intake.detail(id),{inquiryId}));
+        const unitRows=db.exec('SELECT pn,uom,factor FROM unit_conv')[0]?.values||[];
+        const unitConversions={};
+        for(const [pn,uom,factor] of unitRows){unitConversions[normalizePartNumber(pn)]??={};unitConversions[normalizePartNumber(pn)][normalizeUnit(uom)]=factor;}
+        body.policy={...body.policy,unitConversions};
         input = validateAgentInput(body);
+        if(!inquiryId){const prices=intake.prices(),costs=allRows().cost;resources=Object.fromEntries(input.lines.map(line=>[line.key,matchResources(line.partNumber,costs,prices)]));}
       }
       catch (error) { if (!res.destroyed && !res.writableEnded) { if (!res.headersSent) res.writeHead(error?.status === 413 ? 413 : error?.status===409?409:400); res.end(JSON.stringify({ error: error?.status===409?error.message:error?.status === 413 ? '请求超过 300KB 限制' : '指令或询价数据无效：需 1–150 行、正数数量及有效指令' })); } return; }
       const controller = new AbortController();

@@ -443,7 +443,6 @@ export function WorkbenchPage({
   };
 
   const visibleRows = priced.filter(p=>(rowFilter==='all'||(rowFilter==='review'?isYellow(p)&&!resolved.has(p.line.key):!validUnitPrice(confirmOf(p))))&&`${p.line.partNumber} ${p.line.description}`.toLowerCase().includes(lineSearch.toLowerCase()));
-  const bestOf = (p: PricedLine) => p.candidates.find((c) => !c.flags.some((f) => FLAG_META[f].yellow)) ?? p.candidates[0];
 
   const [checkFilter,setCheckFilter]=useState<'pending'|'all'>('pending');
   const extractionGaps=lines.filter(l=>!l.partNumber||!(l.quantity>0)||!l.uom||!l.condition||l.issues.length).length+(intakeRecord?.issues.length||0);
@@ -700,13 +699,13 @@ export function WorkbenchPage({
       </section>
       <section className="workflow-section" data-current={stage===3} id="inquiry-stage-3" tabIndex={-1} data-inquiry-stage="3" aria-labelledby="inquiry-stage-title-3">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-3">{stageItems[2].label}</h2></header>
-      {email?.intakeBatchId&&<IntakeRecord batchId={email.intakeBatchId} revisionKey={JSON.stringify(email.parsedRows?.map(l=>l.version))} view="evidence" onLoaded={setIntakeRecord} onEvidenceRefresh={onDataRefresh} />}
+      {email?.intakeBatchId&&<IntakeRecord batchId={email.intakeBatchId} revisionKey={JSON.stringify(email.parsedRows?.map(l=>l.version))} view="evidence" rules={{condFnNe:policy.condFnNe,certMutual:policy.certMutual,freightDays:policy.freightDays,fxRates:{...(policy.fxUsd?{USD:policy.fxUsd}:{}),...(policy.fxEur?{EUR:policy.fxEur}:{}),...(policy.fxRates||{})},unitConversions:ds.units}} onLoaded={setIntakeRecord} onEvidenceRefresh={onDataRefresh} />}
       {!email?.intakeBatchId&&<section className="panel"><div className="panel-title">库存与供应商依据</div><div className="table-wrap"><table><thead><tr><th>件号</th><th>库存</th><th>内部成本</th><th>供应商参考</th></tr></thead><tbody>{priced.map(p=><tr key={p.line.key}><td><b>{p.line.partNumber}</b></td><td>{p.cost?`${p.cost.stockQty} ${p.cost.uom}`:'未匹配'}</td><td>{p.cost?fmtMoney(p.cost.lastPurchasePrice||p.cost.avgCost):'缺依据'}</td><td>{p.candidates.length?<div className="candidate-evidence-list">{p.candidates.map((c,i)=><div className="candidate-evidence" key={i}><b>{c.row.supplierName}</b><span>{c.row.unitPrice} {c.row.currency}</span><span>{c.row.condition} · MOQ {c.row.moq} · {c.row.validUntil||'有效期缺失'}</span></div>)}</div>:'未匹配'}</td></tr>)}</tbody></table></div></section>}
 
       </section>
       <section className="workflow-section" data-current={stage===4} id="inquiry-stage-4" tabIndex={-1} data-inquiry-stage="4" aria-labelledby="inquiry-stage-title-4">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-4">{stageItems[3].label}</h2></header>
-      {<section className="panel stage-checks"><div className="stage-check-filters"><FilterTabs label="条件检查筛选" value={checkFilter} onChange={setCheckFilter} items={[{value:'pending',label:'待核对',count:activePriced.filter(p=>!resolved.has(p.line.key)).length},{value:'all',label:'全部',count:activePriced.length}]} /></div>{activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).map(p=><article className="stage-check-row" key={p.line.key}><div><b>{p.line.partNumber||'件号待补'}</b><span>{p.line.quantity} {p.line.uom}</span></div><div className="stage-check-findings">{yellowReasons(p).length?yellowReasons(p).map(f=><span className="check-finding" key={f}><span className="check-finding-mark" aria-hidden="true">!</span><span>{FLAG_PLAIN[f]}</span></span>):<span className="check-neutral">规则未发现阻断项 · 待人工核对</span>}</div><div className="stage-check-actions"><button className="btn" onClick={()=>{goToStage(2);setOpen(p.line.key)}}>查看物料</button><button className="btn" onClick={()=>toggleResolved(p.line.key)}>{resolved.has(p.line.key)?'撤销核对':'标记人工已核对'}</button></div></article>)}{!activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).length&&<div className="stage-empty"><span>✓</span><strong>{activePriced.length?'当前没有待核对行':'暂无物料'}</strong><button className="btn" onClick={()=>goToStage(2)}>打开物料表</button></div>}</section>}
+      {<section className="panel stage-checks"><div className="stage-check-filters"><FilterTabs label="条件检查筛选" value={checkFilter} onChange={setCheckFilter} items={[{value:'pending',label:'待核对',count:activePriced.filter(p=>!resolved.has(p.line.key)).length},{value:'all',label:'全部',count:activePriced.length}]} /></div>{activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).map(p=><article className="stage-check-row" key={p.line.key}><div><b>{p.line.partNumber||'件号待补'}</b><span>{p.line.quantity} {p.line.uom}</span></div><div className="stage-check-findings">{p.ruleIssues?.length?p.ruleIssues.map(issue=><span className="check-finding" key={issue}><span className="check-finding-mark" aria-hidden="true">!</span><span>{issue}</span></span>):yellowReasons(p).length?yellowReasons(p).map(f=><span className="check-finding" key={f}><span className="check-finding-mark" aria-hidden="true">!</span><span>{FLAG_PLAIN[f]}</span></span>):<span className="check-neutral">规则未发现阻断项 · 待人工核对</span>}</div><div className="stage-check-actions"><button className="btn" onClick={()=>{goToStage(2);setOpen(p.line.key)}}>查看物料</button><button className="btn" onClick={()=>toggleResolved(p.line.key)}>{resolved.has(p.line.key)?'撤销核对':'标记人工已核对'}</button></div></article>)}{!activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).length&&<div className="stage-empty"><span>✓</span><strong>{activePriced.length?'当前没有待核对行':'暂无物料'}</strong><button className="btn" onClick={()=>goToStage(2)}>打开物料表</button></div>}</section>}
 
       </section>
       <section className="workflow-section" data-current={stage===5} id="inquiry-stage-5" tabIndex={-1} data-inquiry-stage="5" aria-labelledby="inquiry-stage-title-5">
@@ -795,10 +794,10 @@ export function WorkbenchPage({
               <tbody>
                 {activePriced.map((p, i) => {
                   const c = confirmOf(p);
-                  const best = bestOf(p);
+                  const selectedResource = p.basisResource;
                   const reasons = yellowReasons(p);
                   const q = quoteQtyOf(p);
-                  const stockCovers = p.cost != null && p.line.quantity > 0 && p.cost.stockQty >= p.line.quantity;
+                  const stockCovers = p.basisSource === 'inventory';
                   return (
                     <tr key={p.line.key} className={reasons.length && !resolved.has(p.line.key) ? 'row-yellow' : ''}>
                       <td>{i + 1}</td>
@@ -806,8 +805,8 @@ export function WorkbenchPage({
                       <td>{q.qty} {p.line.uom}{q.moqNote && <div className="hint">{q.moqNote}</div>}</td>
                       <td><input aria-label={`${p.line.partNumber} 报价单价`} className="price-input" type="number" min="0" step="0.01" value={c ?? ''} placeholder="填写单价" onChange={(e) => setOne(p.line.key, e.target.value)} onBlur={() => logPriceCommit(p.line.key)} onKeyDown={(e) => { if (e.key === 'Enter') logPriceCommit(p.line.key); }} /></td>
                       <td>{c != null ? fmtMoney(c * q.qty) : '—'}</td>
-                      <td>{stockCovers ? '现货（库存）' : best ? `${best.row.leadDays} 天` : '—'}</td>
-                      <td>{best?.row.condition || p.line.condition || '—'}</td>
+                      <td>{stockCovers ? '现货（库存）' : selectedResource?.leadDays != null ? `${selectedResource.leadDays} 天` : '—'}</td>
+                      <td>{selectedResource?.stockCondition || selectedResource?.condition || p.line.condition || '—'}</td>
                       <td>{reasons.length && !resolved.has(p.line.key) ? reasons.map((f) => FLAG_PLAIN[f]).join('；') : p.line.requirement || ''}</td>
                     </tr>
                   );

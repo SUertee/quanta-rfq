@@ -1,3 +1,4 @@
+import {normalizePartNumber,normalizeUnit} from '../shared/normalization.mjs';
 import {appFetch as fetch} from './engine/appUrl';
 import {loadIntakeEmails} from './engine/intake';
 import type { CostRow, EmailSample, KanbanRow, PriceRow } from './types';
@@ -75,7 +76,8 @@ async function loadUnits(): Promise<Record<string, Record<string, number>>> {
     const j = (await r.json()) as { rows: { pn: string; uom: string; factor: number }[] };
     const out: Record<string, Record<string, number>> = {};
     for (const u of j.rows ?? []) {
-      out[u.pn] = { ...(out[u.pn] ?? {}), [u.uom]: u.factor };
+      const pn=normalizePartNumber(u.pn);
+      out[pn] = { ...(out[pn] ?? {}), [normalizeUnit(u.uom)]: u.factor };
     }
     return out;
   } catch {

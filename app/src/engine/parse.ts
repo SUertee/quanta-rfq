@@ -32,6 +32,7 @@ export interface RawRow {
   contentId?: string;
   persistedLineId?: string;
   version?: number;
+  evidence?:import('../types').ResourceEvidence[];
 }
 
 export function detectForm(e: EmailSample): DeliveryForm {

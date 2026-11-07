@@ -1,5 +1,5 @@
 import { normalizeLine, normalizePartNumber } from "./normalization.mjs";
-import { evaluateResource } from "./resource-match.mjs";
+import {evaluateQuoteLine,calculateQuotePrice,RFQ_RULE_VERSION,matchResources} from '../shared/rfq-rules.mjs';
 import { createAgent, tool } from 'langchain';
 import { ChatOpenAI } from '@langchain/openai';
 import { z } from 'zod';
@@ -8,31 +8,27 @@ import { fileURLToPath } from 'node:url';
 import { randomUUID, createHash } from 'node:crypto';
 import { RFQ_SYSTEM_PROMPT } from './agent-prompt.mjs';
 const historySchema=z.array(z.object({role:z.enum(['user','assistant']),content:z.string().trim().min(1).max(2000)}).strict()).max(12).refine(messages=>messages.reduce((n,m)=>n+m.content.length,0)<=12000,'对话历史超过总长度限制');
-const inputSchema = z.object({context:z.string().max(24000).optional(),history:historySchema.optional(),instruction:z.string().trim().min(1).max(2000),lines:z.array(z.object({key:z.string().min(1).max(200),partNumber:z.string().max(100),description:z.string().max(1000).optional(),quantity:z.number().positive().finite().nullable(),uom:z.string().max(30).optional(),condition:z.string().max(30).optional(),requirement:z.string().max(4000).optional(),dueDate:z.string().max(100).optional(),urgency:z.string().max(30).optional()})).min(1).max(150),policy:z.object({markupRate:z.number().min(0).max(2).optional(),marginRate:z.number().min(0).lt(1).optional(),aogPremium:z.number().min(0).max(2).optional(),bulkDiscount:z.number().min(0).max(1).optional(),bulkQty:z.number().min(0).finite().optional()}).optional()});
+const inputSchema = z.object({context:z.string().max(24000).optional(),history:historySchema.optional(),instruction:z.string().trim().min(1).max(2000),lines:z.array(z.object({key:z.string().min(1).max(200),partNumber:z.string().max(100),description:z.string().max(1000).optional(),quantity:z.number().positive().finite().nullable(),uom:z.string().max(30).optional(),condition:z.string().max(30).optional(),requirement:z.string().max(4000).optional(),dueDate:z.string().max(100).optional(),urgency:z.string().max(30).optional(),needByDate:z.string().max(100).optional(),issues:z.array(z.string().max(1000)).max(50).optional()})).min(1).max(150),policy:z.object({condFnNe:z.boolean().optional(),certMutual:z.boolean().optional(),freightDays:z.number().min(0).max(3650).optional(),fxRates:z.record(z.string(),z.number().positive().finite()).optional(),unitConversions:z.record(z.string(),z.record(z.string(),z.number().positive().finite())).optional(),markupRate:z.number().min(0).max(2).optional(),marginRate:z.number().min(0).lt(1).optional(),aogPremium:z.number().min(0).max(2).optional(),bulkDiscount:z.number().min(0).max(1).optional(),bulkQty:z.number().min(0).finite().optional()}).optional()});
 export function validateAgentInput(value) { const input=inputSchema.parse(value); if(new Set(input.lines.map(l=>l.key)).size!==input.lines.length) throw new Error('重复行标识'); return input; }
 export function buildDraft(input,costs,resources={}) {
  const analysisOnly=/(只|仅).{0,8}(分析|检查|核对)|不要.{0,5}(报价|出价)|不生成.{0,5}(价格|报价)/.test(input.instruction);
  const lines=input.lines.map(original=>{
   const line=normalizeLine(original);
-  const inventoryEvidence=resources[line.key]?.filter(resource=>resource.source==='inventory');
-  const lineCosts=inventoryEvidence ? inventoryEvidence.map(resource=>resource.snapshot) : costs;
-  const matches=lineCosts.filter(c=>normalizePartNumber(c.partNumber)===line.partNumber); const c=matches.length===1?matches[0]:null;
-  const issues=[];
-  if(!c) issues.push(matches.length?'成本记录不唯一，需人工选择':'未找到精确件号成本，需补充供应商报价');
-  const match=c?evaluateResource(line,c,{source:'inventory',sourceKey:c.partNumber}):null;
-  if(match) issues.push(...match.checks.filter(check=>check.state!=='pass').map(check=>check.message));
-  const cost=match?.cost||0;
-  const candidates=(resources[line.key]||[]).map(resource=>({source:resource.source,sourceKey:resource.source_key,evidenceId:resource.id,...evaluateResource(line,resource.snapshot,{source:resource.source,sourceKey:resource.source_key}),snapshotFingerprint:createHash("sha256").update(JSON.stringify(resource.snapshot)).digest("hex")}));
-  const usable=issues.length===0;
-  const urgent = ['AOG','USR','URGENT'].includes(line.urgency);
-  const premium = urgent ? 1+(input.policy?.aogPremium??0.1) : 1;
-  const bulkQty=input.policy?.bulkQty??50;
-  const discount=bulkQty>0&&line.quantity>=bulkQty ? 1-(input.policy?.bulkDiscount??0.05) : 1;
-  const rawUnitPrice=input.policy?.marginRate!=null?cost*premium*discount/(1-input.policy.marginRate):cost*(1+(input.policy?.markupRate??0.25))*premium*discount;
-  return {key:line.key,partNumber:line.partNumber,quantity:line.quantity,uom:line.uom||'',candidates,checks:match?.checks||[],currency:'CNY',...(c && String(c.currency).toUpperCase()==='CNY' && Number.isFinite(cost) && cost>0?{cost}:{}),...(!analysisOnly && usable?{suggestedPrice:Math.round(rawUnitPrice*100)/100}:{}),...(c?{source:`SQLite inventory:${c.partNumber}; costUpdateDate=${c.costUpdateDate||'未知'}`} :{}),issues};
+  const evidence=resources[line.key]??matchResources(line.partNumber,costs);
+  const inventoryOnly=/(仅|只).{0,12}(内部|库存).{0,6}成本/.test(input.instruction);
+  const evaluated=evaluateQuoteLine(line,evidence,{...input.policy,inventoryOnly});
+  const issues=[...new Set([...line.issues,...evaluated.issues])];
+  const selected=evaluated.selected;
+  const price=calculateQuotePrice(selected?.match.cost,line,input.policy);
+  if(selected&&price.target==null)issues.push('定价规则未产生有效单价，请检查配置');
+  const candidates=evaluated.candidates.map(resource=>({source:resource.source,sourceKey:resource.source_key,evidenceId:resource.id,...resource.match,snapshotFingerprint:createHash('sha256').update(JSON.stringify(resource.snapshot)).digest('hex')}));
+  return {key:line.key,partNumber:line.partNumber,quantity:line.quantity,uom:line.uom||'',candidates,checks:selected?.match.checks||[],currency:'CNY',ruleVersion:RFQ_RULE_VERSION,
+   ...(selected?{cost:price.costBase,basisId:selected.id,basisSource:selected.source,source:selected.source==='inventory'?`SQLite inventory:${selected.source_key}; costUpdateDate=${selected.snapshot.costUpdateDate||'未知'}`:`supplier_price:${selected.source_key}`} :{}),
+   ...(!analysisOnly&&!issues.length&&price.target!=null?{suggestedPrice:price.target}:{}),issues};
  });
- return {mode:analysisOnly?'analysis':'draft',lines,questions:lines.flatMap(l=>l.issues.map(i=>`${l.partNumber||l.key}：${i}`)),limitations:['仅做精确件号和内部成本核对；证书、交期、供应商报价有效期与用户附加约束仍需人工核实。','全部结果为待审核草稿，不自动批准或写入正式报价。']};
+ return {mode:analysisOnly?'analysis':'draft',ruleVersion:RFQ_RULE_VERSION,lines,questions:lines.flatMap(line=>line.issues.map(issue=>`${line.partNumber||line.key}：${issue}`)),limitations:['全部结果为待审核草稿，依据与条件变化后需要重新核对。']};
 }
+
 function config() {
  let local={};
  try { for(const line of readFileSync(fileURLToPath(new URL('../.env.local',import.meta.url)),'utf8').split(/\r?\n/)){ const at=line.indexOf('=');if(at>0)local[line.slice(0,at)]=line.slice(at+1); } } catch {}
@@ -80,7 +76,7 @@ async function executeAgent(value,costs,{signal,modelOverride,onAuditEvent,resou
  let answer=summary;
  const answerLines=draft?.lines||evidenceLines;
  if(answerLines && /(来源|来自哪里|哪来的|依据|出处)/.test(input.instruction)) {
-  answer='本次成本依据来自本机库存成本记录，未联网获取供应商报价：\n'+answerLines.map(l=>`${l.partNumber||l.key}：${l.source||'未找到精确件号成本记录'}；${Number.isFinite(l.cost)?`内部成本 ${l.cost} CNY`:'没有可用的人民币成本'}。`).join('\n')+'\n这些是内部成本证据，不代表正式供应商报价；有效期与适用条件仍需人工核实。';
+  answer='本次报价依据来自已保存的库存或供应商资源：\n'+answerLines.map(l=>`${l.partNumber||l.key}：${l.source||'未找到精确件号成本记录'}；${Number.isFinite(l.cost)?`${l.basisSource==='supplier_price'?'供应商成本':'内部成本'} ${l.cost} CNY`:'没有可用的人民币成本'}。`).join('\n')+'\n采用的资源及适用条件已列出，最终报价仍待人工核对。';
  } else if(answerLines && /(缺什么|缺少什么|缺哪些|哪些.*(不能|无法|缺)|不能报价|信息缺口|风险)/.test(input.instruction)) {
   const gaps=answerLines.filter(l=>l.issues.length);
   answer=gaps.length?'以下行仍有信息缺口：\n'+gaps.map(l=>`${l.partNumber||l.key}：${l.issues.join('；')}。`).join('\n'):'本次精确件号成本检查未发现阻断项；证书、交期、报价有效期及最终售价尚需人工核实，不能视为全部业务条件通过。';
@@ -88,7 +84,7 @@ async function executeAgent(value,costs,{signal,modelOverride,onAuditEvent,resou
  return {runId:randomUUID(),status:'needs_review',summary,answer,model:cfg.model,draft:finalDraft,events};
 }
 
-export const RFQ_AGENT_DEFINITION=Object.freeze({agentId:'rfq-quote',version:'1.2.0',promptSha256:createHash('sha256').update(RFQ_SYSTEM_PROMPT).digest('hex'),tools:['read_inquiry','lookup_costs','build_quote_draft']});
+export const RFQ_AGENT_DEFINITION=Object.freeze({agentId:'rfq-quote',version:'1.3.0',promptSha256:createHash('sha256').update(RFQ_SYSTEM_PROMPT).digest('hex'),tools:['read_inquiry','lookup_costs','build_quote_draft']});
 export async function runAgent(value,costs,options={}) {
  const audit=options.audit;
  if(!audit) return executeAgent(value,costs,options);

@@ -21,6 +21,7 @@ export interface PriceRow {
   currency: string; fxToCny: number; moq: number; leadDays: number;
   inStock: string; certType: string; quoteDate: string; validUntil: string;
   statusLabel: string; remark: string;
+  uom?:string;validFrom?:string;taxBasis?:string;authorized?:boolean;
 }
 
 export interface EmailSample {
@@ -62,13 +63,14 @@ export interface InquiryLine {
   llmFixedMark?: boolean;
   /** 该行经人工手动修改（AI 不可用或兜底，审计标记） */
   manualFixedMark?: boolean;
+  resourceEvidence?:import('../shared/rfq-rules.mjs').RuleEvidence[];
 }
 
 export type FlagCode =
   | 'NO_MATCH' | 'UNIT_UNMAPPED' | 'COND_MISMATCH' | 'COND_EMPTY'
   | 'MOQ_SHORTAGE' | 'EXPIRED' | 'CERT_MISMATCH' | 'PARSE_ISSUE'
   | 'LATE_DELIVERY'
-  | 'FX_DEMO' | 'PRICE_PENDING';
+  | 'FX_DEMO' | 'PRICE_PENDING' | 'RESOURCE_REVIEW' | 'STOCK_SHORTAGE';
 
 export interface PriceCandidate {
   row: PriceRow;
@@ -92,6 +94,14 @@ export interface EstCost {
 }
 
 export interface PricedLine {
+  ruleVersion?:string;
+  basisCost?:number;
+  basisSource?:string;
+  basisId?:string;
+  basisResource?:import('../shared/rfq-rules.mjs').RuleResource;
+  ruleIssues?:string[];
+  resourceChecks?:import('../shared/rfq-rules.mjs').ResourceCheck[];
+
   line: InquiryLine;
   matchLevel: 0 | 1 | 2 | 3;
   cost?: CostRow;
@@ -100,3 +110,11 @@ export interface PricedLine {
   excluded: PriceCandidate[];
   flags: FlagCode[];
 }
+
+export type ResourceEvidence = import('../shared/rfq-rules.mjs').RuleEvidence & {
+  id:string;
+  source_key:string;
+  matched_at?:string;
+  current_match?:import('../shared/rfq-rules.mjs').ResourceMatch;
+  snapshot:import('../shared/rfq-rules.mjs').RuleResource & Record<string,unknown>;
+};

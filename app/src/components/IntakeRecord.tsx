@@ -1,3 +1,4 @@
+import {evaluateQuoteLine,type RulePolicy} from '../../shared/rfq-rules.mjs';
 import {citeReference,dragReference,type ChatReference} from '../engine/chatReferences';
 import {appFetch as fetch,appUrl} from '../engine/appUrl';
 import { useEffect, useState } from "react";
@@ -37,8 +38,10 @@ export function IntakeRecord({
   view,
   onLoaded,
   onEvidenceRefresh,
+  rules,
 }: {
   batchId: string;
+  rules?: RulePolicy;
   revisionKey?: string;
   view?: Pane | null;
   onLoaded?: (record: IntakeBatch) => void;
@@ -105,6 +108,8 @@ export function IntakeRecord({
     excerpt:JSON.stringify({partNumber:line?.partNumber,source:entry.source_key,...Object.fromEntries(Object.entries(entry.snapshot).filter(([field])=>['unitPrice','lastPurchasePrice','stockQty','currency','moq','uom','condition','certType','leadDays','validUntil'].includes(field)))}),
     inquiryId:batchId,lineId:line?.id,version:line?.version,evidenceId:entry.id,matchedAt:entry.matched_at,
   });
+  const resourceResult=line?evaluateQuoteLine({...line,needByDate:line.dueDate},evidence,rules):null;
+  const evaluatedEvidence=evidence.map(entry=>({...entry,current_match:resourceResult?.candidates.find(candidate=>candidate.id===entry.id)?.match||entry.current_match}));
   const toggle = (next: Pane) => setPane((old) => (old === next ? null : next));
   return (
     <section
@@ -313,7 +318,7 @@ export function IntakeRecord({
                         </div>
                       )}
                       {evidence.length ? (
-                        evidence.map((e) => (
+                        evaluatedEvidence.map((e) => (
                           <article className="evidence-card reference-source" key={e.id} draggable onDragStart={event=>dragReference(event,evidenceReference(e))}>
                             <header>
                               <strong>
@@ -321,7 +326,7 @@ export function IntakeRecord({
                                   ? "内部库存与成本"
                                   : (e.snapshot.supplierName ? String(e.snapshot.supplierName) : "供应商报价")}
                               </strong>
-                              <div className="reference-actions"><span>
+                              <div className="reference-actions">{resourceResult?.selected?.id===e.id&&<span className="badge badge-green">已选依据</span>}<span>
                                 {e.snapshot.dataSource === "official_demo"
                                   ? "演示数据"
                                   : e.source === "inventory"

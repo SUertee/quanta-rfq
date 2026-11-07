@@ -38,7 +38,7 @@ export function quoteGate(
 
 /** A8：MOQ 不足时按 MOQ 实报数量 */
 export function quoteQtyOf(p: PricedLine): { qty: number; moqNote: string } {
-  if (!p.flags.includes('MOQ_SHORTAGE')) return { qty: p.line.quantity, moqNote: '' };
+  if (p.ruleVersion || !p.flags.includes('MOQ_SHORTAGE')) return { qty: p.line.quantity, moqNote: '' };
   // A supplier MOQ does not increase a quote fulfilled by matching internal stock.
   if (p.cost && p.cost.partNumber === p.line.partNumber && p.cost.uom === p.line.uom && p.cost.stockCondition === p.line.condition && p.cost.stockQty >= p.line.quantity) return { qty:p.line.quantity,moqNote:'' };
   const clean = p.candidates.filter((c) => !c.flags.some((f) => FLAG_META[f].yellow));
@@ -79,14 +79,15 @@ export function exportInternalCsv(priced: PricedLine[], ctx: ExportCtx): void {
   for (const p of priced) {
     const price = ctx.priceBook[p.line.key];
     const q = quoteQtyOf(p);
-    const best = p.candidates[0];
+    const leadDays = p.ruleVersion ? (p.basisSource==='inventory'?0:p.basisResource?.leadDays) : p.candidates[0]?.row.leadDays;
     const yellow = p.flags.filter((f) => FLAG_META[f].yellow);
     const est = ctx.manualCost[p.line.key];
+    const basisCost=(p.ruleVersion?p.basisCost:p.cost?.lastPurchasePrice)??est?.value;
     lines.push([
       ctx.taskLabel, p.line.partNumber, p.line.description, p.line.quantity, q.qty, p.line.uom,
       price ?? '', price != null ? Math.round(price * q.qty * 100) / 100 : '',
-      p.cost?.lastPurchasePrice ?? est?.value ?? '', price != null && price > 0 && (p.cost?.lastPurchasePrice ?? est?.value) != null ? `${((price - (p.cost?.lastPurchasePrice ?? est!.value)) / price * 100).toFixed(1)}%` : '',
-      LEVEL[p.matchLevel], best?.row.leadDays ?? '', p.line.condition,
+      basisCost ?? '', price != null && price > 0 && basisCost != null ? `${((price - basisCost) / price * 100).toFixed(1)}%` : '',
+      LEVEL[p.matchLevel], leadDays ?? '', p.basisResource?.stockCondition || p.basisResource?.condition || p.line.condition,
       ctx.skipped.has(p.line.key) ? '暂不报价' : ctx.resolved.has(p.line.key) ? '已核对' : yellow.length ? '需核对' : '可报价',
       yellow.map((f) => FLAG_PLAIN[f]).join('；'),
       est?.basis ? (est.source === 'ai' ? `估价(${est.value})` : `人工(${est.value})`) : '',

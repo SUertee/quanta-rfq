@@ -1,3 +1,4 @@
+import {normalizePartNumber,normalizeUnit} from '../../shared/normalization.mjs';
 // S2 结构化：映射官方 16 列 schema、单位归一、件号主号/后缀拆分
 import type { EmailSample, InquiryLine, KanbanRow } from '../types';
 import type { RawRow } from './parse';
@@ -9,7 +10,7 @@ export function splitPn(pn: string): { base: string; suffix: string } {
 
 /** 单位统一为 EA；IN/FT 记换算系数；无确认映射标"待核"（价格资源表无计量单位字段，不能直接乘） */
 export function normalizeUom(uom: string): { norm: string; factor: number | null; issue?: string } {
-  const u = (uom || '').trim();
+  const u = normalizeUnit(uom);
   if (u === 'EA' || u === 'Each') return { norm: 'EA', factor: 1 };
   if (u === 'IN' || u === 'FT') return { norm: '待核', factor: null, issue: `单位 ${u} 无确认换算映射，标记待核` };
   if (!u) return { norm: '缺失', factor: null, issue: '单位缺失' };
@@ -20,6 +21,7 @@ function finalize(
   partial: Omit<InquiryLine, 'basePn' | 'pnSuffix' | 'uomNormalized' | 'uomFactor' | 'issues'>,
   unitFactor?: number,
 ): InquiryLine {
+  partial={...partial,partNumber:normalizePartNumber(partial.partNumber),condition:partial.condition.trim().toUpperCase()};
   const { base, suffix } = splitPn(partial.partNumber);
   if (unitFactor != null && unitFactor > 0 && (partial.uom === 'IN' || partial.uom === 'FT')) {
     // A2：该件号有确认换算映射 → 归一到 EA 并记录系数
@@ -75,6 +77,7 @@ export function fromRaw(raw: RawRow, email: EmailSample, units?: Record<string, 
     productScope: raw.productScope ?? '',
     dueDate: raw.dueDate ?? '',
   }, factor);
+  line.resourceEvidence=raw.evidence;
   line.needByDate = raw.dueDate ?? undefined; // 邮件 Due Date = 客户要货截止，用于运输时间估算
   line.issues = [...raw.issues, ...line.issues];
   if (raw.llmFixed) line.llmFixedMark = true;

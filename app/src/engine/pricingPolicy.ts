@@ -1,6 +1,7 @@
 // B8 定价策略引擎：A1 已定机制——成本底线 + 目标加价率 + 市场参考对标 + 双闸门。
 // 默认参数为"演示设定"（docs/A类事项建议与裁决.md），拍板后改默认值即可。
 import type { PricedLine } from '../types';
+import {calculateQuotePrice} from '../../shared/rfq-rules.mjs';
 import { referencePrice } from './pricing';
 
 export interface PricingPolicy {
@@ -69,7 +70,7 @@ export interface PriceSuggestion {
   costBase?: number;
   /** 目标售价 = 成本 × (1 + m) ×（加急溢价）×（1−批量折扣） */
   target?: number;
-  /** 合理最低报价 = 成本 × (1 + 毛利下限) ×（加急溢价）；低于此价不值得报 */
+  /** 合理最低报价 = 成本 ×（加急溢价）÷ (1 − 毛利下限)；低于此价不值得报 */
   floor?: number;
   /** 市场参考：最低合规候选价（CNY 折算，演示汇率） */
   marketRef?: number;
@@ -83,32 +84,14 @@ export interface PriceSuggestion {
   bulkApplied: boolean;
 }
 
-const r2 = (n: number) => Math.round(n * 100) / 100;
-
-const URGENT = new Set(['AOG', 'USR', 'URGENT']);
-
 export function suggestPrice(p: PricedLine, policy: PricingPolicy, manualCost?: number): PriceSuggestion {
-  const catalog = p.cost ? p.cost.lastPurchasePrice || p.cost.avgCost || undefined : undefined;
-  // 非标品：目录查不到成本时，用人工询价录入的成本（依据链标注"人工录入"）
-  const costBase = catalog ?? (manualCost != null && manualCost > 0 ? manualCost : undefined);
-  const marketRef = referencePrice(p);
-  // 加急溢价：AOG/USR/URGENT 行建议价与底线同乘
-  const aogApplied = policy.aogPremium > 0 && URGENT.has(p.line.urgency);
-  const premium = aogApplied ? 1 + policy.aogPremium : 1;
-  // 批量折扣：数量达门槛时建议价下调（底线不动，保住最低可接受价）
-  const bulkApplied = policy.bulkQty > 0 && policy.bulkDiscount > 0 && p.line.quantity >= policy.bulkQty;
-  const discount = bulkApplied ? 1 - policy.bulkDiscount : 1;
-  const target = costBase != null ? r2(costBase * (1 + policy.margin) * premium * discount) : undefined;
-  const floor = costBase != null ? r2(costBase * (1 + policy.marginFloor) * premium) : undefined;
-  let premiumHit = false;
-  let floorHit = false;
-  if (target != null && marketRef != null && marketRef > 0) {
-    premiumHit = target > marketRef * (1 + policy.marketPremium);
-  }
-  if (marketRef != null && marketRef > 0 && costBase != null) {
-    floorHit = (marketRef - costBase) / marketRef < policy.marginFloor;
-  }
-  return { costBase, target, floor, marketRef, premiumHit, floorHit, aogApplied, bulkApplied };
+  const catalog=p.ruleVersion?p.basisCost:p.cost?(p.cost.lastPurchasePrice||p.cost.avgCost||undefined):undefined;
+  const costBase=catalog??(manualCost!=null&&manualCost>0?manualCost:undefined);
+  const calculated=calculateQuotePrice(costBase,p.line,{...policy,markupRate:policy.margin});
+  const marketRef=referencePrice(p);
+  const premiumHit=calculated.target!=null&&marketRef!=null&&marketRef>0&&calculated.target>marketRef*(1+policy.marketPremium);
+  const floorHit=marketRef!=null&&marketRef>0&&costBase!=null&&(marketRef-costBase)/marketRef<policy.marginFloor;
+  return {...calculated,marketRef,premiumHit,floorHit};
 }
 
 /** 向客户收取的运费：免运费门槛 → 最低运费 → 设定值；空单不收 */
@@ -118,9 +101,9 @@ export function freightChargeFor(itemsTotal: number, policy: PricingPolicy): num
   return Math.max(policy.freightChargeCny || 0, policy.minFreightCny || 0);
 }
 
-/** 建议确认价：优先目标售价；无成本数据退市场参考价；都没有则须人工填写 */
+/** 建议确认价由可用依据和定价规则计算，缺依据时保持空值 */
 export function defaultConfirmPrice(s: PriceSuggestion): number | undefined {
-  return s.target ?? s.marketRef;
+  return s.target;
 }
 
 /** 毛利率（按确认价与成本底线计算） */
