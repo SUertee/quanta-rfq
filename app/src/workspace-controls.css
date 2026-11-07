@@ -684,10 +684,10 @@ html:has(.layout-reference),body:has(.layout-reference) { height:100%;overflow:h
  .layout-reference .task-metrics small { display:none; }
 }
 
-/* The full conversation has a clear white canvas, with bounded history above it. */
+/* Conversation content shares the page background; the composer stays white. */
 .layout-reference.mode-agent .content { width:calc(100% - var(--workspace-gutter)*2);padding:0 0 20px;overflow:hidden;scrollbar-gutter:auto; }
 .layout-reference.mode-agent .agent-mode-host { gap:12px; }
-.mode-agent .agent-mode-host>.platform-chat,.mode-agent .agent-mode-host>.copilot-body { background:#fff;border:1px solid var(--line);border-radius:var(--radius-surface);overflow:hidden; }
+.mode-agent .agent-mode-host>.platform-chat,.mode-agent .agent-mode-host>.copilot-body { background:transparent;border:0;border-radius:0;overflow:hidden; }
 .mode-agent .platform-chat-form,.mode-agent .rfq-chat-composer { background:#fff;border:1px solid var(--line);box-shadow:0 4px 16px -12px rgba(11,29,58,.25); }
 .mode-agent .platform-chat-form { margin-bottom:16px; }
 .mode-agent .rfq-chat-footer { background:transparent;padding-bottom:16px; }
@@ -715,3 +715,5 @@ html:has(.layout-reference),body:has(.layout-reference) { height:100%;overflow:h
 }
 .mode-agent .chat-history-panel nav { grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr)); }
 .mode-agent .chat-history-panel nav .conversation-archive { opacity:1; }
+
+.copilot-icon svg { display:block;width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round; }
