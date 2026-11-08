@@ -69,7 +69,7 @@ export function useInquiryQuote({inquiryId,sourceRevision,value,operator,onResto
         }else{
           localStorage.removeItem(journalKey(inquiryId));
           const state=reply.state||{...latest.current.value,lines:latest.current.value.lines.map(line=>({...line,reviewed:false}))};
-          slot.last=reply.state?canonicalJson(state):'';
+          slot.last=reply.state&&!reply.stale?canonicalJson(state):'';
           latest.current.onRestore(state);
         }
         loading.current=false;setReadyKey(key);notify(slot);

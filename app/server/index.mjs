@@ -1,3 +1,4 @@
+import {createExtractionReview} from './extraction-review.mjs';
 import {createSupplierImportStore} from './supplier-import.mjs';
 import {createQuoteDraftStore,validateSavedQuote} from './quote-draft.mjs';
 import {matchResources} from '../shared/rfq-rules.mjs';
@@ -76,6 +77,7 @@ seedPrices(db,existsSync(priceSeedPath)?JSON.parse(readFileSync(priceSeedPath,'u
 db.run("UPDATE inquiry SET status='interrupted',issues='[\"服务重启中断了处理，已保留已接收文件\"]' WHERE status='processing'");
 const runtime=getRuntimeConfig();
 const intake=createIntakeService(db,persist,{modelConfig:runtime.model,ocrConfig:runtime.ocr});
+const extractionReview=createExtractionReview(db,persist,id=>intake.detail(id));
 const quoteDrafts=createQuoteDraftStore(db,persist,id=>intake.detail(id),()=>{
   const conversions={};
   for(const [pn,uom,factor] of db.exec('SELECT pn,uom,factor FROM unit_conv')[0]?.values||[]){conversions[normalizePartNumber(pn)]??={};conversions[normalizePartNumber(pn)][normalizeUnit(uom)]=factor;}
@@ -196,6 +198,9 @@ http.createServer(async (req, res) => {
         res.end(JSON.stringify(result));return;
       }
     }
+    const extractionReviewPath=url.pathname.match(/^\/api\/inquiries\/([^/]+)\/extraction-review$/);
+    if(extractionReviewPath&&req.method==='GET'){res.end(JSON.stringify(extractionReview.read(extractionReviewPath[1])));return;}
+    if(extractionReviewPath&&req.method==='POST'){res.end(JSON.stringify(extractionReview.confirm(extractionReviewPath[1],await readBody(req,50000))));return;}
     const quotePath=url.pathname.match(/^\/api\/inquiries\/([^/]+)\/quote$/);
     if(quotePath&&req.method==='GET'){res.end(JSON.stringify(quoteDrafts.read(quotePath[1])));return;}
     if(quotePath&&req.method==='PUT'){res.end(JSON.stringify(quoteDrafts.save(quotePath[1],await readBody(req,1_000_000))));return;}
@@ -362,8 +367,9 @@ http.createServer(async (req, res) => {
       res.end(JSON.stringify({ ok: true }));
     } else if (req.method === 'GET' && url.pathname === '/api/review') {
       const task = url.searchParams.get('task') ?? '';
-      const r = task
-        ? db.exec('SELECT * FROM review_log WHERE task = ? ORDER BY id DESC LIMIT 500', [task])
+      const inquiryId = url.searchParams.get('inquiry_id') ?? '';
+      const r = task || inquiryId
+        ? db.exec('SELECT * FROM review_log WHERE task IN (?, ?) ORDER BY id DESC LIMIT 500', [task || inquiryId, inquiryId || task])
         : db.exec('SELECT * FROM review_log ORDER BY id DESC LIMIT 500');
       const cols = r.length ? r[0].columns : [];
       const rows = r.length ? r[0].values.map((v) => Object.fromEntries(cols.map((c, i) => [c, v[i]]))) : [];

@@ -1,3 +1,5 @@
+import {ExtractionCompletionReview} from '../components/ExtractionCompletionReview';
+import {reviewableExtractionIssue} from '../../shared/extraction-issues.mjs';
 import {ExtractionReview} from '../components/ExtractionReview';
 import {fieldConflictIssues,FIELD_REVIEW_LABELS} from '../../shared/field-review.mjs';
 import {useQuoteSignature} from '../engine/useQuoteSignature';
@@ -52,7 +54,7 @@ function RawHighlight({ body, needle }: { body: string; needle: string }) {
 
 /** 报价工作台：一个页面完成 核对 → 定价 → 预览 → 导出 */
 export function WorkbenchPage({
-  selectedBases={},onSelectBasis,persistenceError, persistenceConflict, onRetryQuote, quoteVersion, persistencePending=false, onDataRefresh, onAskAgent, selectedAgentLine, ds, source, lines, priced, email, label, assigneeId, onAssigneeChange, currentUserId, inquiryError, onConvertManual,
+  selectedBases={},onSelectBasis,persistenceError, persistenceConflict, onRetryQuote, quoteVersion, persistencePending=false, onDataRefresh, onAskAgent, selectedAgentLine, ds, source, lines, priced, email, label, assigneeId, onAssigneeChange, currentUserId, inquiryError,
   policy, priceBook, setPriceBook, resolved, setResolved, estCost, setEstCost, manualPrices, setManualPrices, skipped, setSkipped, taskKey, timing, ops, onTime, onOp, onEditLine, onAddLine, onBack, onApplyLlmRows,
 }: {
   selectedBases?:Record<string,string>;
@@ -96,6 +98,7 @@ export function WorkbenchPage({
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
   const [dismissedStageTip,setDismissedStageTip]=useState<number|null>(null);
   const {stage, flowRef, goToStage} = useStageNavigation(taskKey);
+  const [completionReviewOpen,setCompletionReviewOpen]=useState(false);
   const [extractionReviewOpen,setExtractionReviewOpen]=useState(false);
   const [intakeRecord,setIntakeRecord]=useState<IntakeBatch|null>(null);
   const [exported,setExported]=useState(false);
@@ -129,10 +132,16 @@ export function WorkbenchPage({
   const loadRecords = async (kind: 'actions'|'quotes') => {
     setRecordTab(kind); setRecordBusy(true); setRecordError('');
     try {
-      const response = await fetch(kind==='actions' ? `/api/review?task=${encodeURIComponent(orderId)}` : `/api/snapshots?order_id=${encodeURIComponent(orderId)}`);
+      const response = await fetch(kind==='actions' ? `/api/review?task=${encodeURIComponent(orderId)}${email?.intakeBatchId ? `&inquiry_id=${encodeURIComponent(email.intakeBatchId)}` : ''}` : `/api/snapshots?order_id=${encodeURIComponent(orderId)}`);
       if (!response.ok) throw new Error('记录读取失败，请重试');
       const data = await response.json();
-      if (kind==='actions') setReviewRows(data.rows ?? []); else setSnapshots(data.rows ?? []);
+      if (kind==='actions') {
+        setReviewRows((data.rows ?? []).map((row: { action: string; detail: string }) => {
+          if (row.action !== '人工复核需求提取') return row;
+          try { return { ...row, detail: JSON.parse(row.detail).reason || row.detail }; }
+          catch { return row; }
+        }));
+      } else setSnapshots(data.rows ?? []);
     } catch (error) { setRecordError(error instanceof Error ? error.message : '记录读取失败'); }
     finally { setRecordBusy(false); }
   };
@@ -476,7 +485,7 @@ export function WorkbenchPage({
   useEffect(()=>{if(seenReviewBasis.current!==reviewBasis){seenReviewBasis.current=reviewBasis;const keys=new Set(lines.map(l=>l.key));if([...resolved].some(k=>keys.has(k)))setResolved(new Set([...resolved].filter(k=>!keys.has(k))));}},[reviewBasis]);
   return (
     <div className="quotation-workbench">
-      {inquiryError && <div className="check-box" role="alert"><strong>询价错误：PDF 附件未完成结构化核验</strong><button className="btn primary" onClick={onConvertManual}>转为手工单（保留草稿）</button></div>}
+      {inquiryError && <div className="check-box" role="alert"><strong>部分材料尚未完成核对</strong><button className="btn" onClick={()=>goToStage(1)}>查看原始材料</button></div>}
       <header className="inquiry-page-head">
         <div><button className="btn inquiry-back" aria-label="返回询价列表" title="返回询价列表" onClick={onBack}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12 5-5 5 5 5" /></svg></button><h1>{label}</h1></div>
       </header>
@@ -491,7 +500,8 @@ export function WorkbenchPage({
 
       </section>
       <section className="workflow-section" data-current={stage===2} id="inquiry-stage-2" tabIndex={-1} data-inquiry-stage="2" aria-labelledby="inquiry-stage-title-2">
-        <header className="workflow-section-heading"><h2 id="inquiry-stage-title-2">{stageItems[1].label}</h2>{intakeRecord&&intakeRecord.lines.some(line=>Object.keys(FIELD_REVIEW_LABELS).some(field=>fieldConflictIssues(line,field).length))&&<button className="btn" disabled={persistencePending} onClick={()=>setExtractionReviewOpen(true)}>核对提取冲突</button>}</header>
+        <header className="workflow-section-heading"><h2 id="inquiry-stage-title-2">{stageItems[1].label}</h2>{intakeRecord?.issues.some(reviewableExtractionIssue)&&<button className="btn" disabled={persistencePending} onClick={()=>setCompletionReviewOpen(true)}>核对提取结果</button>}{intakeRecord&&intakeRecord.lines.some(line=>Object.keys(FIELD_REVIEW_LABELS).some(field=>fieldConflictIssues(line,field).length))&&<button className="btn" disabled={persistencePending} onClick={()=>setExtractionReviewOpen(true)}>核对提取冲突</button>}</header>
+      {completionReviewOpen&&intakeRecord&&<ExtractionCompletionReview inquiryId={intakeRecord.id} operator={currentUserId||'本机用户'} onClose={()=>setCompletionReviewOpen(false)} onSaved={batch=>{setIntakeRecord(batch);setCompletionReviewOpen(false);onDataRefresh?.();}}/>}
       {extractionReviewOpen&&intakeRecord&&<ExtractionReview batch={intakeRecord} operator={currentUserId||'本机用户'} onClose={()=>setExtractionReviewOpen(false)} onSaved={batch=>{setIntakeRecord(batch);setExtractionReviewOpen(false);onDataRefresh?.();}}/>}
       {intakeRecord?.issues.length? <div className="stage-input-issues">{intakeRecord.issues.map((issue,i)=><button key={i} onClick={()=>goToStage(1)}>{issue} ↗</button>)}</div>:null}
       <div className="panel inquiry-materials-panel" id="rfq-materials" role="region" aria-label="物料核对">

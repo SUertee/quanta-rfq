@@ -22,6 +22,14 @@ try{
  assert.equal((await fetch(origin+base+'missing.js',{headers})).status,404);
  const upload=await fetch(origin+base+'api/inquiries',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:'production-preview-01',files:[{name:'preview.txt',mime:'text/html',base64:Buffer.from('件号: TEST 数量: 1 单位: EA 件状: FN <script>alert(1)</script>').toString('base64')}]})});
  assert.equal(upload.status,200);const material=await upload.json();assert.equal(material.files.length,1);
+ const reviewUrl=origin+base+'api/inquiries/'+material.id+'/extraction-review';
+ const extractionReview=await fetch(reviewUrl);assert.equal(extractionReview.status,200);assert.equal(typeof (await extractionReview.json()).fingerprint,'string');
+ assert.equal((await fetch(reviewUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:'null'})).status,400);
+ assert.equal((await fetch(reviewUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({fingerprint:'old'})})).status,409);
+ assert.equal((await fetch(origin+base+'api/inquiries/missing/extraction-review')).status,404);
+ await fetch(origin+base+'api/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:material.id,action:'QA extraction review',detail:'Reviewed original'})});
+ const records=await (await fetch(origin+base+'api/review?task=legacy-task-name&inquiry_id='+encodeURIComponent(material.id))).json();
+ assert.ok(records.rows.some(row=>row.task===material.id&&row.action==='QA extraction review'));
  const preview=await fetch(origin+base+'api/files/'+material.files[0].id+'/preview');
  assert.equal(preview.status,200);assert.equal(preview.headers.get('content-type'),'text/plain; charset=utf-8');
  assert.ok(preview.headers.get('content-disposition').startsWith('inline;'));

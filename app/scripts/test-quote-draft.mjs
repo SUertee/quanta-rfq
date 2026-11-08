@@ -58,8 +58,8 @@ globalThis.fetch=async(url,init)=>{
  if(failNetwork)throw new Error('offline');
  try{const body=init?.method==='PUT'?store.save(id,JSON.parse(init.body)):store.read(id);return {ok:true,status:200,json:async()=>body};}catch(error){return {ok:false,status:error.status||500,json:async()=>({error:error.message})};}
 };
-let sync,edit,value;
-function Probe(){const [current,setCurrent]=React.useState(state('qa'));value=current;edit=setCurrent;sync=useInquiryQuote({inquiryId:'qa',sourceRevision:'one',value:current,operator:'QA',onRestore:setCurrent});return null;}
+let sync,edit,value,sourceRevision="one";
+function Probe(){const [current,setCurrent]=React.useState(state('qa'));value=current;edit=setCurrent;sync=useInquiryQuote({inquiryId:'qa',sourceRevision,value:current,operator:'QA',onRestore:setCurrent});return null;}
 const host=document.createElement('div');document.body.append(host);let root=createRoot(host);
 const wait=ms=>act(async()=>new Promise(resolve=>setTimeout(resolve,ms)));
 await act(async()=>root.render(React.createElement(Probe)));await wait(60);assert.equal(sync.ready,true);assert.equal(value.lines[0].price,10);
@@ -73,5 +73,7 @@ await act(async()=>sync.retry());await wait(120);assert.equal(sync.conflict,true
 await act(async()=>sync.loadServer());await wait(80);assert.equal(value.lines[0].price,30);assert.equal(sync.error,'');
 failNetwork=true;await act(async()=>edit(current=>({...current,lines:[{...current.lines[0],price:40}]})));await wait(300);assert.ok(sync.error);await act(async()=>root.unmount());
 failNetwork=false;root=createRoot(host);await act(async()=>root.render(React.createElement(Probe)));await wait(120);assert.equal(value.lines[0].price,40);assert.equal(store.read('qa').state.lines[0].price,40,'journal replays unfinished edits after reload');
+const priorVersion=store.read('qa').version;inquiries.get('qa').status='evidence_ready';sourceRevision='review-confirmed';assert.equal(store.read('qa').stale,true);
+await act(async()=>root.render(React.createElement(Probe)));await wait(400);assert.equal(store.read('qa').stale,false,'refreshing source revision saves the cleared draft even without a new user edit');assert.equal(store.read('qa').state.lines[0].price,null);assert.ok(store.read('qa').version>priorVersion);
 await act(async()=>root.unmount());await window.happyDOM.abort();db.close();
 console.log('PASS: hook restore, serial/coalesced saves, conflict protection, explicit server reload and interrupted-write journal recovery');

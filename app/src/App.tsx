@@ -139,7 +139,7 @@ export default function App() {
   }, [dsx2, source, lineEdits, addedLines,selectedBases]);
   const priced = useMemo(() => (dsx2 ? priceAll(current.lines, dsx2, priceOpts) : []), [dsx2, current.lines, priceOpts]);
 
-  const quoteSync=useInquiryQuote({inquiryId:current.email?.intakeBatchId,sourceRevision:JSON.stringify(current.email?.parsedRows||[]),operator:userName,value:{policy:policyFull,lines:current.lines.map(line=>({key:line.key,price:priceBook[line.key]??null,manual:manualPrices.has(line.key),reviewed:resolved.has(line.key),skipped:skipped.has(line.key),manualCost:estCost[line.key]??null,selectedBasisId:selectedBases[line.key]??null}))},onRestore:state=>{
+  const quoteSync=useInquiryQuote({inquiryId:current.email?.intakeBatchId,sourceRevision:JSON.stringify({rows:current.email?.parsedRows||[],status:current.email?.intakeStatus,issues:current.email?.intakeIssues||[]}),operator:userName,value:{policy:policyFull,lines:current.lines.map(line=>({key:line.key,price:priceBook[line.key]??null,manual:manualPrices.has(line.key),reviewed:resolved.has(line.key),skipped:skipped.has(line.key),manualCost:estCost[line.key]??null,selectedBasisId:selectedBases[line.key]??null}))},onRestore:state=>{
     const prefix=`intake-${current.email?.intakeBatchId}-`;
     setPolicy(state.policy);
     setSelectedBases(old=>({...Object.fromEntries(Object.entries(old).filter(([key])=>!key.startsWith(prefix))),...Object.fromEntries(state.lines.filter(line=>line.selectedBasisId).map(line=>[line.key,line.selectedBasisId!]))}));
