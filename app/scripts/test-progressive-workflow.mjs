@@ -320,6 +320,27 @@ await clickRecovery();assert.notEqual(posted[1].requestId,posted[2].requestId);
 await act(async()=>{root.render(React.createElement(IntakeRecord,{batchId:'other-batch',view:'files',operator:'QA'}));await wait(30);});
 assert.equal([...host.querySelectorAll('button')].find(button=>button.textContent==='恢复处理').disabled,false);
 await act(async()=>root.unmount());
+let releasePost,releaseRead;
+const pendingPost=new Promise(resolve=>{releasePost=resolve;});
+const pendingRead=new Promise(resolve=>{releaseRead=resolve;});
+globalThis.fetch=async(url,options={})=>{
+  if(String(url).endsWith('/recovery')){
+    if(options.method==='POST'){await pendingPost;return Response.json({...recoveryRecord,status:'processing'});}
+    return Response.json({canRecover:true,fingerprint:'switch'});
+  }
+  if(String(url).endsWith('switch-new')){await pendingRead;return Response.json({...recoveryRecord,id:'switch-new',status:'failed'});}
+  return Response.json({...recoveryRecord,id:'switch-old',status:'failed',files:[{id:'old-file',name:'old-file.txt',file_type:'txt',status:'parsed'}]});
+};
+root=createRoot(host);
+await act(async()=>{root.render(React.createElement(IntakeRecord,{batchId:'switch-old',view:'files'}));await wait(30);});
+assert.ok(host.textContent.includes('old-file.txt'));
+await act(async()=>{[...host.querySelectorAll('button')].find(button=>button.textContent==='恢复处理').click();await wait(20);});
+assert.ok(host.textContent.includes('正在恢复'));
+await act(async()=>{root.render(React.createElement(IntakeRecord,{batchId:'switch-new',view:'files'}));await wait(20);});
+assert.ok(!host.textContent.includes('old-file.txt'));assert.ok(!host.textContent.includes('正在恢复'));
+await act(async()=>{releasePost();releaseRead();await wait(30);});
+assert.equal([...host.querySelectorAll('button')].find(button=>button.textContent==='恢复处理').disabled,false);
+await act(async()=>root.unmount());
 await window.happyDOM.close();
 db.close();
 console.log(

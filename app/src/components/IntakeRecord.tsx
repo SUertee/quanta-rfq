@@ -65,7 +65,8 @@ export function IntakeRecord({
   const [readEpoch,setReadEpoch]=useState(0);
   const recoveryRequest=useRef<{requestId:string;fingerprint:string;operator:string}|null>(null);
   const recoveryController=useRef<AbortController|null>(null);
-  useEffect(()=>{recoveryRequest.current=null;setRecovering(false);setRecord(null);return()=>recoveryController.current?.abort();},[batchId]);
+  const loadController=useRef<AbortController|null>(null);
+  useEffect(()=>{recoveryRequest.current=null;setRecovering(false);setRecord(null);return()=>{recoveryController.current?.abort();loadController.current?.abort();};},[batchId]);
   const recover=async()=>{
     if(busy||recovering)return;
     const controller=new AbortController();recoveryController.current=controller;
@@ -90,6 +91,8 @@ export function IntakeRecord({
   };
   const pane = view === undefined ? localPane : view;
   const load = async (refresh = false) => {
+    loadController.current?.abort();
+    const controller=new AbortController();loadController.current=controller;
     setError("");
     setBusy(true);
     try {
@@ -97,17 +100,18 @@ export function IntakeRecord({
         "/api/inquiries/" +
           encodeURIComponent(batchId) +
           (refresh ? "/evidence" : ""),
-        { method: refresh ? "POST" : "GET" },
+        { method: refresh ? "POST" : "GET",signal:controller.signal },
       );
       if (!r.ok) throw new Error("询价记录读取失败");
       const data = await r.json();
+      if(controller.signal.aborted)return;
       setRecord(data);
       onLoaded?.(data);
       if(refresh)onEvidenceRefresh?.();
     } catch (e) {
-      setError(String(e));
+      if(!controller.signal.aborted)setError(String(e));
     } finally {
-      setBusy(false);
+      if(!controller.signal.aborted)setBusy(false);
     }
   };
   useEffect(() => {
