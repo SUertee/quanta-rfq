@@ -1093,7 +1093,9 @@ tr:hover .material-reference-name>.reference-cite,.material-reference-name:focus
 @media(max-width:640px) { .supplier-import-list { grid-template-columns:minmax(0,1fr); } }
 .rfq-response-event { min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden; }
 .layout-reference .rfq-chat-turn.assistant .rfq-response-event > .rfq-chat-text { border:0;border-radius:0;background:transparent; }
-.rfq-response-event > .execution-steps { margin:16px 18px 0; }
-.layout-reference .rfq-response-event > .copilot-results,.rfq-response-event > .rfq-chat-artifact { margin:0;border:0;border-top:1px solid var(--line);border-radius:0; }
+.layout-reference .rfq-response-event > .copilot-results,.rfq-response-event > .rfq-chat-artifact { margin:0;border:0;border-radius:0; }
 .layout-reference .quote-card-footer { align-items:center;flex-wrap:wrap; }
 .quote-stale-reason { margin-right:auto;font-size:14px;color:var(--ink-2); }
+
+.layout-reference .rfq-response-event .copilot-result-title,.layout-reference .rfq-response-event .copilot-price-card,.layout-reference .rfq-response-event .quote-card-footer { border:0; }
+.layout-reference .rfq-response-event .quote-card-footer { background:transparent; }
