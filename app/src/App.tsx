@@ -1,3 +1,4 @@
+import type {WorkflowRun,InquiryStage} from './engine/workflow';
 import {useInquiryQuote} from './engine/useInquiryQuote';
 import {appFetch as fetch,appUrl} from './engine/appUrl';
 import {conversationMeta,newConversation,updateConversation} from './engine/conversations';
@@ -6,7 +7,7 @@ import {AccountMenu} from './components/AccountMenu';
 import {Modal} from './components/Modal';
 import {FloatingAssistant} from './components/FloatingAssistant';
 import {batchEmail,type IntakeBatch} from './engine/intake';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { loadData, type Dataset } from './data';
 import type { RawRow } from './engine/parse';
 import type { EmailSample, EstCost, InquiryLine } from './types';
@@ -39,7 +40,9 @@ export default function App() {
   const [settingsSection,setSettingsSection]=useState<'pricing'|'services'>('pricing');
   const [importRequested, setImportRequested] = useState(new URLSearchParams(location.search).get('new') === '1');
   const [activeChat,setActiveChat]=useStoredState<string|null>('active-chat-v1',null);
-  const [quickMessage,setQuickMessage]=useState<{id:number;text:string}|null>(null);
+  const automaticRuns=useRef(new Set<string>());
+  const [workflowRuns,setWorkflowRuns]=useState<Record<string,WorkflowRun>>({});
+  const [quickMessage,setQuickMessage]=useState<{id:number;text:string;inquiryId?:string;workflow?:boolean}|null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantDocked, setAssistantDocked] = useState(false);
   useEffect(()=>{const cite=()=>setAssistantOpen(true);window.addEventListener('quanta-reference',cite);return()=>window.removeEventListener('quanta-reference',cite);},[]);
@@ -51,6 +54,7 @@ export default function App() {
   const [err, setErr] = useState('');
   const [view, setView] = useStoredState<View>('view', 'home');
   const [source, setSource] = useStoredState<Source | null>('source', null);
+  const currentSource=useRef(source);currentSource.current=source;
   useEffect(() => {
     const params = new URLSearchParams(location.search);
     if (params.has('workspace')) {
@@ -150,6 +154,32 @@ export default function App() {
     setEstCost(old=>({...Object.fromEntries(Object.entries(old).filter(([key])=>!key.startsWith(prefix))),...Object.fromEntries(state.lines.filter(line=>line.manualCost).map(line=>[line.key,line.manualCost!]))}));
   }});
 
+  useEffect(()=>{
+    const id=current.email?.intakeBatchId;
+    if(!id||current.email?.intakeStatus!=='processing')return;
+    const controller=new AbortController();
+    const timer=setInterval(()=>{
+      void fetch(`/api/inquiries/${id}`,{signal:controller.signal}).then(async response=>{
+        if(!response.ok)return;
+        const batch:IntakeBatch=await response.json();
+        if(controller.signal.aborted)return;
+        const email=batchEmail(batch);
+        setDs(old=>old?{...old,emails:old.emails.map(item=>item.id===email.id?email:item)}:old);
+      }).catch(()=>{});
+    },1000);
+    return()=>{clearInterval(timer);controller.abort();};
+  },[current.email?.intakeBatchId,current.email?.intakeStatus]);
+
+  const currentRun=current.email?.intakeBatchId?workflowRuns[current.email.intakeBatchId]:undefined;
+  useEffect(()=>{
+    const id=current.email?.intakeBatchId;
+    if(id&&['attention','queued'].includes(currentRun?.state||'')&&current.email?.intakeStatus==='evidence_ready'&&view==='workbench'&&mode==='workbench'&&quoteSync.ready&&!quoteSync.saving&&!quoteSync.error&&!automaticRuns.current.has(id)&&quickMessage?.inquiryId!==id){
+      setWorkflowRuns(old=>({...old,[id]:{stage:4,revealed:4,state:'queued'}}));
+      setAssistantOpen(true);setAssistantDocked(true);
+      setQuickMessage({id:Date.now(),inquiryId:id,workflow:true,text:'按当前配置规则生成报价草稿，缺依据的行留空，并列明需要人工核对的条件。'});
+    }
+  },[current.email?.intakeBatchId,current.email?.intakeStatus,currentRun?.state,view,mode,quoteSync.ready,quoteSync.saving,quoteSync.error,quickMessage?.inquiryId]);
+
   if (err) return <div className="boot">数据载入失败：{err}</div>;
   if (!dsx2) return <div className="boot">正在载入…</div>;
 
@@ -174,6 +204,12 @@ export default function App() {
     }else setLineEdits(old=>({...old,[key]:{...old[key],...patch}}));
     setResolved(old=>{const next=new Set(old);next.delete(key);return next;});
     setPriceBook(old=>{const next={...old};delete next[key];return next;});
+  };
+  const receiveIntakeProgress = (stage:1|2|3,batch:IntakeBatch) => {
+    const email=batchEmail(batch);
+    setDs(old=>old?{...old,emails:[...old.emails.filter(item=>item.id!==email.id),email]}:old);
+    setWorkflowRuns(old=>({...old,[batch.id]:{stage,revealed:stage,state:'running'}}));
+    if(stage===1){setActiveChat(null);setSource({kind:'email',id:email.id});setView('workbench');setMode('workbench');}
   };
   const newTask = (email: EmailSample, llmRows?: RawRow[]) => {
     if(email.intakeBatchId) { setDs(old=>old?{...old,emails:[...old.emails.filter(e=>e.id!==email.id),email]}:old); void loadData().then(setDs).catch(e=>setErr(String(e))); }
@@ -228,9 +264,9 @@ export default function App() {
         <FloatingAssistant onSend={text=>{setQuickMessage({id:Date.now(),text});setAssistantOpen(true);}} open={assistantOpen} expanded={mode==='agent'} docked={assistantDocked && assistantOpen && mode==='workbench'} onOpen={()=>setAssistantOpen(true)} onCollapse={()=>{setAssistantOpen(false);setAssistantDocked(false);setMode('workbench');}}>
         <div className={mode === 'agent' ? "agent-mode-host" : "embedded-agent-host"}>
           {mode==='agent'&&<ConversationList tasks={tasks} selected={activeChat||(source?sourceKey(source)+(agentLineKey?':line:'+agentLineKey:''):'__no_task__')} onNew={()=>{const key=newConversation();if(key){setActiveChat(key);setSource(null);setAgentLineKey(null);}}} onSelect={(key)=>{setQuickMessage(null);setActiveChat(key.startsWith('chat:')?key:null);const linked=conversationMeta()[key]?.taskKey;if(key.startsWith('chat:')||Object.prototype.hasOwnProperty.call(conversationMeta()[key]||{},'taskKey')){setActiveChat(key);const linkedTask=tasks.find(t=>t.key===linked);setSource(linkedTask?.source||null);setAgentLineKey(null);return;}if(key==='__no_task__'){setSource(null);setAgentLineKey(null);return;}const task=tasks.find(t=>key===t.key||key.startsWith(t.key+':line:'));if(task){setSource(task.source);setAgentLineKey(key.startsWith(task.key+':line:')?key.slice(task.key.length+6):null);}}} />}
-          {!source && <PlatformChat operator={userName} onInquiryCreated={receiveChatInquiry} onOpenInquiry={openChatInquiry} standalone={mode==='agent'} docked={assistantDocked} onDock={()=>setAssistantDocked(value=>!value)} key={activeChat||'__no_task__'} conversationKey={activeChat||'__no_task__'} onQuickHandled={()=>setQuickMessage(null)} quickMessage={quickMessage} onClose={()=>{setMode('workbench');setAssistantOpen(false);setAssistantDocked(false);}} onHistory={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}} />}
-          {source&&quoteSync.ready&&<div className="copilot-body"><AgentPage operator={userName} onInquiryCreated={receiveChatInquiry} key={(activeChat||'')+sourceKey(source)+(agentLineKey||'')}
-            sessionOverride={activeChat||undefined} onQuickHandled={()=>setQuickMessage(null)} quickMessage={source?quickMessage:null} onHistory={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}} embedded expanded={mode === 'agent'} docked={assistantDocked} selectedLineKey={agentLineKey}
+          {!source && <PlatformChat operator={userName} onInquiryCreated={receiveChatInquiry} onOpenInquiry={openChatInquiry} standalone={mode==='agent'} docked={assistantDocked} onDock={()=>setAssistantDocked(value=>!value)} key={activeChat||'__no_task__'} conversationKey={activeChat||'__no_task__'} onQuickHandled={()=>setQuickMessage(null)} quickMessage={quickMessage?.inquiryId?null:quickMessage} onClose={()=>{setMode('workbench');setAssistantOpen(false);setAssistantDocked(false);}} onHistory={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}} />}
+          {source&&quoteSync.ready&&<div className="copilot-body"><AgentPage onWorkflowProgress={(stage,state)=>{const id=current.email?.intakeBatchId;if(id&&state==='running')automaticRuns.current.add(id);if(id)setWorkflowRuns(old=>({...old,[id]:{stage,state,revealed:state==='done'?6:Math.max(old[id]?.revealed||6,stage) as InquiryStage}}));}} operator={userName} onInquiryCreated={receiveChatInquiry} key={(activeChat||'')+sourceKey(source)+(agentLineKey||'')}
+            sessionOverride={activeChat||undefined} onQuickHandled={()=>setQuickMessage(null)} quickMessage={source&&(!quickMessage?.inquiryId||quickMessage.inquiryId===current.email?.intakeBatchId)?quickMessage:null} onHistory={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}} embedded expanded={mode === 'agent'} docked={assistantDocked} selectedLineKey={agentLineKey}
             onClearLine={() => setAgentLineKey(null)}
             onClose={() => { setMode('workbench'); setAssistantOpen(false); setAssistantDocked(false); }}
             onExpand={() => { setAssistantOpen(true); setMode('workbench'); setAssistantDocked(mode==='agent'?false:!assistantDocked); }}
@@ -268,10 +304,17 @@ export default function App() {
               const cur = old.kind === 'email' ? `email:${old.id}` : `kanban:${old.rfqId}`;
               return cur === key ? null : old;
             });
-          }} onRestore={() => setDeletedTasks([])} deletedCount={deletedTasks.length} tasks={tasks} onPick={openTask} onNewTask={newTask} taskTime={taskTime} />}
+          }} onRestore={() => setDeletedTasks([])} deletedCount={deletedTasks.length} tasks={tasks} onPick={openTask} onIntakeError={(id,error)=>setWorkflowRuns(old=>({...old,[id]:{stage:old[id]?.stage||1,revealed:old[id]?.revealed||1,state:'attention',error}}))} onIntakeProgress={receiveIntakeProgress} onNewTask={(email,_rows,options)=>{
+            if(options?.open||(currentSource.current?.kind==='email'&&currentSource.current.id===email.id))newTask(email);
+            else setDs(old=>old?{...old,emails:[...old.emails.filter(item=>item.id!==email.id),email]}:old);
+            if(email.intakeBatchId){
+              const ready=email.intakeStatus==='evidence_ready';
+              setWorkflowRuns(old=>({...old,[email.intakeBatchId!]:{stage:ready?4:2,revealed:ready?4:3,state:ready?'queued':'attention'}}));
+            }
+          }} taskTime={taskTime} />}
         {view === 'workbench' && source && !quoteSync.ready && <section className="panel" role="status">{quoteSync.error?'询价审核尚未恢复':'正在载入询价审核…'}</section>}
         {view === 'workbench' && source && quoteSync.ready && (
-          <WorkbenchPage persistenceError={quoteSync.error} persistenceConflict={quoteSync.conflict} onRetryQuote={()=>{if(quoteSync.conflict){quoteSync.loadServer();setInvVersion(version=>version+1);}else quoteSync.retry();}} quoteVersion={current.email?.intakeBatchId?quoteSync.version:undefined} persistencePending={!quoteSync.ready||quoteSync.saving||!!quoteSync.error} key={sourceKey(source)} onDataRefresh={()=>setInvVersion(v=>v+1)}
+          <WorkbenchPage run={current.email?.intakeBatchId?workflowRuns[current.email.intakeBatchId]:undefined} persistenceError={quoteSync.error} persistenceConflict={quoteSync.conflict} onRetryQuote={()=>{if(quoteSync.conflict){quoteSync.loadServer();setInvVersion(version=>version+1);}else quoteSync.retry();}} quoteVersion={current.email?.intakeBatchId?quoteSync.version:undefined} persistencePending={!quoteSync.ready||quoteSync.saving||!!quoteSync.error} key={sourceKey(source)} onDataRefresh={()=>setInvVersion(v=>v+1)}
             onAskAgent={(key) => { setAgentLineKey(key); setAssistantOpen(true); }}
             selectedAgentLine={agentLineKey}
             selectedBases={selectedBases} onSelectBasis={(key,id)=>{

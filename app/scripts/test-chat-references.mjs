@@ -37,3 +37,24 @@ assert.match(sharedSource[0].text,/2026-12-20/);
 assert.match(sharedSource[0].text,/quoteDeadline/);
 assert.throws(()=>resolveChatReferences([{...reference,contentId:'requirements-content',version:1}],detail),error=>error.status===409);
 console.log('PASS: a linked requirement can be quoted with its material version, while unrelated and stale cross-file references remain blocked');
+
+inquiry.updated_at='current-module-version';inquiry.status='evidence_ready';inquiry.issues=[];
+const moduleReference={id:'stage-ref',label:'查询依据',excerpt:'伪造数据0.01',inquiryId:'q1',stage:3,stageVersion:inquiry.updated_at};
+const moduleResult=resolveChatReferences([moduleReference],detail)[0];
+assert.match(moduleResult.text,/14.37/);
+assert.ok(!moduleResult.text.includes(privateMarker));
+assert.ok(!moduleResult.text.includes('伪造数据'));
+assert.throws(()=>resolveChatReferences([{...moduleReference,stageVersion:'old'}],detail),error=>error.status===409);
+assert.throws(()=>resolveChatReferences([{...moduleReference,inquiryId:undefined}],detail),error=>error.status===409);
+assert.match(resolveChatReferences([{...moduleReference,stage:5,draftVersion:3}],detail,{quote:()=>({version:3,stale:false,state:{lines:[{price:17.96}]}})})[0].text,/17.96/);
+console.log('PASS: module references use versioned server facts, omit private metadata and include current saved quote state');
+
+const large=resolveChatReferences(Array.from({length:6},(_,index)=>({...moduleReference,id:'stage-'+index})),detail);
+assert.doesNotThrow(()=>referenceContext('',large));
+for(const result of large)assert.doesNotThrow(()=>JSON.parse(result.text));
+assert.throws(()=>resolveChatReferences([{...moduleReference,stage:5,draftVersion:2}],detail,{quote:()=>({version:3,stale:false,state:{lines:[]}})}),error=>error.status===409);
+
+const manyLines={...inquiry,lines:Array.from({length:60},(_,index)=>({...inquiry.lines[0],id:'big-'+index,description:'D'.repeat(1000),requirement:'R'.repeat(2000)}))};
+const largeModules=resolveChatReferences(Array.from({length:6},(_,index)=>({...moduleReference,id:'large-'+index})),()=>manyLines);
+assert.doesNotThrow(()=>referenceContext('',largeModules));
+for(const entry of largeModules){const body=JSON.parse(entry.text);assert.equal(body.truncated,true);assert.equal(body.totalLines,60);assert.ok(entry.text.length<=2600);assert.ok(entry.text.includes('14.37'));}

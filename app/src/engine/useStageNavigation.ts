@@ -8,7 +8,7 @@ export function useStageNavigation(taskKey: string) {
   const navigation = useRef<{target: InquiryStage; timer: ReturnType<typeof setTimeout>} | null>(null);
   const goToStage = (next: InquiryStage) => {
     const section = flowRef.current?.querySelector<HTMLElement>(`[data-inquiry-stage="${next}"]`);
-    if (!section) return;
+    if (!section || section.hidden) return;
     if (navigation.current) clearTimeout(navigation.current.timer);
     navigation.current = {target: next, timer: setTimeout(() => { navigation.current = null; }, 1800)};
     setStage(next);
@@ -20,7 +20,7 @@ export function useStageNavigation(taskKey: string) {
     const update = () => {
       frame = 0;
       if (navigation.current) return;
-      const sections = [...(flowRef.current?.querySelectorAll<HTMLElement>('[data-inquiry-stage]') ?? [])];
+      const sections = [...(flowRef.current?.querySelectorAll<HTMLElement>('[data-inquiry-stage]') ?? [])].filter(node=>!node.hidden);
       if (!sections.length) return;
       const anchor = Math.min(160, window.innerHeight * .25);
       const passed = sections.filter(node => node.getBoundingClientRect().top <= anchor);

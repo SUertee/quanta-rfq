@@ -1,3 +1,6 @@
+import {useWorkflowPresentation} from '../engine/useWorkflowPresentation';
+import {useModuleReferenceDrag} from '../engine/useModuleReferenceDrag';
+import type {WorkflowRun} from '../engine/workflow';
 import {ExtractionCompletionReview} from '../components/ExtractionCompletionReview';
 import {reviewableExtractionIssue} from '../../shared/extraction-issues.mjs';
 import {ExtractionReview} from '../components/ExtractionReview';
@@ -54,9 +57,10 @@ function RawHighlight({ body, needle }: { body: string; needle: string }) {
 
 /** 报价工作台：一个页面完成 核对 → 定价 → 预览 → 导出 */
 export function WorkbenchPage({
-  selectedBases={},onSelectBasis,persistenceError, persistenceConflict, onRetryQuote, quoteVersion, persistencePending=false, onDataRefresh, onAskAgent, selectedAgentLine, ds, source, lines, priced, email, label, assigneeId, onAssigneeChange, currentUserId, inquiryError,
+  run, selectedBases={},onSelectBasis,persistenceError, persistenceConflict, onRetryQuote, quoteVersion, persistencePending=false, onDataRefresh, onAskAgent, selectedAgentLine, ds, source, lines, priced, email, label, assigneeId, onAssigneeChange, currentUserId, inquiryError,
   policy, priceBook, setPriceBook, resolved, setResolved, estCost, setEstCost, manualPrices, setManualPrices, skipped, setSkipped, taskKey, timing, ops, onTime, onOp, onEditLine, onAddLine, onBack, onApplyLlmRows,
 }: {
+  run?:WorkflowRun;
   selectedBases?:Record<string,string>;
   onSelectBasis?:(key:string,id:string|null)=>void;
   persistenceError?:string;
@@ -98,6 +102,14 @@ export function WorkbenchPage({
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
   const [dismissedStageTip,setDismissedStageTip]=useState<number|null>(null);
   const {stage, flowRef, goToStage} = useStageNavigation(taskKey);
+  const activeRun=run||(email?.intakeStatus==='processing'?{stage:email.attachments.length?2:1,revealed:email.attachments.length?2:1,state:'running'} as WorkflowRun:undefined);
+  const {shown,positions,busyStage}=useWorkflowPresentation(taskKey,activeRun,flowRef);
+  useModuleReferenceDrag(flowRef,stage=>({
+    id:`module:${email?.intakeBatchId||taskKey}:${stage}:${intakeRecord?.updated_at||''}`,
+    label:`${label} · ${['接收询价','提取需求','查询依据','检查条件','报价草稿','确认导出'][stage-1]}`,
+    excerpt:lines.length?lines.map(line=>`${line.partNumber} ${line.quantity} ${line.uom} ${line.condition} ${line.requirement||''}`).join('\n').slice(0,2000):email?.body.slice(0,2000)||'询价材料处理中',
+    ...(email?.intakeBatchId?{inquiryId:email.intakeBatchId,stage,stageVersion:intakeRecord?.updated_at,...(stage>=5?{draftVersion:quoteVersion}:{})}:{}),
+  }));
   const [completionReviewOpen,setCompletionReviewOpen]=useState(false);
   const [extractionReviewOpen,setExtractionReviewOpen]=useState(false);
   const [intakeRecord,setIntakeRecord]=useState<IntakeBatch|null>(null);
@@ -486,20 +498,21 @@ export function WorkbenchPage({
   return (
     <div className="quotation-workbench">
       {inquiryError && <div className="check-box" role="alert"><strong>部分材料尚未完成核对</strong><button className="btn" onClick={()=>goToStage(1)}>查看原始材料</button></div>}
+      {run?.error&&<p role="alert">{run.error}</p>}
       <header className="inquiry-page-head">
         <div><button className="btn inquiry-back" aria-label="返回询价列表" title="返回询价列表" onClick={onBack}><svg viewBox="0 0 20 20" aria-hidden="true"><path d="m12 5-5 5 5 5" /></svg></button><h1>{label}</h1></div>
       </header>
       <div className="stage-workspace">
-      <nav className="inquiry-stage-rail" aria-label="询价阶段">{stageItems.map(item=><button key={item.id} aria-current={stage===item.id?'step':undefined} aria-label={`${item.id}. ${item.label}，${item.detail}`} aria-describedby={`stage-tip-${item.id}`} data-tip-dismissed={dismissedStageTip===item.id?'true':undefined} className={`stage-node ${stage===item.id?'current':''} ${item.state}`} onClick={()=>goToStage(item.id)} onMouseEnter={()=>setDismissedStageTip(null)} onFocus={()=>setDismissedStageTip(null)} onKeyDown={e=>{if(e.key==='Escape')setDismissedStageTip(item.id)}}><span className="stage-dot" aria-hidden="true">{item.state==='done'&&stage!==item.id?'✓':item.id}</span><span className="stage-tooltip" role="tooltip" id={`stage-tip-${item.id}`}><strong><span>{String(item.id).padStart(2,'0')}</span>{item.label}</strong><span>{item.detail}</span><small>{item.state==='done'?'已有结果':item.state==='attention'?'待处理':'待执行'}</small></span></button>)}</nav>
+      <nav className="inquiry-stage-rail" aria-label="询价阶段">{stageItems.filter(item=>item.id<=shown).map((item,index)=><button style={{top:positions[index]||0,'--stage-distance':`${(positions[index+1]??positions[index]??0)-(positions[index]||0)}px`} as import('react').CSSProperties} data-running={busyStage===item.id} key={item.id} aria-current={stage===item.id?'step':undefined} aria-label={`${item.id}. ${item.label}，${item.detail}`} aria-describedby={`stage-tip-${item.id}`} data-tip-dismissed={dismissedStageTip===item.id?'true':undefined} className={`stage-node ${stage===item.id?'current':''} ${item.state}`} onClick={()=>goToStage(item.id)} onMouseEnter={()=>setDismissedStageTip(null)} onFocus={()=>setDismissedStageTip(null)} onKeyDown={e=>{if(e.key==='Escape')setDismissedStageTip(item.id)}}><span className="stage-dot" aria-hidden="true">{busyStage===item.id?<span className="stage-spinner" />:item.state==='done'&&stage!==item.id?'✓':item.id}</span><span className="stage-tooltip" role="tooltip" id={`stage-tip-${item.id}`}><strong><span>{String(item.id).padStart(2,'0')}</span>{item.label}</strong><span>{item.detail}</span><small>{busyStage===item.id?'处理中':item.state==='done'?'已有结果':item.state==='attention'?'待处理':'待执行'}</small></span></button>)}</nav>
       <section className="stage-main" ref={flowRef} aria-label="询价完整流程">
 
-      <section className="workflow-section" data-current={stage===1} id="inquiry-stage-1" tabIndex={-1} data-inquiry-stage="1" aria-labelledby="inquiry-stage-title-1">
+      <section hidden={shown<1} aria-busy={busyStage===1} className="workflow-section" data-current={stage===1} id="inquiry-stage-1" tabIndex={-1} data-inquiry-stage="1" aria-labelledby="inquiry-stage-title-1">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-1">{stageItems[0].label}</h2></header>
-      {email?.intakeBatchId&&<IntakeRecord batchId={email.intakeBatchId} revisionKey={JSON.stringify(email.parsedRows?.map(l=>l.version))} view="files" onLoaded={setIntakeRecord} onEvidenceRefresh={onDataRefresh} />}
+      {email?.intakeBatchId&&<IntakeRecord batchId={email.intakeBatchId} revisionKey={JSON.stringify([run?.stage,email.intakeStatus,email.parsedRows?.map(l=>l.version)])} view="files" onLoaded={setIntakeRecord} onEvidenceRefresh={onDataRefresh} />}
       {!email?.intakeBatchId&&<section className="panel stage-original"><div className="panel-title">原始材料 <Badge text="演示／历史记录" tone="gray" /></div>{email?<><div className="source-file-row"><span>邮件</span><b>{email.file}</b><span>{email.from}</span></div><pre className="stage-raw-text">{email.body||'邮件正文为空'}</pre>{email.attachments.map((name,i)=><div className="source-file-row" key={i}><span>附件</span><b>{name}</b></div>)}</>:<div className="source-file-row"><span>历史询价</span><b>{label}</b><span>{lines.length} 行</span></div>}</section>}
 
       </section>
-      <section className="workflow-section" data-current={stage===2} id="inquiry-stage-2" tabIndex={-1} data-inquiry-stage="2" aria-labelledby="inquiry-stage-title-2">
+      <section hidden={shown<2} aria-busy={busyStage===2} className="workflow-section" data-current={stage===2} id="inquiry-stage-2" tabIndex={-1} data-inquiry-stage="2" aria-labelledby="inquiry-stage-title-2">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-2">{stageItems[1].label}</h2>{intakeRecord?.issues.some(reviewableExtractionIssue)&&<button className="btn" disabled={persistencePending} onClick={()=>setCompletionReviewOpen(true)}>核对提取结果</button>}{intakeRecord&&intakeRecord.lines.some(line=>Object.keys(FIELD_REVIEW_LABELS).some(field=>fieldConflictIssues(line,field).length))&&<button className="btn" disabled={persistencePending} onClick={()=>setExtractionReviewOpen(true)}>核对提取冲突</button>}</header>
       {completionReviewOpen&&intakeRecord&&<ExtractionCompletionReview inquiryId={intakeRecord.id} operator={currentUserId||'本机用户'} onClose={()=>setCompletionReviewOpen(false)} onSaved={batch=>{setIntakeRecord(batch);setCompletionReviewOpen(false);onDataRefresh?.();}}/>}
       {extractionReviewOpen&&intakeRecord&&<ExtractionReview batch={intakeRecord} operator={currentUserId||'本机用户'} onClose={()=>setExtractionReviewOpen(false)} onSaved={batch=>{setIntakeRecord(batch);setExtractionReviewOpen(false);onDataRefresh?.();}}/>}
@@ -735,18 +748,18 @@ export function WorkbenchPage({
 
 
       </section>
-      <section className="workflow-section" data-current={stage===3} id="inquiry-stage-3" tabIndex={-1} data-inquiry-stage="3" aria-labelledby="inquiry-stage-title-3">
+      <section hidden={shown<3} aria-busy={busyStage===3} className="workflow-section" data-current={stage===3} id="inquiry-stage-3" tabIndex={-1} data-inquiry-stage="3" aria-labelledby="inquiry-stage-title-3">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-3">{stageItems[2].label}</h2></header>
-      {email?.intakeBatchId&&<IntakeRecord batchId={email.intakeBatchId} revisionKey={JSON.stringify(email.parsedRows?.map(l=>l.version))} view="evidence" operator={getCompany().operator||currentUserId||'本机用户'} selectedBases={selectedBases} selectionDisabled={persistencePending} onSelectBasis={onSelectBasis} rules={{condFnNe:policy.condFnNe,certMutual:policy.certMutual,freightDays:policy.freightDays,fxRates:{...(policy.fxUsd?{USD:policy.fxUsd}:{}),...(policy.fxEur?{EUR:policy.fxEur}:{}),...(policy.fxRates||{})},unitConversions:ds.units}} onLoaded={setIntakeRecord} onEvidenceRefresh={onDataRefresh} />}
+      {email?.intakeBatchId&&<IntakeRecord batchId={email.intakeBatchId} revisionKey={JSON.stringify([run?.stage,email.intakeStatus,email.parsedRows?.map(l=>l.version)])} view="evidence" operator={getCompany().operator||currentUserId||'本机用户'} selectedBases={selectedBases} selectionDisabled={persistencePending} onSelectBasis={onSelectBasis} rules={{condFnNe:policy.condFnNe,certMutual:policy.certMutual,freightDays:policy.freightDays,fxRates:{...(policy.fxUsd?{USD:policy.fxUsd}:{}),...(policy.fxEur?{EUR:policy.fxEur}:{}),...(policy.fxRates||{})},unitConversions:ds.units}} onLoaded={setIntakeRecord} onEvidenceRefresh={onDataRefresh} />}
       {!email?.intakeBatchId&&<section className="panel"><div className="panel-title">库存与供应商依据</div><div className="table-wrap"><table><thead><tr><th>件号</th><th>库存</th><th>内部成本</th><th>供应商参考</th></tr></thead><tbody>{priced.map(p=><tr key={p.line.key}><td><b>{p.line.partNumber}</b></td><td>{p.cost?`${p.cost.stockQty} ${p.cost.uom}`:'未匹配'}</td><td>{p.cost?fmtMoney(p.cost.lastPurchasePrice||p.cost.avgCost):'缺依据'}</td><td>{p.candidates.length?<div className="candidate-evidence-list">{p.candidates.map((c,i)=><div className="candidate-evidence" key={i}><b>{c.row.supplierName}</b><span>{c.row.unitPrice} {c.row.currency}</span><span>{c.row.condition} · MOQ {c.row.moq} · {c.row.validUntil||'有效期缺失'}</span></div>)}</div>:'未匹配'}</td></tr>)}</tbody></table></div></section>}
 
       </section>
-      <section className="workflow-section" data-current={stage===4} id="inquiry-stage-4" tabIndex={-1} data-inquiry-stage="4" aria-labelledby="inquiry-stage-title-4">
+      <section hidden={shown<4} aria-busy={busyStage===4} className="workflow-section" data-current={stage===4} id="inquiry-stage-4" tabIndex={-1} data-inquiry-stage="4" aria-labelledby="inquiry-stage-title-4">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-4">{stageItems[3].label}</h2></header>
       {<section className="panel stage-checks"><div className="stage-check-filters"><FilterTabs label="条件检查筛选" value={checkFilter} onChange={setCheckFilter} items={[{value:'pending',label:'待核对',count:activePriced.filter(p=>!resolved.has(p.line.key)).length},{value:'all',label:'全部',count:activePriced.length}]} /></div>{activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).map(p=><article className="stage-check-row" key={p.line.key}><div><b>{p.line.partNumber||'件号待补'}</b><span>{p.line.quantity} {p.line.uom}</span></div><div className="stage-check-findings">{p.ruleIssues?.length?p.ruleIssues.map(issue=><span className="check-finding" key={issue}><span className="check-finding-mark" aria-hidden="true">!</span><span>{issue}</span></span>):yellowReasons(p).length?yellowReasons(p).map(f=><span className="check-finding" key={f}><span className="check-finding-mark" aria-hidden="true">!</span><span>{FLAG_PLAIN[f]}</span></span>):<span className="check-neutral">规则未发现阻断项 · 待人工核对</span>}</div><div className="stage-check-actions"><button className="btn" onClick={()=>{goToStage(2);setOpen(p.line.key)}}>查看物料</button><button className="btn" disabled={persistencePending} onClick={()=>toggleResolved(p.line.key)}>{resolved.has(p.line.key)?'撤销核对':'标记人工已核对'}</button></div></article>)}{!activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).length&&<div className="stage-empty"><span>✓</span><strong>{activePriced.length?'当前没有待核对行':'暂无物料'}</strong><button className="btn" onClick={()=>goToStage(2)}>打开物料表</button></div>}</section>}
 
       </section>
-      <section className="workflow-section" data-current={stage===5} id="inquiry-stage-5" tabIndex={-1} data-inquiry-stage="5" aria-labelledby="inquiry-stage-title-5">
+      <section hidden={shown<5} aria-busy={busyStage===5} className="workflow-section" data-current={stage===5} id="inquiry-stage-5" tabIndex={-1} data-inquiry-stage="5" aria-labelledby="inquiry-stage-title-5">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-5">{stageItems[4].label}</h2></header>
       <section className="quote-stage-tools">
 
@@ -912,7 +925,7 @@ export function WorkbenchPage({
       </div>
 
       </section>
-      <section className="workflow-section" data-current={stage===6} id="inquiry-stage-6" tabIndex={-1} data-inquiry-stage="6" aria-labelledby="inquiry-stage-title-6">
+      <section hidden={shown<6} aria-busy={busyStage===6} className="workflow-section" data-current={stage===6} id="inquiry-stage-6" tabIndex={-1} data-inquiry-stage="6" aria-labelledby="inquiry-stage-title-6">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-6">{stageItems[5].label}</h2></header>
       <section className="panel stage-export">
         <div className="quote-signature-row"><div className="quote-signature-identity"><b>报价签名</b>{quoteSignature.signature?<><SignaturePreview signature={quoteSignature.signature}/><span>{quoteSignature.signature.signer}</span></>:<span>尚未签名</span>}</div><div className="quote-signature-actions">{quoteSignature.signature&&<button className="btn" onClick={quoteSignature.clear}>清除签名</button>}<button className="btn" disabled={!quoteSignature.basis||!stageExportable} onClick={()=>setSignatureOpen(true)}>{quoteSignature.signature?'重新签名':'手写签名'}</button></div></div>

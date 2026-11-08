@@ -5,18 +5,20 @@ import type { TaskSummary } from '../task';
 import type { Source } from '../App';
 import type { EmailSample } from '../types';
 import type { RawRow } from '../engine/parse';
-import {createIntake,batchEmail} from '../engine/intake';
+import {createIntake,batchEmail,type IntakeBatch} from '../engine/intake';
 
 /** 首页 = 任务列表 + 新建任务入口（粘贴询价内容 / 上传 .eml / 上传订单 xlsx） */
 export function HomePage({
-  tasks, onPick, onNewTask, onDelete, onRestore, deletedCount, industryKw, operator, openImport = false, onImportHandled,
+  tasks, onPick, onNewTask, onIntakeProgress, onIntakeError, onDelete, onRestore, deletedCount, industryKw, operator, openImport = false, onImportHandled,
 }: {
   operator?: string;
+  onIntakeError?: (batchId:string,message:string)=>void;
+  onIntakeProgress?: (stage:1|2|3,batch:IntakeBatch)=>void;
   openImport?: boolean; onImportHandled?: () => void;
   onDelete: (key: string) => void; onRestore: () => void; deletedCount: number;
   tasks: TaskSummary[];
   onPick: (s: Source) => void;
-  onNewTask: (email: EmailSample, rows?: RawRow[]) => void;
+  onNewTask: (email: EmailSample, rows?: RawRow[], options?:{open:boolean}) => void;
   industryKw: string;
   taskTime: Record<string, number>;
 }) {
@@ -30,14 +32,22 @@ export function HomePage({
   const fileRef = useRef<HTMLInputElement>(null);
   const [files,setFiles]=useState<File[]>([]);
   const [busy,setBusy]=useState(false);
+  const [dragOver,setDragOver]=useState(false);
+  const addFiles=(incoming:File[])=>{
+    if(busy||!incoming.length)return;
+    const next=[...files,...incoming];
+    if(next.length>6||next.some(file=>file.size>8*1024*1024)||next.reduce((sum,file)=>sum+file.size,0)>24*1024*1024){setErr('最多6个文件，每个8MB，总计24MB');return;}
+    setFiles(next);requestId.current=crypto.randomUUID();setErr('');
+  };
+  const receivedId=useRef<string|null>(null);
   const requestId=useRef(crypto.randomUUID());
   const checkTotal=tasks.reduce((n,t)=>n+t.checkCount,0);
   const readyTotal=tasks.filter(t=>t.total>0&&t.checkCount===0&&!t.inquiryError&&(!t.intakeStatus||t.intakeStatus==='evidence_ready')).length;
   const submit=async()=>{
     if(!files.length&&!text.trim()){setErr('请选择文件或粘贴询价内容');return;}
-    setBusy(true);setErr('');
-    try{const batch=await createIntake(files,text,operator||'本机用户',requestId.current);onNewTask(batchEmail(batch));setShowNew(false);setFiles([]);setText('');requestId.current=crypto.randomUUID();}
-    catch(e){setErr(e instanceof Error?e.message:String(e));}
+    receivedId.current=null;setBusy(true);setErr('');
+    try{const batch=await createIntake(files,text,operator||'本机用户',requestId.current,{onProgress:(stage,batch)=>{receivedId.current=batch.id;onIntakeProgress?.(stage,batch);}});onNewTask(batchEmail(batch),undefined,{open:!receivedId.current});setShowNew(false);setFiles([]);setText('');requestId.current=crypto.randomUUID();}
+    catch(e){const message=e instanceof Error?e.message:String(e);setErr(message);if(receivedId.current)onIntakeError?.(receivedId.current,message);}
     finally{setBusy(false);}
   };
   const statusOf=(t:TaskSummary)=>t.intakeStatus==='processing'?<Badge text="处理中" tone="blue" />:['failed','interrupted'].includes(t.intakeStatus||'')?<Badge text="处理未完成" tone="amber" />:t.intakeStatus==='needs_input'?<Badge text="待补充材料或字段" tone="amber" />:t.inquiryError?<Badge text="待核对原文" tone="amber" />:t.total===0?<Badge text="待解析 · 无询价行" tone="amber" />:t.checkCount>0?<Badge text={`${t.checkCount} 行需核对`} tone="amber" />:<Badge text="待核价" tone="blue" />;
@@ -76,8 +86,8 @@ export function HomePage({
       </div>
 
       {showNew && <Modal title="新建询价" className="inquiry-dialog" busy={busy} onClose={()=>setShowNew(false)}>
-        <button className="inquiry-file-picker" disabled={busy} onClick={()=>fileRef.current?.click()}><span aria-hidden="true">＋</span>选择文件</button>
-        <input ref={fileRef} type="file" multiple accept=".eml,.txt,.md,.csv,.xlsx,.pdf,.png,.jpg,.jpeg,.webp" hidden onChange={e=>{setFiles(Array.from(e.target.files||[]));requestId.current=crypto.randomUUID();setErr('');}} />
+        <button className="inquiry-file-picker" data-drag-over={dragOver} onDragOver={e=>{if(e.dataTransfer.types.includes('Files')){e.preventDefault();e.dataTransfer.dropEffect='copy';setDragOver(true);}}} onDragLeave={()=>setDragOver(false)} onDrop={e=>{e.preventDefault();setDragOver(false);addFiles(Array.from(e.dataTransfer.files));}} disabled={busy} onClick={()=>fileRef.current?.click()}><span aria-hidden="true">＋</span>选择文件</button>
+        <input ref={fileRef} type="file" multiple accept=".eml,.txt,.md,.csv,.xlsx,.pdf,.png,.jpg,.jpeg,.webp" hidden onChange={e=>{addFiles(Array.from(e.target.files||[]));e.currentTarget.value='';}} />
         {files.length>0&&<ul className="inquiry-upload-list">{files.map((f,i)=><li key={i}><span>{f.name}</span><button type="button" aria-label={`移除 ${f.name}`} disabled={busy} onClick={()=>{setFiles(items=>items.filter((_,index)=>index!==i));requestId.current=crypto.randomUUID();}}>×</button></li>)}</ul>}
         <label className="inquiry-text-label">询价内容<textarea className="new-task-text" rows={5} aria-label="询价内容或补充要求" placeholder="粘贴询价内容，或补充文件中的要求…" disabled={busy} value={text} onChange={e=>{setText(e.target.value);requestId.current=crypto.randomUUID()}} /></label>
         {err&&<div role="alert" className="hint">{err}</div>}

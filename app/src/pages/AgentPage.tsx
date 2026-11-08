@@ -1,3 +1,4 @@
+import type {InquiryStage,WorkflowRun} from '../engine/workflow';
 import {ChatMaterialPurpose,ChatSupplierFlow,ChatSupplierResult} from '../components/ChatMaterials';
 import {chatMaterialRoute,type MaterialPurpose,type ChatSupplierRequest,type ChatSupplierReceipt} from '../engine/chatMaterials';
 import {submitChatInquiry,type ChatIntakeRequest} from '../engine/chatIntake';
@@ -32,11 +33,12 @@ type Session = { state: 'idle' | 'running' | 'failed' | 'stopped'; input: string
 const fresh = (): Session => ({ state: 'idle', input: '', turns: [] });
 const money = (v?: number) => v == null ? '—' : `¥${v.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`;
 
-export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOverride, quickMessage, onQuickHandled, onHistory, priceBook, tasks, ds, policy, activeSource, lineEdits, resolved, onOpenTask, onSelectTask, onNewInquiry, embedded = false, expanded = false, docked = false, selectedLineKey = null, onClearLine, onClose, onExpand, onApplyPrice, skipped = new Set(), addedLines = {},selectedBases={},persistencePending=false,quoteVersion }: {
+export function AgentPage({ onWorkflowProgress, onInquiryCreated, operator='本机用户', sessionOverride, quickMessage, onQuickHandled, onHistory, priceBook, tasks, ds, policy, activeSource, lineEdits, resolved, onOpenTask, onSelectTask, onNewInquiry, embedded = false, expanded = false, docked = false, selectedLineKey = null, onClearLine, onClose, onExpand, onApplyPrice, skipped = new Set(), addedLines = {},selectedBases={},persistencePending=false,quoteVersion }: {
+  onWorkflowProgress?: (stage:InquiryStage,state:WorkflowRun['state'])=>void;
   onInquiryCreated?: (batch:IntakeBatch,conversationKey:string)=>void;
   operator?:string;
   sessionOverride?:string;
-  quickMessage?:{id:number;text:string}|null; onQuickHandled?:()=>void; onHistory?:()=>void;
+  quickMessage?:{id:number;text:string;inquiryId?:string;workflow?:boolean}|null; onQuickHandled?:()=>void; onHistory?:()=>void;
   skipped?: Set<string>;
   expanded?: boolean; docked?: boolean; embedded?: boolean; selectedLineKey?: string | null; onClearLine?: () => void; onClose?: () => void; onExpand?: () => void;
   onApplyPrice?: (line: DraftLine, price: number) => void;
@@ -70,6 +72,7 @@ export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOv
   const request = useRef<AbortController | null>(null);
   const generation = useRef(0);
   const busy = useRef(false);
+  const workflowStage=useRef<InquiryStage|null>(null);
   const composing = useRef(false);
   const chatScroll=useChatScroll(session.turns);
   const draftAside = useRef<HTMLElement | null>(null);
@@ -78,7 +81,7 @@ export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOv
   const append = (key: string, turn: Turn) => setSessions(old => { const s = old[key] ?? fresh(); return { ...old, [key]: { ...s, turns: [...s.turns, {...turn,createdAt:new Date().toISOString()}] } }; });
   useEffect(() => {
     setSessions(old=>{const saved=old[sessionKey];return saved?.state==='running'?{...old,[sessionKey]:{...saved,state:'stopped',error:'上次执行已中断，已保留部分回复，可以继续提问。'}}:old;});
-    return () => { generation.current++; request.current?.abort(); };
+    return () => { if(workflowStage.current)onWorkflowProgress?.(workflowStage.current,'stopped');workflowStage.current=null;generation.current++; request.current?.abort(); };
   }, []);
   useEffect(() => {
     if (!activeSource || busy.current) return;
@@ -122,11 +125,11 @@ export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOv
       if (id === generation.current) {busy.current=false;request.current=null;}
     }
   };
-  const run = async (preset?: string) => {
+  const run = async (preset?: string, automatic=false) => {
     const instruction = (preset ?? (session.input || (references.items.length?'请核对引用内容。':attachments.length?'请核对附件与当前询价；附件中未读取的信息保持待补充，不编造价格。':''))).trim();
-    if (!task || !current || busy.current || attachments.some(f=>f.status==='reading') || !instruction) return;
+    if (!task || !current || busy.current || (!automatic&&attachments.some(f=>f.status==='reading')) || !instruction) return;
     if (session.creation||session.supplierCreation) return;
-    const route=chatMaterialRoute((preset??session.input).trim(),attachments.length,materialPurpose);
+    const route=automatic?'question':chatMaterialRoute((preset??session.input).trim(),attachments.length,materialPurpose);
     if(route==='choose'){patch(sessionKey,{error:'请选择资料用途，再发送。'});return;}
     if(route==='supplier'){
       append(sessionKey,{role:'user',content:(preset??session.input).trim()||attachments.map(file=>file.name).join('、'),attachments});
@@ -142,8 +145,9 @@ export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOv
     const id = ++generation.current;
     const controller = new AbortController(); request.current = controller;
     const started = performance.now();
-    const activeReferences=references.items.length?references.items:conversationReferences([],session.turns.filter(turn=>turn.basis===basis)).filter(reference=>{
+    const activeReferences=automatic?[]:references.items.length?references.items:conversationReferences([],session.turns.filter(turn=>turn.basis===basis)).filter(reference=>{
       if(!reference.inquiryId)return true;
+      if(reference.stage&&(reference.stageVersion!==current.email?.intakeUpdatedAt||(reference.stage>=5&&reference.draftVersion!==quoteVersion)))return false;
       if(reference.inquiryId!==current.email?.intakeBatchId)return false;
       const raw=current.email?.parsedRows?.find(row=>row.persistedLineId===reference.lineId);
       if(reference.lineId&&!raw)return false;
@@ -151,26 +155,33 @@ export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOv
       return !reference.evidenceId||!!raw?.evidence?.some(entry=>entry.id===reference.evidenceId&&(!reference.matchedAt||entry.matched_at===reference.matchedAt));
     });
     const history = session.turns.filter(t => (!t.basis || t.basis === basis) && t.content.trim()).slice(-6).map(t => ({role:t.role,content:t.content.slice(0,2000)}));
-    append(sessionKey, {role:'user',content:instruction,basis,attachments,references:references.items});setAttachments([]);setAttachmentEpoch(n=>n+1);setMaterialPurpose('auto');setAttachmentContext('');
-    patch(sessionKey,{state:'running',input:'',error:undefined,progressEvents:[]});
+    append(sessionKey, {role:'user',content:instruction,basis,attachments:automatic?[]:attachments,references:automatic?[]:references.items});
+    if(!automatic){setAttachments([]);setAttachmentEpoch(n=>n+1);setMaterialPurpose('auto');setAttachmentContext('');}
+    patch(sessionKey,{state:'running',input:automatic?session.input:'',error:undefined,progressEvents:[]});
     try {
       const greeting = /^(你好|您好|嗨|hello\b|hi\b|你能做什么|你可以做什么|你能帮我|你是谁|介绍一下你|谢谢|感谢)/i.test(instruction);
       const requestsWork = /(生成|计算|核对|检查|查询|分析|报价草稿|单价|库存)/.test(instruction);
       const explainReference=activeReferences.length>0&&/(解释|为什么|什么|如何|怎么|来源|说明)/.test(instruction)&&!/(生成|计算|填入|执行)/.test(instruction);
-      if(route==='question'&&attachments.length||!current.lines.length||(greeting&&!requestsWork&&!attachments.length&&!attachmentContext)||explainReference){
+      if(!automatic&&route==='question'&&attachments.length||!current.lines.length||(greeting&&!requestsWork&&!attachments.length&&!attachmentContext)||explainReference){
         append(sessionKey,{role:'assistant',content:'',basis});
         const response=await fetch('/api/assistant/chat',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({instruction,history,references:activeReferences,inquiryId:current.email?.intakeBatchId,inquiryTitle:task.title.slice(0,300),context:attachmentContext||(!current.lines.length?JSON.stringify({lineCount:0,status:current.email?.intakeStatus,issues:current.email?.intakeIssues||[],materials:current.email?.attachments||[]}):undefined)})});
         await readChatStream(response,content=>{
           if(id!==generation.current||latestBasis.current!==basis)return;
           setSessions(old=>{const saved=old[sessionKey];if(!saved)return old;const turns=[...saved.turns];const last=turns.length-1;if(turns[last]?.role!=='assistant')return old;turns[last]={...turns[last],content};return {...old,[sessionKey]:{...saved,turns}};});
         });
-        if(id===generation.current){references.clear();patch(sessionKey,{state:'idle'});}
+        if(id===generation.current){if(!automatic)references.clear();patch(sessionKey,{state:'idle'});}
         return;
       }
+      const reportsWorkflow=(!!preset&&quickMessage?.workflow&&(!quickMessage.inquiryId||quickMessage.inquiryId===current.email?.intakeBatchId))||(!explainReference&&/(生成|计算).{0,12}(报价|草稿)/.test(instruction));
+      if(reportsWorkflow){workflowStage.current=4;onWorkflowProgress?.(4,'running');}
       // Legacy field named margin stores markup rate (cost-based), matching Settings.
-      const response = await fetch('/api/agent/run', {method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({instruction,history,references:activeReferences,context:attachmentContext,inquiryId:current.email?.intakeBatchId,draftVersion:quoteVersion,lines:current.lines.map(l => ({key:l.key,partNumber:l.partNumber || '',description:l.description,quantity:l.quantity,uom:l.uom,condition:l.condition,urgency:l.urgency,requirement:l.requirement,dueDate:l.dueDate,needByDate:l.needByDate||'',quoteDeadline:l.quoteDeadline||'',issues:l.issues})),policy:{condFnNe:policy.condFnNe,certMutual:policy.certMutual,freightDays:policy.freightDays,fxRates:{...(policy.fxUsd?{USD:policy.fxUsd}:{}),...(policy.fxEur?{EUR:policy.fxEur}:{}),...(policy.fxRates||{})},markupRate:policy.margin,aogPremium:policy.aogPremium,bulkDiscount:policy.bulkDiscount,bulkQty:policy.bulkQty}})});
+      const response = await fetch('/api/agent/run', {method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({instruction,history,references:activeReferences,context:automatic?undefined:attachmentContext,inquiryId:current.email?.intakeBatchId,draftVersion:quoteVersion,lines:current.lines.map(l => ({key:l.key,partNumber:l.partNumber || '',description:l.description,quantity:l.quantity,uom:l.uom,condition:l.condition,urgency:l.urgency,requirement:l.requirement,dueDate:l.dueDate,needByDate:l.needByDate||'',quoteDeadline:l.quoteDeadline||'',issues:l.issues})),policy:{condFnNe:policy.condFnNe,certMutual:policy.certMutual,freightDays:policy.freightDays,fxRates:{...(policy.fxUsd?{USD:policy.fxUsd}:{}),...(policy.fxEur?{EUR:policy.fxEur}:{}),...(policy.fxRates||{})},markupRate:policy.margin,aogPremium:policy.aogPremium,bulkDiscount:policy.bulkDiscount,bulkQty:policy.bulkQty}})});
       const data = await readAgentStream<AgentResult>(response,(tool,state)=>{
         if(id!==generation.current)return;
+        if(workflowStage.current){
+          workflowStage.current=Math.max(workflowStage.current,tool==='build_quote_draft'?5:4) as InquiryStage;
+          onWorkflowProgress?.(workflowStage.current,'running');
+        }
         setSessions(old=>{
           const saved=old[sessionKey];
           if(!saved)return old;
@@ -182,15 +193,17 @@ export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOv
       if (latestBasis.current !== basis) throw new Error('询价或策略已修改，本轮结果未采用。请重新提问。');
       if (!data.draft || !Array.isArray(data.draft.lines) || !Array.isArray(data.events)) throw new Error('服务返回不完整，请重试。');
       append(sessionKey,{role:'assistant',content:((/生成.{0,8}(报价|草稿)/.test(instruction) ? data.summary : data.answer) || data.summary || '核对完成，请查看本轮结果。'),basis,result:data,elapsed:performance.now()-started});
-      references.clear();
+      if(!automatic)references.clear();
+      if(workflowStage.current)onWorkflowProgress?.(data.status==='failed'?workflowStage.current:data.draft.mode==='analysis'?4:6,data.status==='failed'?'failed':data.draft.mode==='analysis'?'attention':'done');
       patch(sessionKey,{state:data.status==='failed'?'failed':'idle',error:data.status==='failed'?'本次处理未完成，请重新发送。':undefined});
     } catch(error) {
       if (id !== generation.current) return;
+      if(workflowStage.current)onWorkflowProgress?.(workflowStage.current,controller.signal.aborted?'stopped':'failed');
       patch(sessionKey,{state:controller.signal.aborted ? 'stopped':'failed',error:error instanceof Error ? error.message : String(error)});
-    } finally { if (id === generation.current) { busy.current=false; request.current=null; } }
+    } finally { if (id === generation.current) { busy.current=false; request.current=null;workflowStage.current=null; } }
   };
   const seenQuickMessage=useRef<number|null>(null);
-  useEffect(()=>{if(quickMessage&&seenQuickMessage.current!==quickMessage.id){seenQuickMessage.current=quickMessage.id;onQuickHandled?.();void run(quickMessage.text);}},[quickMessage]);
+  useEffect(()=>{if(quickMessage&&task&&!persistencePending&&!busy.current&&!session.creation&&!session.supplierCreation&&(!quickMessage.workflow||!!current?.lines.length)&&(!quickMessage.inquiryId||quickMessage.inquiryId===current?.email?.intakeBatchId)&&seenQuickMessage.current!==quickMessage.id){seenQuickMessage.current=quickMessage.id;onQuickHandled?.();void run(quickMessage.text,!!quickMessage.workflow);}},[quickMessage,persistencePending,session.state,session.creation,session.supplierCreation,current?.email?.intakeBatchId,current?.lines.length]);
   const previousSession = useRef(sessionKey);
   useEffect(() => {
     if (previousSession.current !== sessionKey) {
@@ -198,7 +211,7 @@ export function AgentPage({ onInquiryCreated, operator='本机用户', sessionOv
       patch(previousSession.current, {state:'stopped'}); previousSession.current = sessionKey;
     }
   }, [sessionKey]);
-  const stop = () => { generation.current++; request.current?.abort(); request.current=null; busy.current=false; patch(sessionKey,{state:'stopped',error:'已停止，本轮迟到结果不会采用。'}); };
+  const stop = () => { if(workflowStage.current)onWorkflowProgress?.(workflowStage.current,'stopped');workflowStage.current=null;generation.current++; request.current?.abort(); request.current=null; busy.current=false; patch(sessionKey,{state:'stopped',error:'已停止，本轮迟到结果不会采用。'}); };
   const selectTask = (nextKey: string) => { const next=tasks.find(t=>t.key===nextKey); if(next&&!busy.current){setSelectedKey(next.key);onSelectTask(next.source);} };
   const isDemo = (t: TaskSummary) => t.source.kind !== 'email' || !(t.source.id.startsWith('custom-') || t.source.id.startsWith('intake-'));
   const demo = tasks.find(t=>isDemo(t)&&t.total>0&&!t.inquiryError);

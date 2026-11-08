@@ -8,6 +8,7 @@ export interface IntakeBatch {
   source: string;
   operator: string;
   created_at: string;
+  updated_at?: string;
   status: string;
   issues: string[];
   files: {
@@ -48,6 +49,7 @@ export function batchEmail(b: IntakeBatch): EmailSample {
     caseNo: 0,
     intakeBatchId: b.id,
     intakeStatus: b.status,
+    intakeUpdatedAt:b.updated_at,
     intakeIssues: b.issues,
     file: b.files.map((f) => f.name).join(", "),
     subject: mail?.subject || b.title,
@@ -86,7 +88,7 @@ export async function createIntake(
   text: string,
   operator: string,
   requestId: string,
-  options: {source?: 'manual_upload' | 'paste' | 'chat'; signal?: AbortSignal} = {},
+  options: {source?: 'manual_upload' | 'paste' | 'chat'; signal?: AbortSignal; onProgress?: (stage:1|2|3, batch:IntakeBatch)=>void} = {},
 ) {
   const signal = options.signal
     ? AbortSignal.any([options.signal, AbortSignal.timeout(240000)])
@@ -112,7 +114,7 @@ export async function createIntake(
     });
   const r = await fetch("/api/inquiries", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
+    headers: { "Content-Type": "application/json", ...(options.onProgress ? {Accept:"application/x-ndjson"} : {}) },
     body: JSON.stringify({
       requestId,
       source: options.source || (files.length ? "manual_upload" : "paste"),
@@ -121,9 +123,35 @@ export async function createIntake(
     }),
     signal,
   });
-  const j = await r.json();
-  if (!r.ok) throw new Error(j.error || "接收失败");
-  let batch = j as IntakeBatch;
+  let batch: IntakeBatch;
+  if (r.ok && r.headers?.get('content-type')?.includes('application/x-ndjson')) {
+    if (!r.body) throw new Error('浏览器不支持读取处理进度');
+    const reader = r.body.getReader(), decoder = new TextDecoder();
+    let buffer = '', result: IntakeBatch | undefined;
+    const parse = (line:string) => {
+      if (!line.trim()) return;
+      const event = JSON.parse(line);
+      if (event.type === 'progress' && [1,2,3].includes(event.stage)) options.onProgress?.(event.stage,event.batch);
+      if (event.type === 'done') result = event.result;
+      if (event.type === 'error') throw new Error(event.error);
+    };
+    try {
+      while (true) {
+        const chunk = await reader.read();
+        buffer += decoder.decode(chunk.value, {stream:!chunk.done});
+        let index;
+        while ((index=buffer.indexOf('\n'))>=0) { parse(buffer.slice(0,index)); buffer=buffer.slice(index+1); }
+        if (chunk.done) break;
+      }
+      parse(buffer);
+      if (!result) throw new Error('处理连接中断，已接收的原件可在询价任务中查看');
+      batch=result;
+    } finally { reader.releaseLock(); }
+  } else {
+    const result=await r.json();
+    if (!r.ok) throw new Error(result.error || '接收失败');
+    batch=result;
+  }
   // A retry can arrive while the original request is still parsing its files.
   while (batch.status === 'processing') {
     await new Promise<void>((resolve, reject) => {

@@ -1110,3 +1110,29 @@ tr:hover .material-reference-name>.reference-cite,.material-reference-name:focus
 .extraction-completion-reason { display:grid;gap:8px; }
 .extraction-completion-reason textarea { width:100%;box-sizing:border-box;min-height:80px;padding:12px 14px;border:1px solid var(--line);border-radius:var(--field-radius);background:var(--hal-head);color:var(--ink);font:inherit; }
 @media(max-width:640px) { .extraction-completion-body { padding:16px; } }
+
+/* Results grow downward, with each marker anchored to its own section heading. */
+.layout-reference .stage-workspace { display:block;position:relative;padding-left:64px; }
+.layout-reference .inquiry-stage-rail { position:absolute;inset:0 auto 0 0;width:44px;padding:0; }
+.layout-reference .inquiry-stage-rail .stage-node { position:absolute;left:0;animation:workflow-reveal .3s ease-out both; }
+.layout-reference .stage-node:not(:last-child)::after { top:40px;bottom:auto;height:max(0px,calc(var(--stage-distance) - 28px)); }
+.layout-reference .workflow-section[hidden] { display:none; }
+.layout-reference .workflow-section:not([hidden]) { animation:workflow-reveal .36s cubic-bezier(.2,.7,.2,1) both; }
+.layout-reference .stage-spinner { width:14px;height:14px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:stage-spin .75s linear infinite; }
+.layout-reference .stage-node[data-running=true] .stage-dot { color:var(--hal-accent);background:var(--hal-nav-selected);border-color:var(--hal-accent); }
+.layout-reference .inquiry-file-picker[data-drag-over=true] { border-color:var(--hal-accent);background:var(--hal-nav-selected);box-shadow:0 0 0 3px var(--hal-nav-selected); }
+.layout-reference .workflow-section[data-reference-holding=true] { outline:2px solid var(--hal-accent);outline-offset:4px;cursor:grabbing;user-select:none; }
+.module-reference-ghost { position:fixed;z-index:10000;max-width:300px;padding:12px 18px;border:1px solid var(--line);border-radius:var(--radius-control);background:var(--panel);color:var(--ink);box-shadow:0 10px 30px #0d234030;pointer-events:none;font-size:15px; }
+[data-module-drop=true] { outline:2px solid var(--hal-accent);outline-offset:3px; }
+@keyframes workflow-reveal { from {opacity:0;transform:translateY(12px);} to {opacity:1;transform:translateY(0);} }
+@keyframes stage-spin { to {transform:rotate(360deg);} }
+@media(max-width:700px) { .layout-reference .stage-workspace { padding-left:52px; } }
+@media(prefers-reduced-motion:reduce) { .layout-reference .workflow-section:not([hidden]),.layout-reference .inquiry-stage-rail .stage-node { animation:none; } }
+
+.layout-reference .stage-main { position:relative; }
+.assistant-docked .intake-evidence-layout { grid-template-columns:minmax(0,1fr); }
+.assistant-docked .intake-evidence-layout>nav { display:flex;flex-wrap:wrap;gap:8px; }
+.assistant-docked .intake-evidence-layout>nav button { width:auto;min-width:140px; }
+.assistant-docked .intake-evidence-body { min-width:0; }
+.module-reference-dragging,.module-reference-dragging * { user-select:none!important;cursor:grabbing!important; }
+.workflow-section-heading { touch-action:none; }

@@ -87,3 +87,5 @@ export function inquiryStages(v: WorkflowInput) {
     },
   ].map((s) => ({ ...s, state: s.state as StageState }));
 }
+
+export type WorkflowRun = {stage:InquiryStage; revealed:InquiryStage; state:"queued"|"running"|"attention"|"done"|"failed"|"stopped";error?:string};

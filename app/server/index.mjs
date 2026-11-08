@@ -209,7 +209,31 @@ http.createServer(async (req, res) => {
     const linePath=url.pathname.match(/^\/api\/inquiries\/([^/]+)\/lines\/([^/]+)$/);
     if(linePath&&req.method==='PATCH'){res.end(JSON.stringify(intake.updateLine(linePath[1],linePath[2],await readBody(req,50000))));return;}
     if(url.pathname==='/api/inquiries' && req.method==='POST'){
-      const result=await intake.create(await readBody(req,36_000_000));res.end(JSON.stringify(result));return;
+      const input = await readBody(req, 36_000_000);
+      if (req.headers.accept?.includes('application/x-ndjson')) {
+        let streaming = false;
+        const write = event => {
+          if (res.destroyed) return;
+          if (!streaming) {
+            res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8');
+            res.setHeader('Cache-Control', 'no-cache, no-transform');
+            res.setHeader('X-Accel-Buffering', 'no');
+            streaming = true;
+          }
+          res.write(JSON.stringify(event) + '\n');
+        };
+        try {
+          const result = await intake.create(input, (stage, batch) => write({type:'progress', stage, batch}));
+          write({type:'done', result});
+        } catch (error) {
+          if (!streaming) throw error;
+          write({type:'error', error:error.message});
+        }
+        res.end();
+      } else {
+        res.end(JSON.stringify(await intake.create(input)));
+      }
+      return;
     }
     if(url.pathname==='/api/inquiries' && req.method==='GET'){res.end(JSON.stringify({[legacyIntakeList?'batches':'inquiries']:intake.list(Object.fromEntries(url.searchParams))}));return;}
     if(url.pathname==='/api/price-resources' && req.method==='GET'){res.end(JSON.stringify({prices:intake.prices()}));return;}
@@ -234,7 +258,7 @@ http.createServer(async (req, res) => {
     if(req.method==='POST'&&url.pathname==='/api/assistant/chat'){
       const controller=new AbortController();res.on('close',()=>{if(!res.writableEnded)controller.abort();});
       const body=await readBody(req,100000),streaming=req.headers.accept?.includes('application/x-ndjson');
-      const references=resolveChatReferences(body.references,id=>intake.detail(id),{inquiryId:body.inquiryId});
+      const references=resolveChatReferences(body.references,id=>intake.detail(id),{inquiryId:body.inquiryId,quote:id=>quoteDrafts.read(id)});
       body.context=referenceContext(body.context,references);
       const referencedInquiries=new Set(references.filter(reference=>reference.inquiryId).map(reference=>reference.inquiryId));
       if(referencedInquiries.size===1)body.inquiryTitle=references.find(reference=>reference.inquiryId)?.inquiryTitle;
@@ -269,7 +293,7 @@ http.createServer(async (req, res) => {
             .filter(line=>selectedKeys.has(`intake-${inquiry.id}-${line.lineNo}`))
             .map(line=>[`intake-${inquiry.id}-${line.lineNo}`,line.evidence]));
         }
-        body.context=referenceContext(body.context,resolveChatReferences(body.references,id=>intake.detail(id),{inquiryId}));
+        body.context=referenceContext(body.context,resolveChatReferences(body.references,id=>intake.detail(id),{inquiryId,quote:id=>quoteDrafts.read(id)}));
         const unitRows=db.exec('SELECT pn,uom,factor FROM unit_conv')[0]?.values||[];
         const unitConversions={};
         for(const [pn,uom,factor] of unitRows){unitConversions[normalizePartNumber(pn)]??={};unitConversions[normalizePartNumber(pn)][normalizeUnit(uom)]=factor;}

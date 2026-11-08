@@ -27,6 +27,7 @@ export interface PriceRow {
 export interface EmailSample {
   intakeBatchId?: string;
   intakeStatus?: string;
+  intakeUpdatedAt?:string;
   intakeIssues?: string[];
   parsedRows?: import('./engine/parse').RawRow[];
   id: string; caseNo: number; file: string; subject: string;

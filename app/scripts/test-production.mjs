@@ -30,6 +30,14 @@ try{
  await fetch(origin+base+'api/review',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:material.id,action:'QA extraction review',detail:'Reviewed original'})});
  const records=await (await fetch(origin+base+'api/review?task=legacy-task-name&inquiry_id='+encodeURIComponent(material.id))).json();
  assert.ok(records.rows.some(row=>row.task===material.id&&row.action==='QA extraction review'));
+ const streamedInput={requestId:'production-progress-01',files:[{name:'stages.csv',base64:Buffer.from('PN,Quantity,Unit,Condition\nAN3-5A,10,EA,FN').toString('base64')}]};
+ const streamed=await fetch(origin+base+'api/inquiries',{method:'POST',headers:{'Content-Type':'application/json',Accept:'application/x-ndjson'},body:JSON.stringify(streamedInput)});
+ assert.equal(streamed.status,200);assert.match(streamed.headers.get('content-type'),/application\/x-ndjson/);
+ const events=(await streamed.text()).trim().split('\n').map(line=>JSON.parse(line));
+ assert.deepEqual(events.filter(event=>event.type==='progress').map(event=>event.stage),[1,2,3]);
+ assert.equal(events.at(-1).type,'done');
+ const retried=await (await fetch(origin+base+'api/inquiries',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(streamedInput)})).json();
+ assert.equal(retried.id,events.at(-1).result.id);
  const preview=await fetch(origin+base+'api/files/'+material.files[0].id+'/preview');
  assert.equal(preview.status,200);assert.equal(preview.headers.get('content-type'),'text/plain; charset=utf-8');
  assert.ok(preview.headers.get('content-disposition').startsWith('inline;'));

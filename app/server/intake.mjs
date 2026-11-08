@@ -306,7 +306,7 @@ export function createIntakeService(
     ]);
   }
   const ocr=(bytes,name,mime)=>readOcr(bytes,name,mime,ocrConfig);
-  async function create(input) {
+  async function create(input, onProgress = () => {}) {
     const source = input.source || "manual_upload";
     if (!["manual_upload", "paste", "chat"].includes(source))
       throw Object.assign(new Error("无效source"), { status: 400 });
@@ -381,6 +381,7 @@ export function createIntakeService(
       "[]",
     ]);
     persist();
+    onProgress(1, detail(id));
     const issues = [],
       chunks = [];
     let count = 0,
@@ -474,6 +475,7 @@ export function createIntakeService(
     }
     try {
       for (const f of files) await add(f);
+      onProgress(2, detail(id));
       const result = extractStructured(chunks);
       let extra = { lines: [], issues: [] };
       try {
@@ -527,6 +529,8 @@ export function createIntakeService(
         db.run("ROLLBACK");
         throw e;
       }
+      persist();
+      onProgress(3, detail(id));
       const unmatched =
         all.length -
         rows(
