@@ -1,6 +1,7 @@
 import {appFetch as fetch} from './appUrl';
 import type { EmailSample } from "../types";
 import type { RawRow } from "./parse";
+export interface FieldSourceEvidence {contentId:string|null;method:string;value?:string|number|null;locator?:Record<string,unknown>}
 export interface IntakeBatch {
   id: string;
   title: string;
@@ -33,7 +34,7 @@ export interface IntakeBatch {
     contentId: string;
     method: string;
     rawFields?: Record<string, unknown>;
-    fieldSources?: Record<string, { contentId: string | null; method: string; locator?: Record<string, unknown>; sources?: { contentId: string | null; method: string; value?: string; locator?: Record<string, unknown> }[] }>;
+    fieldSources?: Record<string, { contentId: string | null; method: string; locator?: Record<string, unknown>; confirmation?:{value:unknown;reason:string;operator:string;at:string;version:number}; sources?: FieldSourceEvidence[];rejectedSources?:FieldSourceEvidence[];previousSources?:FieldSourceEvidence[] }>;
     normalizationVersion?: string;
     rawFieldsStatus?: string;
   })[];

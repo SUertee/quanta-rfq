@@ -217,7 +217,7 @@ export default function App() {
           <button className={`nav-item ${mode==='agent'?'active':''}`} onClick={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}}><span className="nav-label">AI 对话</span></button>
         </nav>
         <div className="sidebar-foot">
-          <AccountMenu name={userName} onProfile={()=>setProfileOpen(true)} onBusiness={()=>{setSettingsSection('pricing');setSettingsOpen(true);}} onModels={()=>{setSettingsSection('services');setSettingsOpen(true);}} />
+          <AccountMenu onExit={()=>location.assign(appUrl('quanta.html'))} name={userName} onProfile={()=>setProfileOpen(true)} onBusiness={()=>{setSettingsSection('pricing');setSettingsOpen(true);}} onModels={()=>{setSettingsSection('services');setSettingsOpen(true);}} />
         </div>
       </aside>
       <main className={`content ${mode === 'workbench' && view === 'workbench' && assistantOpen ? 'with-copilot' : ''}`}>

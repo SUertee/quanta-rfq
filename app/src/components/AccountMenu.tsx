@@ -1,11 +1,12 @@
 import {captureDialogOrigin} from '../engine/dialogMotion';
 import {useEffect,useRef,useState} from 'react';
 
-export function AccountMenu({name,onProfile,onBusiness,onModels}:{name:string;onProfile:()=>void;onBusiness:()=>void;onModels:()=>void}) {
+export function AccountMenu({name,onProfile,onBusiness,onModels,onExit}:{name:string;onProfile:()=>void;onBusiness:()=>void;onModels:()=>void;onExit?:()=>void}) {
  const [open,setOpen]=useState(false);
  const root=useRef<HTMLDivElement>(null);
  const trigger=useRef<HTMLButtonElement>(null);
  const items=[{label:'个人信息',action:onProfile,path:'M20 21v-2a5 5 0 0 0-5-5H9a5 5 0 0 0-5 5v2M16 6a4 4 0 1 1-8 0 4 4 0 0 1 8 0Z'},{label:'业务配置',action:onBusiness,path:'M8 6V4h8v2M3 7h18v14H3ZM3 12h18M10 12v3h4v-3'},{label:'模型配置',action:onModels,path:'M6 6h12v12H6ZM9 9h6v6H9ZM9 2v4m6-4v4M9 18v4m6-4v4M2 9h4m-4 6h4m12-6h4m-4 6h4'}];
+ if(onExit)items.push({label:'退出工作台',action:onExit,path:'M10 17l5-5-5-5m5 5H3M12 3h8v18h-8'});
  useEffect(()=>{
   if(!open)return;
   root.current?.querySelector<HTMLButtonElement>('[role=menuitem]')?.focus();

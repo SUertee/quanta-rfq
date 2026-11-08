@@ -1,3 +1,5 @@
+import {PdfPreview} from './PdfPreview';
+import {fieldConflictIssues} from '../../shared/field-review.mjs';
 import {SupplierImportDialog} from './SupplierImportDialog';
 import {evaluateQuoteLine,type RulePolicy} from '../../shared/rfq-rules.mjs';
 import {citeReference,dragReference,type ChatReference} from '../engine/chatReferences';
@@ -96,6 +98,7 @@ export function IntakeRecord({
   const content = record?.contents.find((c) => c.id === line?.contentId);
   const file = record?.files.find((f) => f.id === content?.file_id);
   const changedFields = Object.entries(fieldLabels).filter(([key]) => {
+    if (line&&fieldConflictIssues(line,key).length) return true;
     if (line?.fieldSources?.[key]?.method === 'manual' || line?.fieldSources?.[key]?.sources?.length) return true;
     if (['needByDate','quoteDeadline','dueDate'].includes(key) && line?.[key as keyof typeof line]) return true;
     const original = line?.rawFields?.[key];
@@ -230,7 +233,7 @@ export function IntakeRecord({
                     {['png', 'jpg', 'jpeg', 'webp'].includes(previewFile.file_type) ? (
                       <img src={appUrl(`/api/files/${encodeURIComponent(previewFile.id)}/preview`)} alt={previewFile.name} />
                     ) : previewFile.file_type === 'pdf' ? (
-                      <iframe src={appUrl(`/api/files/${encodeURIComponent(previewFile.id)}/preview`)} title={previewFile.name} />
+                      <PdfPreview url={appUrl(`/api/files/${encodeURIComponent(previewFile.id)}/preview`)} name={previewFile.name} />
                     ) : previewContents.some(content => content.cells?.length) ? (
                       <table><tbody>{previewContents.map(content => <tr key={content.id}><th>{position(content.locator)}</th>{(content.cells || [content.text]).map((cell, index) => <td key={index}>{cell}</td>)}</tr>)}</tbody></table>
                     ) : (
@@ -315,10 +318,11 @@ export function IntakeRecord({
                                 <td data-label="当前值">
                                   {value((line as Record<string, unknown>)[key])}
                                   {line.fieldSources?.[key]?.method === 'manual' && <span className="badge badge-blue">人工修改</span>}
-                                  {line.fieldSources?.[key]?.sources?.filter((source,index,all)=>source.contentId!==line.contentId&&all.findIndex(other=>other.contentId===source.contentId&&other.value===source.value)===index).map((source,index)=>{
+                                  {line.fieldSources?.[key]?.confirmation&&<small>已确认 · {line.fieldSources[key].confirmation.reason}</small>}
+                                  {[...(line.fieldSources?.[key]?.sources||[]),...(line.fieldSources?.[key]?.rejectedSources||[]),...(line.fieldSources?.[key]?.previousSources||[])].filter((source,index,all)=>source.contentId!==line.contentId&&all.findIndex(other=>other.contentId===source.contentId&&other.value===source.value)===index).map((source,index)=>{
                                     const origin=record?.contents.find(content=>content.id===source.contentId);
                                     const originFile=record?.files.find(file=>file.id===origin?.file_id);
-                                    const reference:ChatReference={id:`content:${source.contentId}:${line.version||1}`,label:`${label} · ${originFile?.name||'材料'}`,excerpt:origin?.text||source.value||'要求原文',inquiryId:batchId,lineId:line.id,contentId:source.contentId||undefined,version:line.version};
+                                    const reference:ChatReference={id:`content:${source.contentId}:${line.version||1}`,label:`${label} · ${originFile?.name||'材料'}`,excerpt:origin?.text||String(source.value||'要求原文'),inquiryId:batchId,lineId:line.id,contentId:source.contentId||undefined,version:line.version};
                                     return <small className="reference-source" draggable onDragStart={event=>dragReference(event,reference)} key={index}>{originFile?.name} · {position(origin?.locator)} · {source.value}</small>;
                                   })}
                                 </td>

@@ -273,8 +273,7 @@ export function SupplierImportDialog({
                   setError("");
                 }}
               >
-                {item.fileName || "报价文件"} · {states[item.status]} ·{" "}
-                {item.rows.length} 行
+                <span className="supplier-import-file-name">{item.fileName || "报价文件"}</span><span>{states[item.status]} · {item.rows.length} 行</span>
               </button>
             ))}
           </nav>
@@ -319,7 +318,7 @@ export function SupplierImportDialog({
         ) : null}
         {current && current.rows.length > 0 && (
           <>
-            <div className="supplier-import-table">
+            {current.rows.length > 1 && <div className="supplier-import-table">
               <table>
                 <thead>
                   <tr>
@@ -366,7 +365,7 @@ export function SupplierImportDialog({
                   ))}
                 </tbody>
               </table>
-            </div>
+            </div>}
             {selected && (
               <section
                 aria-label="核对报价字段"

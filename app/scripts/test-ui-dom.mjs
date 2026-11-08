@@ -109,4 +109,10 @@ assert.equal(host.querySelectorAll('.chat-reference-drafts .chat-reference').len
 globalThis.fetch=successfulFetch;
 await act(async()=>root.unmount());
 console.log('PASS: reference click/text-drop, draft restore/remove, reference-only send, persisted message and failed-send retry');
-await window.happyDOM.close();console.log('PASS: real DOM/CSS expanded input, arrow/Enter send, hidden overlays, settings categories/draft/save, mobile layout, modal-open lock selector, table scroll/action column, stream follow, reading-history preservation and hidden-chat scroll isolation, real composer IME/Enter/stream/Markdown/persistence integration');
+console.log('PASS: real DOM/CSS expanded input, arrow/Enter send, hidden overlays, settings categories/draft/save, mobile layout, modal-open lock selector, table scroll/action column, stream follow, reading-history preservation and hidden-chat scroll isolation, real composer IME/Enter/stream/Markdown/persistence integration');
+
+root=createRoot(host);let exited=false;await mount(React.createElement(AccountMenu,{name:'QA',onProfile(){},onBusiness(){},onModels(){},onExit(){exited=true;}}));await click(host.querySelector('.avatar'));const exitItem=[...host.querySelectorAll('[role=menuitem]')].find(node=>node.textContent==='退出工作台');assert.ok(exitItem);await click(exitItem);assert.equal(exited,true);assert.equal(host.querySelector('[role=menu]'),null);await act(async()=>root.unmount());
+root=createRoot(host);await mount(React.createElement(FloatingAssistant,{open:false,expanded:true,onOpen(){},onCollapse(){}},React.createElement('div',null,'对话')));const fullPanel=host.querySelector('.floating-assistant-panel');assert.equal(fullPanel.style.transition,'none');assert.equal(fullPanel.style.transform,'none');assert.equal(fullPanel.style.position,'static');await act(async()=>root.unmount());
+console.log('PASS: account exit and full-page chat geometry overrides');
+
+await window.happyDOM.close();

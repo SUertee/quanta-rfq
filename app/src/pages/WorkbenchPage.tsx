@@ -1,3 +1,5 @@
+import {ExtractionReview} from '../components/ExtractionReview';
+import {fieldConflictIssues,FIELD_REVIEW_LABELS} from '../../shared/field-review.mjs';
 import {useQuoteSignature} from '../engine/useQuoteSignature';
 import {QuoteSignature,SignaturePreview} from '../components/QuoteSignature';
 import {citeReference,dragReference,type ChatReference} from '../engine/chatReferences';
@@ -94,6 +96,7 @@ export function WorkbenchPage({
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
   const [dismissedStageTip,setDismissedStageTip]=useState<number|null>(null);
   const {stage, flowRef, goToStage} = useStageNavigation(taskKey);
+  const [extractionReviewOpen,setExtractionReviewOpen]=useState(false);
   const [intakeRecord,setIntakeRecord]=useState<IntakeBatch|null>(null);
   const [exported,setExported]=useState(false);
   const exportedBasis=useRef<string|null>(null);
@@ -488,7 +491,8 @@ export function WorkbenchPage({
 
       </section>
       <section className="workflow-section" data-current={stage===2} id="inquiry-stage-2" tabIndex={-1} data-inquiry-stage="2" aria-labelledby="inquiry-stage-title-2">
-        <header className="workflow-section-heading"><h2 id="inquiry-stage-title-2">{stageItems[1].label}</h2></header>
+        <header className="workflow-section-heading"><h2 id="inquiry-stage-title-2">{stageItems[1].label}</h2>{intakeRecord&&intakeRecord.lines.some(line=>Object.keys(FIELD_REVIEW_LABELS).some(field=>fieldConflictIssues(line,field).length))&&<button className="btn" disabled={persistencePending} onClick={()=>setExtractionReviewOpen(true)}>核对提取冲突</button>}</header>
+      {extractionReviewOpen&&intakeRecord&&<ExtractionReview batch={intakeRecord} operator={currentUserId||'本机用户'} onClose={()=>setExtractionReviewOpen(false)} onSaved={batch=>{setIntakeRecord(batch);setExtractionReviewOpen(false);onDataRefresh?.();}}/>}
       {intakeRecord?.issues.length? <div className="stage-input-issues">{intakeRecord.issues.map((issue,i)=><button key={i} onClick={()=>goToStage(1)}>{issue} ↗</button>)}</div>:null}
       <div className="panel inquiry-materials-panel" id="rfq-materials" role="region" aria-label="物料核对">
         <div className="panel-title">物料明细

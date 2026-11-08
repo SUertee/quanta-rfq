@@ -1,3 +1,4 @@
+import {fieldConflictIssues} from '../shared/field-review.mjs';
 import {readOcr} from './ocr-reader.mjs';
 import { normalizeLine, normalizePartNumber, DOCUMENT_TYPES, NORMALIZATION_VERSION } from "./normalization.mjs";
 import { evaluateResource } from "./resource-match.mjs";
@@ -692,7 +693,7 @@ export function createIntakeService(
   function updateLine(
     batchId,
     lineId,
-    { version, patch, operator = "本机用户" },
+    { version, patch, operator = "本机用户", confirmFields = [], confirmationReason = "" },
   ) {
     const old = one("SELECT * FROM inquiry_line WHERE id=? AND inquiry_id=?", [
       lineId,
@@ -718,6 +719,7 @@ export function createIntakeService(
         "priority",
         "manualPn",
         "productScope",
+        "rfqId",
       ];
     if (
       !patch ||
@@ -735,12 +737,24 @@ export function createIntakeService(
       } else if (v !== null && (typeof v !== "string" || v.length > 4000))
         throw Object.assign(new Error("字段类型无效"), { status: 400 });
     }
+    if(!Array.isArray(confirmFields)||confirmFields.length>allowed.length||new Set(confirmFields).size!==confirmFields.length||confirmFields.some(key=>!allowed.includes(key)||!fieldConflictIssues(fields,key).length))throw Object.assign(new Error('确认字段不存在待处理的提取冲突'),{status:400});
+    if(confirmFields.length&&(typeof confirmationReason!=='string'||!confirmationReason.trim()||confirmationReason.length>1000))throw Object.assign(new Error('请填写确认取值的依据'),{status:400});
     const effective=normalizeLine({...fields,...patch});
-    patch=Object.fromEntries(Object.entries(patch).filter(([key])=>String(effective[key] ?? '')!==String(fields[key] ?? '')));
-    if (!Object.keys(patch).length) return detail(batchId);
+    patch=Object.fromEntries(Object.entries(patch).filter(([key])=>String(effective[key] ?? '')!==String(fields[key] ?? '')).map(([key])=>[key,effective[key]]));
+    if (!Object.keys(patch).length&&!confirmFields.length) return detail(batchId);
+    const beforeFields=structuredClone(fields);
+    const reviewed=[...new Set([...Object.keys(patch),...confirmFields])];
+    const resolvedIssues=new Set(reviewed.flatMap(key=>fieldConflictIssues(fields,key)));
     Object.assign(fields,patch);
-    fields.issues = (fields.issues || []).filter(issue => !Object.keys(patch).some(key => issue === `共同要求与物料行的${extractionFieldLabel(key)}冲突，需核对原文` || issue === `语义提取与已识别的${extractionFieldLabel(key)}不一致，需核对原文` || issue === `共同要求的${extractionFieldLabel(key)}适用范围需确认`));
-    const normalized = normalizeLine({ ...fields, fieldSources: { ...fields.fieldSources, ...Object.fromEntries(Object.keys(patch).map(key => [key, { contentId: null, originalContentId: old.content_id, method: "manual", operator: String(operator).slice(0, 100), value: patch[key], previousSources:[...(fields.fieldSources?.[key]?.previousSources || []),...(fields.fieldSources?.[key]?.sources || []),...(fields.fieldSources?.[key]?.rejectedSources || [])] }])) } });
+    fields.issues=(fields.issues||[]).filter(issue=>!resolvedIssues.has(issue));
+    const fieldSources={...fields.fieldSources};
+    for(const key of reviewed){
+      const origin=beforeFields.fieldSources?.[key]||{};
+      const {previousSources=[],sources,rejectedSources=[],confirmation,...direct}=origin;
+      fieldSources[key]={contentId:null,originalContentId:old.content_id,method:'manual',operator:String(operator).slice(0,100),value:fields[key],previousSources:[...previousSources,...(sources||[{...direct,value:beforeFields[key]}]),...rejectedSources],
+        ...(confirmFields.includes(key)?{confirmation:{value:fields[key],reason:confirmationReason.trim(),operator:String(operator).slice(0,100),at:now(),version:old.version,issues:fieldConflictIssues(beforeFields,key)}}:{})};
+    }
+    const normalized=normalizeLine({...fields,fieldSources});
     Object.assign(fields, normalized);
     if ('partNumber' in patch) {
       for(const [key,origin] of Object.entries(fields.fieldSources || {})) {
@@ -750,10 +764,13 @@ export function createIntakeService(
     }
     const issues = [...fields.issues];
     fields.issues = issues;
+    const oldInquiry=one('SELECT status,issues,updated_at FROM inquiry WHERE id=?',[batchId]);
+    const oldEvidence=rows(db,'SELECT * FROM evidence WHERE line_id=?',[lineId]);
+    const revisionId=randomUUID();
     db.run("BEGIN");
     try {
       db.run("INSERT INTO line_revision VALUES(?,?,?,?,?,?)", [
-        randomUUID(),
+        revisionId,
         lineId,
         old.version,
         old.fields,
@@ -767,12 +784,20 @@ export function createIntakeService(
       matchEvidence(lineId, fields.partNumber);
       db.run("UPDATE inquiry SET updated_at=? WHERE id=?", [now(), batchId]);
       db.run("COMMIT");
+      updateStatus(batchId);
+      persist();
     } catch (e) {
-      db.run("ROLLBACK");
+      try{db.run("ROLLBACK");}catch{}
+      db.run('UPDATE inquiry_line SET fields=?,issues=?,method=?,version=?,part_number=? WHERE id=?',[old.fields,old.issues,old.method,old.version,old.part_number,lineId]);
+      db.run('DELETE FROM line_revision WHERE id=?',[revisionId]);
+      db.run('DELETE FROM evidence WHERE line_id=?',[lineId]);
+      for(const evidence of oldEvidence){
+        db.run('DELETE FROM evidence_history WHERE id=?',[evidence.id]);
+        db.run('INSERT INTO evidence VALUES(?,?,?,?,?,?)',[evidence.id,evidence.line_id,evidence.source,evidence.source_key,evidence.snapshot,evidence.matched_at]);
+      }
+      db.run('UPDATE inquiry SET status=?,issues=?,updated_at=? WHERE id=?',[oldInquiry.status,oldInquiry.issues,oldInquiry.updated_at,batchId]);
       throw e;
     }
-    updateStatus(batchId);
-    persist();
     return detail(batchId);
   }
   return {

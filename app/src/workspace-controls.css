@@ -1062,3 +1062,38 @@ tr:hover .material-reference-name>.reference-cite,.material-reference-name:focus
 .chat-supplier-files { margin:0;padding-left:20px;overflow-wrap:anywhere; }
 .chat-supplier-targets { display:grid;gap:8px;max-height:280px;overflow:auto; }
 .chat-supplier-targets .btn { text-align:left;justify-content:flex-start;white-space:normal;overflow-wrap:anywhere;min-height:44px; }
+
+.extraction-review-dialog[open] { display:flex;flex-direction:column;width:min(920px,calc(100vw - 32px));max-height:calc(100dvh - 32px);padding:0;overflow:hidden; }
+.extraction-review-body { display:grid;grid-template-columns:200px minmax(0,1fr);gap:24px;padding:24px;overflow:auto;min-height:0; }
+.extraction-review-body nav { display:flex;flex-direction:column;gap:8px;min-width:0; }
+.extraction-review-body nav .btn { text-align:left;white-space:normal;overflow-wrap:anywhere; }
+.extraction-review-body .btn[aria-pressed=true] { background:var(--ink);color:var(--panel); }
+.extraction-review-field { min-width:0;display:grid;gap:16px; }
+.extraction-review-field h3,.extraction-review-issues { margin:0; }
+.extraction-review-issues { padding-left:20px;color:var(--ink-2); }
+.extraction-review-choices { display:grid;gap:16px; }
+.extraction-review-choices section { min-width:0; }
+.extraction-review-choices p { margin:8px 0;color:var(--ink-2); }
+.extraction-review-choices pre { max-height:160px;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:0;padding:12px;background:var(--bg);border-radius:10px; }
+.extraction-review-field label { display:grid;gap:8px; }
+.extraction-review-field input,.extraction-review-field textarea { box-sizing:border-box;width:100%;min-width:0;min-height:46px;padding:10px 14px;border:1px solid var(--line);border-radius:var(--field-radius);background:var(--hal-head);color:var(--ink);font:inherit;line-height:1.5; }
+.extraction-review-field textarea { resize:vertical; }
+.extraction-review-field input:focus-visible,.extraction-review-field textarea:focus-visible { outline:2px solid var(--hal-accent);outline-offset:2px; }
+@media(max-width:640px) { .extraction-review-body { grid-template-columns:minmax(0,1fr);gap:16px;padding:16px; }.extraction-review-body nav { flex-direction:row;flex-wrap:wrap; } }
+.extraction-review-dialog > .app-dialog-head { flex-shrink:0;padding:20px 24px;border-bottom:1px solid var(--line); }
+@media(max-width:640px) { .extraction-review-dialog > .app-dialog-head { padding:16px; } }
+.pdf-preview { min-width:0;padding:12px;display:flex;align-items:center;flex-direction:column;gap:12px;background:var(--hal-head); }
+.pdf-preview-toolbar { display:flex;align-items:center;justify-content:center;gap:12px;flex-wrap:wrap; }
+.pdf-preview canvas { max-width:100%;height:auto;background:white;box-shadow:0 2px 12px rgba(11,29,58,.08); }
+.layout-reference.mode-agent .floating-assistant.expanded,.layout-reference.mode-agent .agent-mode-host,.layout-reference.mode-agent .copilot-body { transition:none;animation:none;transform:none; }
+.supplier-import-list { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;max-height:180px;overflow:auto; }
+.supplier-import-list .btn { display:flex;justify-content:space-between;gap:12px;min-width:0;padding:12px 16px;border-radius:var(--field-radius);text-align:left; }
+.supplier-import-file-name { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.supplier-import-list .btn>span:last-child { flex-shrink:0;font-size:14px; }
+@media(max-width:640px) { .supplier-import-list { grid-template-columns:minmax(0,1fr); } }
+.rfq-response-event { min-width:0;background:var(--panel);border:1px solid var(--line);border-radius:16px;overflow:hidden; }
+.layout-reference .rfq-chat-turn.assistant .rfq-response-event > .rfq-chat-text { border:0;border-radius:0;background:transparent; }
+.rfq-response-event > .execution-steps { margin:16px 18px 0; }
+.layout-reference .rfq-response-event > .copilot-results,.rfq-response-event > .rfq-chat-artifact { margin:0;border:0;border-top:1px solid var(--line);border-radius:0; }
+.layout-reference .quote-card-footer { align-items:center;flex-wrap:wrap; }
+.quote-stale-reason { margin-right:auto;font-size:14px;color:var(--ink-2); }

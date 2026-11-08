@@ -1,3 +1,4 @@
+import {FIELD_REVIEW_LABELS} from '../shared/field-review.mjs';
 import { normalizeLine, normalizeQuantity, normalizePartNumber, normalizeUnit } from "./normalization.mjs";
 import { z } from "zod";
 const aliases = {
@@ -16,7 +17,7 @@ const aliases = {
   manualPn: ["手册件号"],
   productScope: ["产品范围"],
 };
-export const extractionFieldLabel = key => aliases[key]?.[0] || key;
+export const extractionFieldLabel = key => FIELD_REVIEW_LABELS[key] || aliases[key]?.[0] || key;
 const fieldFor = (x) =>
   Object.entries(aliases).find(([k, values]) =>
     [k.toLowerCase(), ...values].includes(String(x).trim().toLowerCase()),
@@ -142,13 +143,20 @@ export function mergeSemanticLines(known, extracted) {
     for (const key of Object.keys(aliases)) {
       const value = row[key];
       if (value == null || value === '') continue;
+      const priorValue=line[key];
       if (key === 'requirement') {
         if (!String(line[key] || '').includes(value)) line[key] = [line[key],value].filter(Boolean).join('；');
       } else if (line[key] != null && line[key] !== '' && line[key] !== value) {
         line.issues.push(`语义提取与已识别的${extractionFieldLabel(key)}不一致，需核对原文`);
+        const previous=line.fieldSources[key]||{};
+        line.fieldSources[key]={...previous,rejectedSources:[...(previous.rejectedSources||[]),{...row.fieldSources[key],value,method:'semantic_conflict'}]};
         continue;
       } else line[key] = value;
-      line.fieldSources[key] = row.fieldSources[key];
+      const previous=line.fieldSources[key];
+      line.fieldSources[key] = previous ? {
+        ...previous,
+        sources:[...(previous.sources || [{contentId:previous.contentId,locator:previous.locator,method:previous.method,value:priorValue}]),{...row.fieldSources[key],value}],
+      } : row.fieldSources[key];
     }
   }
   return {lines:lines.map(line=>normalizeLine(line)),issues};
@@ -175,17 +183,21 @@ export function extractStructured(chunks) {
       continue;
     }
     if (mapping && cells) {
-      const row = {}, conflicts = [];
+      const row = {}, conflicts = [], rejected = {};
       mapping.forEach((k, i) => {
         if (!k) return;
         const value=cells[i] ?? null;
         if (k==='requirement' && row[k]) row[k]+='；'+(value || '');
-        else if (row[k] && value && row[k]!==value) conflicts.push(`多列${extractionFieldLabel(k)}不一致，需核对原文`);
+        else if (row[k] && value && row[k]!==value) {
+          conflicts.push(`多列${extractionFieldLabel(k)}不一致，需核对原文`);
+          (rejected[k]??=[]).push({contentId:c.id,locator:{...c.locator,column:i+1},value,method:'column_conflict'});
+        }
         else if (value || row[k]==null) row[k]=value;
       });
       if (Object.values(row).some((v) => String(v ?? "").trim())) {
         const line=normalize(row, c, "column_mapping");
         line.issues.push(...conflicts);
+        for(const [key,sources] of Object.entries(rejected))line.fieldSources[key]={...line.fieldSources[key],rejectedSources:sources};
         lines.push(line);
         if (conflicts.length || cells.some((cell,index)=>!mapping[index]&&String(cell || '').trim())) unresolved.push(c);
       }

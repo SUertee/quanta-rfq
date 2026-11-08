@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {spawn} from 'node:child_process';
-import {mkdtemp,rm} from 'node:fs/promises';
+import {mkdtemp,rm,readdir} from 'node:fs/promises';
 import {tmpdir} from 'node:os';import {join} from 'node:path';import net from 'node:net';
 const free=()=>new Promise(resolve=>{const server=net.createServer();server.listen(0,'127.0.0.1',()=>{const port=server.address().port;server.close(()=>resolve(port));});});
 const base=process.env.TEST_BASE_PATH||'/';
@@ -14,6 +14,7 @@ try{
 
  const page=await fetch(origin+base+'?workspace=1',{headers});assert.equal(page.status,200);const html=await page.text();assert.ok(html.includes('href="'+base+'images/brand/quanta-mark.svg"'),'favicon respects deployment base');
  for(const name of ['quanta-logo-light.svg','quanta-logo-dark.svg']){const logo=await fetch(origin+base+'images/brand/'+name);assert.equal(logo.status,200);assert.equal(logo.headers.get('content-type'),'image/svg+xml');assert.ok((await logo.text()).includes('<path'));}
+ const worker=(await readdir('dist/assets')).find(name=>name.startsWith('pdf.worker')&&name.endsWith('.mjs'));assert.ok(worker);const workerResponse=await fetch(origin+base+'assets/'+worker);assert.equal(workerResponse.status,200);assert.equal(workerResponse.headers.get('content-type'),'text/javascript; charset=utf-8');
  const asset=html.match(/src="([^"]+\.js)"/)[1];assert.ok(asset.startsWith(base+'assets/'));assert.equal((await fetch(origin+asset,{headers})).status,200);if(base!=='/'){assert.equal((await fetch(origin+'/api/agents',{headers})).status,404);const redirect=await fetch(origin+base.slice(0,-1)+'?workspace=1',{redirect:'manual'});assert.equal(redirect.status,308);assert.equal(redirect.headers.get('location'),base+'?workspace=1');}
  assert.equal((await fetch(origin+base+'api/agents',{headers})).status,200);
  assert.equal((await fetch(origin+base+'api/agents',{headers:{...headers,Origin:'https://untrusted.invalid'}})).status,403);
