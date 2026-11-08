@@ -201,6 +201,7 @@ function ModuleHarness({ run }) {
   const presentation = useWorkflowPresentation("qa", run, ref);
   useModuleReferenceDrag(ref, (stage) => ({
     id: "module-" + stage,
+    stage,
     label: "物料明细",
     excerpt: "AN3-5A 10 EA",
   }));
@@ -218,6 +219,7 @@ function ModuleHarness({ run }) {
         "section",
         { "data-inquiry-stage": "2" },
         React.createElement("h2", null, "提取需求"),
+        React.createElement("div", {draggable:true,"data-module-reference":""}, "拖动模块"),
         React.createElement("input"),
       ),
     ),
@@ -240,6 +242,15 @@ assert.equal(host.querySelector("[data-shown]").dataset.shown, "1");
 assert.equal(host.querySelector("[data-busy]").dataset.busy, "2");
 for (let i = 0; i < 3; i++) await act(async () => wait(155));
 assert.equal(host.querySelector("[data-shown]").dataset.shown, "3");
+const transfer=new window.DataTransfer();
+const nativeDrag=new window.DragEvent('dragstart',{bubbles:true});
+Object.defineProperty(nativeDrag,'dataTransfer',{value:transfer});
+await act(async()=>host.querySelector('[data-module-reference]').dispatchEvent(nativeDrag));
+assert.equal(JSON.parse(transfer.getData('application/x-quanta-reference')).stage,2);
+assert.ok(document.body.classList.contains('module-reference-dragging'));
+await act(async()=>window.dispatchEvent(new window.DragEvent('dragend',{bubbles:true})));
+assert.equal(document.body.classList.contains('module-reference-dragging'),false);
+assert.equal(host.querySelector('[data-reference-holding]'),null);
 const target = host.querySelector(".rfq-chat-composer");
 document.elementFromPoint = () => target;
 const pointer = (type, x, y) =>
@@ -261,6 +272,7 @@ await act(async () => {
   window.dispatchEvent(pointer("pointerup", 400, 500));
 });
 assert.equal(cited.label, "物料明细");
+assert.equal(document.body.classList.contains("module-reference-dragging"),false);
 assert.equal(document.querySelector(".module-reference-ghost"), null);
 cited = null;
 await act(async () => {

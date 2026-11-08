@@ -1,5 +1,5 @@
 import { useEffect, useRef, type RefObject } from "react";
-import { citeReference, type ChatReference } from "./chatReferences";
+import { citeReference, dragReference, type ChatReference } from "./chatReferences";
 
 /** Long press a non-interactive part of a workflow module, then drop it into chat. */
 export function useModuleReferenceDrag(
@@ -21,8 +21,11 @@ export function useModuleReferenceDrag(
     } | null = null;
     let timer: ReturnType<typeof setTimeout> | undefined;
     let preview: HTMLDivElement | null = null;
+    let nativeSection:HTMLElement|null=null;
     const reset = () => {
       clearTimeout(timer);
+      document.body.classList.remove('module-reference-dragging');
+      nativeSection?.removeAttribute('data-reference-holding');nativeSection=null;
       preview?.remove();
       preview = null;
       gesture?.section.removeAttribute("data-reference-holding");
@@ -37,9 +40,11 @@ export function useModuleReferenceDrag(
       if (
         event.button !== 0 ||
         !(event.target instanceof Element) ||
-        event.target.closest('button,input,textarea,select,a,label,summary,[contenteditable],[role=button],[tabindex]:not([tabindex="-1"]),[draggable=true]')
+        event.target.closest('button,input,textarea,select,a,label,summary,[contenteditable],[role=button],[tabindex]:not([tabindex="-1"])')
       )
         return;
+      const draggable=event.target.closest('[draggable=true]');
+      if(draggable&&(!draggable.hasAttribute('data-module-reference')||event.pointerType!=='touch'))return;
       const section = event.target.closest<HTMLElement>("[data-inquiry-stage]");
       if (!section) return;
       reset();
@@ -101,6 +106,18 @@ export function useModuleReferenceDrag(
       }
       reset();
     };
+    const nativeStart=(event:DragEvent)=>{
+      if(!(event.target instanceof Element)||!event.dataTransfer)return;
+      const handle=event.target.closest<HTMLElement>('[data-module-reference]');
+      const section=handle?.closest<HTMLElement>('[data-inquiry-stage]');
+      if(!section)return;
+      reset();
+      dragReference(event,latest.current(Number(section.dataset.inquiryStage)));
+      nativeSection=section;
+      section.setAttribute('data-reference-holding','true');
+      document.body.classList.add('module-reference-dragging');
+    };
+    const cancel=()=>{if(!nativeSection)reset();};
     const escape = (event: KeyboardEvent) => {
       if (event.key === "Escape") reset();
       if (
@@ -118,16 +135,20 @@ export function useModuleReferenceDrag(
       }
     };
     node.addEventListener("pointerdown", down);
+    node.addEventListener("dragstart",nativeStart);
+    window.addEventListener("dragend",reset);
     window.addEventListener("pointermove", move, { passive: false });
     window.addEventListener("pointerup", up);
-    window.addEventListener("pointercancel", reset);
+    window.addEventListener("pointercancel", cancel);
     window.addEventListener("keydown", escape);
     return () => {
       reset();
       node.removeEventListener("pointerdown", down);
+      node.removeEventListener("dragstart",nativeStart);
+      window.removeEventListener("dragend",reset);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
-      window.removeEventListener("pointercancel", reset);
+      window.removeEventListener("pointercancel", cancel);
       window.removeEventListener("keydown", escape);
     };
   }, [root]);

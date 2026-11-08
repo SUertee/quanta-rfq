@@ -1,4 +1,3 @@
-import type { DragEvent } from 'react';
 
 export const REFERENCE_MIME = 'application/x-quanta-reference';
 export type ChatReference = {
@@ -30,7 +29,8 @@ export function readReference(value: unknown): ChatReference | null {
   return reference;
 }
 
-export function dragReference(event: DragEvent, reference: ChatReference) {
+export function dragReference(event: {dataTransfer:DataTransfer|null}, reference: ChatReference) {
+  if(!event.dataTransfer)return;
   event.dataTransfer.setData(REFERENCE_MIME, JSON.stringify(reference));
   event.dataTransfer.setData('text/plain', reference.excerpt);
   event.dataTransfer.effectAllowed='copy';

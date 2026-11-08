@@ -1137,3 +1137,8 @@ tr:hover .material-reference-name>.reference-cite,.material-reference-name:focus
 .module-reference-dragging,.module-reference-dragging * { user-select:none!important;cursor:grabbing!important; }
 .workflow-section-heading { touch-action:none; }
 .intake-recovery-actions { display:flex;justify-content:flex-end;gap:12px;margin-bottom:12px; }
+
+.workflow-section-heading h2[data-module-reference] { cursor:grab;user-select:none; }
+.workflow-section-heading h2[data-module-reference]::after { content:"";display:inline-block;vertical-align:middle;width:14px;height:20px;margin-left:12px;opacity:.35;background:radial-gradient(circle,currentColor 1.3px,transparent 1.5px) 0 0 / 6px 6px; }
+.workflow-section-heading h2[data-module-reference]:hover::after { opacity:.8; }
+.rfq-chat[data-reference-drop] .rfq-chat-composer,.platform-chat[data-reference-drop] .platform-chat-form { outline:2px solid var(--hal-accent);outline-offset:3px; }
