@@ -23,11 +23,28 @@ export interface SupplierImport {
   status: string;
   version: number;
   issues: string[];
+  sources?: {
+    id: string;
+    locator: Record<string, unknown>;
+    text: string;
+    truncated: boolean;
+  }[];
   rows: {
     id: string;
     contentId: string;
     locator: Record<string, unknown>;
     rawFields: Record<string, string>;
+    rowExcerpt?: string;
+    fieldSources?: Record<
+      string,
+      {
+        value: string;
+        excerpt: string;
+        contentId: string;
+        locator: Record<string, unknown>;
+        method: string;
+      }
+    >;
     values: SupplierValues;
   }[];
 }
@@ -43,7 +60,10 @@ export async function supplierRequest(path: string, body?: unknown) {
       : undefined,
   );
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || "供应商报价处理失败");
+  if (!response.ok)
+    throw Object.assign(new Error(data.error || "供应商报价处理失败"), {
+      status: response.status,
+    });
   return data;
 }
 export async function uploadSupplier(

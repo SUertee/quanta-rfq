@@ -6,6 +6,7 @@ import {
   type SupplierImport,
   type SupplierValues,
 } from "../engine/supplierImport";
+import { appUrl } from "../engine/appUrl";
 const fields: {
   key: Exclude<keyof SupplierValues, "authorized" | "taxBasis">;
   label: string;
@@ -48,6 +49,12 @@ export function SupplierImportDialog({
     [busy, setBusy] = useState(false);
   const upload = useRef<HTMLInputElement>(null),
     pending = useRef<{ file: File; requestId: string } | null>(null);
+  const pendingRetry = useRef<{
+    id: string;
+    version: number;
+    requestId: string;
+    operator: string;
+  } | null>(null);
   const live = useRef(true);
   useEffect(() => {
     live.current = true;
@@ -125,6 +132,45 @@ export function SupplierImportDialog({
           }
         : old,
     );
+  const retryExtraction = async () => {
+    if (!current || busy) return;
+    const retry =
+      pendingRetry.current?.id === current.id
+        ? pendingRetry.current
+        : {
+            id: current.id,
+            version: current.version,
+            requestId: crypto.randomUUID(),
+            operator,
+          };
+    pendingRetry.current = retry;
+    setBusy(true);
+    setError("");
+    try {
+      const { id, ...body } = retry;
+      const result = await supplierRequest(
+        `/api/inquiries/${inquiryId}/supplier-imports/${id}/retry`,
+        body,
+      );
+      if (live.current) {
+        receive(result);
+        pendingRetry.current = null;
+      }
+    } catch (error) {
+      if (
+        error &&
+        typeof error === "object" &&
+        "status" in error &&
+        Number(error.status) >= 400 &&
+        Number(error.status) < 500
+      )
+        pendingRetry.current = null;
+      if (live.current)
+        setError(error instanceof Error ? error.message : "重新提取失败");
+    } finally {
+      if (live.current) setBusy(false);
+    }
+  };
   const confirm = async () => {
     if (!current || busy) return;
     setBusy(true);
@@ -203,12 +249,43 @@ export function SupplierImportDialog({
             ))}
           </nav>
         )}
+        {current && (
+          <div className="supplier-import-actions">
+            <a
+              className="btn"
+              href={appUrl(`/api/files/${current.fileId}/raw`)}
+              download
+            >
+              下载原件
+            </a>
+            {current.status !== "confirmed" && (
+              <button
+                className="btn"
+                disabled={busy || current.status === "processing"}
+                onClick={() => void retryExtraction()}
+              >
+                重新提取
+              </button>
+            )}
+          </div>
+        )}
         {current?.issues.length ? (
           <ul className="supplier-import-issues">
             {current.issues.map((issue) => (
               <li key={issue}>{issue}</li>
             ))}
           </ul>
+        ) : null}
+        {current && !current.rows.length && current.sources?.length ? (
+          <section className="supplier-original" aria-label="报价原文">
+            <h3>报价原文</h3>
+            {current.sources.map((source) => (
+              <pre key={source.id}>
+                {source.text}
+                {source.truncated ? "\n（预览已截取，请下载原件）" : ""}
+              </pre>
+            ))}
+          </section>
         ) : null}
         {current && current.rows.length > 0 && (
           <>
@@ -235,8 +312,17 @@ export function SupplierImportDialog({
                       <td>{row.values.unitPrice ?? "待补充"}</td>
                       <td>{row.values.currency || "待补充"}</td>
                       <td>
-                        {String(row.locator.sheet || "")} · 第{" "}
-                        {String(row.locator.row || row.locator.page || "?")} 行
+                        {row.locator.sheet
+                          ? `${String(row.locator.sheet)} · `
+                          : ""}
+                        第{" "}
+                        {String(
+                          row.locator.page ||
+                            row.locator.row ||
+                            row.locator.line ||
+                            "?",
+                        )}{" "}
+                        {row.locator.page ? "页" : "行"}
                       </td>
                       <td>
                         <button
@@ -257,9 +343,21 @@ export function SupplierImportDialog({
                 className="supplier-import-fields"
               >
                 <h3>{selected.values.partNumber || "报价字段"}</h3>
+                {selected.rowExcerpt && (
+                  <section
+                    className="supplier-original"
+                    aria-label="报价行原文"
+                  >
+                    <h4>报价原文</h4>
+                    <pre>{selected.rowExcerpt}</pre>
+                  </section>
+                )}
                 <div className="supplier-field-grid">
                   {fields.map((field) => (
-                    <label key={field.key}>
+                    <label
+                      key={field.key}
+                      title={selected.fieldSources?.[field.key]?.excerpt}
+                    >
                       <span>{field.label}</span>
                       <input
                         aria-label={field.label}

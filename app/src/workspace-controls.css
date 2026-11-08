@@ -1047,3 +1047,7 @@ tr:hover .material-reference-name>.reference-cite,.material-reference-name:focus
 .intake-evidence-toolbar { flex-wrap:wrap; }
 .intake-evidence-toolbar>span { flex:1 1 200px; }
 .intake-evidence-actions { display:flex;gap:12px;flex-wrap:wrap;max-width:100%; }
+
+.supplier-original { margin:16px 0; }
+.supplier-original h4 { margin:0 0 8px;font:inherit;font-weight:600; }
+.supplier-original pre { white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;max-height:220px;margin:0;padding:16px;border:1px solid var(--line);border-radius:var(--field-radius);background:var(--hal-head);color:var(--ink);font:inherit;line-height:1.7; }

@@ -1,3 +1,4 @@
+import {readOcr} from './ocr-reader.mjs';
 import { normalizeLine, normalizePartNumber, DOCUMENT_TYPES, NORMALIZATION_VERSION } from "./normalization.mjs";
 import { evaluateResource } from "./resource-match.mjs";
 import { randomUUID, createHash } from "node:crypto";
@@ -303,35 +304,7 @@ export function createIntakeService(
       id,
     ]);
   }
-  async function ocr(bytes,name="document.pdf",mime="application/pdf") {
-    if (!ocrConfig?.baseURL) return null;
-    const form = new FormData();
-    form.append(
-      "file",
-      new Blob([bytes], { type: mime }),
-      name,
-    );
-    form.append("api_key", ocrConfig.apiKey || "");
-    form.append("output_formats", "json");
-    const r = await fetch(
-      ocrConfig.baseURL.replace(/\/$/, "") + "/parse/sync",
-      { method: "POST", body: form, signal: AbortSignal.timeout(90000) },
-    );
-    if (!r.ok) throw new Error(`OCR服务失败（HTTP ${r.status}）`);
-    const j = await r.json();
-    const pages = j.data?.result?.outputs?.json?.pages;
-    if (!Array.isArray(pages)) throw new Error("OCR响应缺少页面内容");
-    return pages.map((p, i) => ({
-      locator: { page: i + 1, engine: "ocr" },
-      format: "text",
-      text: (p.blocks || [])
-        .map((b) => b.content || "")
-        .join("\n")
-        .replace(/<\/tr>/gi, "\n")
-        .replace(/<\/(td|th)>/gi, "\t")
-        .replace(/<[^>]*>/g, ""),
-    }));
-  }
+  const ocr=(bytes,name,mime)=>readOcr(bytes,name,mime,ocrConfig);
   async function create(input) {
     const source = input.source || "manual_upload";
     if (!["manual_upload", "paste", "chat"].includes(source))

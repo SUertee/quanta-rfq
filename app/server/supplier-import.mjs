@@ -1,3 +1,5 @@
+import { readOcr } from "./ocr-reader.mjs";
+import { extractSupplierSemantic } from "./supplier-extract.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
 import { decodeFile, INTAKE_PARSER_VERSION } from "./intake-parser.mjs";
@@ -146,7 +148,17 @@ export function extractSupplierRows(chunks) {
   return { rows: output.slice(0, 150), issues: [...new Set(issues)] };
 }
 
-export function createSupplierImportStore(db, persist, getInquiry) {
+export function createSupplierImportStore(
+  db,
+  persist,
+  getInquiry,
+  {
+    modelConfig,
+    ocrConfig,
+    semantic = extractSupplierSemantic,
+    ocr = readOcr,
+  } = {},
+) {
   db.run(
     `CREATE TABLE IF NOT EXISTS resource_import(id TEXT PRIMARY KEY,inquiry_id TEXT NOT NULL REFERENCES inquiry(id),file_id TEXT NOT NULL REFERENCES file(id),request_id TEXT NOT NULL UNIQUE,payload_hash TEXT NOT NULL,status TEXT NOT NULL,version INTEGER NOT NULL,data TEXT NOT NULL,confirm_hash TEXT,operator TEXT NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL);`,
   );
@@ -156,10 +168,20 @@ export function createSupplierImportStore(db, persist, getInquiry) {
   db.run(
     "UPDATE file SET status='failed',error='供应商报价处理因重启中断' WHERE id IN (SELECT file_id FROM resource_import WHERE status='processing')",
   );
-  db.run(
-    "UPDATE resource_import SET status='failed',data=? WHERE status='processing'",
-    [JSON.stringify({ rows: [], issues: ["处理因服务重启中断，请重新导入"] })],
-  );
+  for (const interrupted of rows(
+    db,
+    "SELECT id,data FROM resource_import WHERE status='processing'",
+  )) {
+    const data = JSON.parse(interrupted.data);
+    db.run("UPDATE resource_import SET status='failed',data=? WHERE id=?", [
+      JSON.stringify({
+        ...data,
+        rows: [],
+        issues: ["处理因服务重启中断，请重新提取"],
+      }),
+      interrupted.id,
+    ]);
+  }
   const record = (id) =>
     rows(db, "SELECT * FROM resource_import WHERE id=?", [id])[0];
   const view = (row) =>
@@ -174,6 +196,16 @@ export function createSupplierImportStore(db, persist, getInquiry) {
           status: row.status,
           version: row.version,
           ...JSON.parse(row.data),
+          sources: rows(
+            db,
+            "SELECT id,locator,text FROM file_content WHERE file_id=? ORDER BY ordinal",
+            [row.file_id],
+          ).map((source) => ({
+            ...source,
+            locator: JSON.parse(source.locator),
+            truncated: source.text.length > 10000,
+            text: source.text.slice(0, 10000),
+          })),
         }
       : null;
   function read(inquiryId, id) {
@@ -276,44 +308,78 @@ export function createSupplierImportStore(db, persist, getInquiry) {
         time,
       ]);
     });
+    return processFile(inquiryId, id);
+  }
+  async function processFile(inquiryId, id) {
+    const item = record(id),
+      file = rows(db, "SELECT name,mime_type,raw FROM file WHERE id=?", [
+        item.file_id,
+      ])[0];
+    const metadata = JSON.parse(item.data).lastRetry
+      ? { lastRetry: JSON.parse(item.data).lastRetry }
+      : {};
     try {
-      const decoded = await decodeFile(body.name, bytes);
-      const chunks = decoded.chunks.map((chunk, ordinal) => ({
+      const decoded = await decodeFile(file.name, Buffer.from(file.raw)),
+        readIssues = [];
+      let chunks = decoded.chunks,
+        needsOcr = !!decoded.needsOcr;
+      if (needsOcr) {
+        try {
+          const recognized = await ocr(
+            Buffer.from(file.raw),
+            file.name,
+            file.mime_type,
+            ocrConfig,
+          );
+          const pages = new Map(
+            recognized?.map((chunk) => [chunk.locator.page, chunk]) || [],
+          );
+          chunks = chunks.map((chunk) =>
+            chunk.text.trim() ? chunk : pages.get(chunk.locator.page) || chunk,
+          );
+          needsOcr = chunks.some((chunk) => !chunk.text.trim());
+        } catch {
+          readIssues.push("OCR读取失败，原件已保留，可重新提取");
+        }
+        if (needsOcr)
+          readIssues.push("扫描件或图片尚未完整读取，请配置 OCR 后重新提取");
+      }
+      if (decoded.kind === "text" && chunks.length) {
+        chunks = [
+          {
+            locator: { line: 1, lineEnd: chunks.length },
+            text: chunks.map((chunk) => chunk.text).join("\n"),
+            format: "text",
+          },
+        ];
+      }
+      chunks = chunks.map((chunk, ordinal) => ({
         ...chunk,
         id: randomUUID(),
         ordinal,
       }));
-      const extracted = extractSupplierRows(chunks);
-      if (decoded.children?.length)
-        extracted.issues.push("邮件附件需分别导入，当前仅预览正文");
-      if (decoded.needsOcr)
-        extracted.issues.push("扫描件或图片待 OCR 读取，请补充可读取表格");
-      if (decoded.unsupported)
-        extracted.issues.push("暂不支持此文件格式，请补充 Excel 或 CSV");
+      // Persist readable source before calling the model, so a failed extraction retains its text.
       db.run("BEGIN");
       try {
+        db.run("DELETE FROM file_content WHERE file_id=?", [item.file_id]);
         for (const chunk of chunks)
           db.run("INSERT INTO file_content VALUES(?,?,?,?,?,?,?)", [
             chunk.id,
-            fileId,
+            item.file_id,
             chunk.ordinal,
             JSON.stringify(chunk.locator),
             chunk.format,
             chunk.text,
             chunk.cells ? JSON.stringify(chunk.cells) : null,
           ]);
-        db.run("UPDATE file SET status=? WHERE id=?", [
-          decoded.needsOcr
+        db.run("UPDATE file SET status=?,error=NULL WHERE id=?", [
+          needsOcr
             ? "needs_ocr"
             : decoded.unsupported
               ? "unsupported"
               : "parsed",
-          fileId,
+          item.file_id,
         ]);
-        db.run(
-          "UPDATE resource_import SET status='needs_review',version=2,data=?,updated_at=? WHERE id=?",
-          [JSON.stringify(extracted), new Date().toISOString(), id],
-        );
         db.run("COMMIT");
         persist();
       } catch (error) {
@@ -322,21 +388,122 @@ export function createSupplierImportStore(db, persist, getInquiry) {
         } catch {}
         throw error;
       }
+      let extracted;
+      if (decoded.kind === "spreadsheet")
+        extracted = extractSupplierRows(chunks);
+      else {
+        try {
+          extracted = await semantic(chunks, modelConfig);
+        } catch {
+          extracted = {
+            rows: [],
+            issues: ["报价字段提取失败，原文已保留，可重新提取"],
+          };
+        }
+      }
+      if (decoded.children?.length)
+        readIssues.push("邮件附件需分别导入，当前保留邮件原件并读取正文");
+      if (decoded.unsupported)
+        readIssues.push("暂不支持此文件格式，请补充可读取文件");
+      extracted.issues = [...new Set([...extracted.issues, ...readIssues])];
+      db.run(
+        "UPDATE resource_import SET status='needs_review',version=version+1,data=?,updated_at=? WHERE id=?",
+        [
+          JSON.stringify({ ...extracted, ...metadata }),
+          new Date().toISOString(),
+          id,
+        ],
+      );
+      persist();
     } catch (error) {
-      db.run("UPDATE resource_import SET status='failed',data=? WHERE id=?", [
-        JSON.stringify({
-          rows: [],
-          issues: ["报价读取失败，请核对格式后重新导入"],
-        }),
-        id,
-      ]);
+      db.run(
+        "UPDATE resource_import SET status='failed',version=version+1,data=? WHERE id=?",
+        [
+          JSON.stringify({
+            rows: [],
+            issues: ["报价读取失败，请核对格式后重新提取"],
+            ...metadata,
+          }),
+          id,
+        ],
+      );
       db.run("UPDATE file SET status='failed',error=? WHERE id=?", [
         "供应商报价读取失败",
-        fileId,
+        item.file_id,
       ]);
       persist();
     }
     return read(inquiryId, id);
+  }
+  async function retry(inquiryId, id, input) {
+    const item = record(id);
+    if (!item || item.inquiry_id !== inquiryId) fail(404, "报价导入记录不存在");
+    const parsed = z
+      .object({
+        version: z.number().int().positive(),
+        requestId: z.string().uuid(),
+        operator: z.string().trim().min(1).max(100),
+      })
+      .strict()
+      .safeParse(input);
+    if (!parsed.success) fail(400, "重新提取请求无效");
+    const body = parsed.data,
+      requestHash = digest(canonicalJson(body)),
+      data = JSON.parse(item.data);
+    if (data.lastRetry?.requestId === body.requestId) {
+      if (data.lastRetry.requestHash !== requestHash)
+        fail(409, "重试请求内容已变化");
+      return read(inquiryId, id);
+    }
+    if (
+      item.status === "confirmed" ||
+      item.status === "processing" ||
+      item.version !== body.version
+    )
+      fail(409, "导入版本已变化或正在处理，请重新打开");
+    const lastRetry = { requestId: body.requestId, requestHash };
+    const originalFile = rows(db, "SELECT status,error FROM file WHERE id=?", [
+      item.file_id,
+    ])[0];
+    db.run("BEGIN");
+    try {
+      db.run(
+        "UPDATE resource_import SET status='processing',version=version+1,data=?,operator=?,updated_at=? WHERE id=?",
+        [
+          JSON.stringify({ rows: [], issues: [], lastRetry }),
+          body.operator,
+          new Date().toISOString(),
+          id,
+        ],
+      );
+      db.run("UPDATE file SET status='processing',error=NULL WHERE id=?", [
+        item.file_id,
+      ]);
+      db.run("COMMIT");
+      persist();
+    } catch (error) {
+      try {
+        db.run("ROLLBACK");
+      } catch {}
+      db.run(
+        "UPDATE resource_import SET status=?,version=?,data=?,operator=?,updated_at=? WHERE id=?",
+        [
+          item.status,
+          item.version,
+          item.data,
+          item.operator,
+          item.updated_at,
+          id,
+        ],
+      );
+      db.run("UPDATE file SET status=?,error=? WHERE id=?", [
+        originalFile.status,
+        originalFile.error,
+        item.file_id,
+      ]);
+      throw error;
+    }
+    return processFile(inquiryId, id);
   }
   function confirm(inquiryId, id, input) {
     const item = record(id);
@@ -405,6 +572,8 @@ export function createSupplierImportStore(db, persist, getInquiry) {
             fileName: file.name,
             locator: origin.locator,
             rawFields: origin.rawFields,
+            fieldSources: origin.fieldSources,
+            rowExcerpt: origin.rowExcerpt,
             operator: body.operator,
             confirmedAt: time,
           },
@@ -463,5 +632,5 @@ export function createSupplierImportStore(db, persist, getInquiry) {
     // Refresh is explicit in the workbench. Existing quotes keep their source fingerprint until the operator refreshes.
     return read(inquiryId, id);
   }
-  return { create, confirm, read, list };
+  return { create, confirm, retry, read, list };
 }

@@ -81,7 +81,7 @@ const quoteDrafts=createQuoteDraftStore(db,persist,id=>intake.detail(id),()=>{
   for(const [pn,uom,factor] of db.exec('SELECT pn,uom,factor FROM unit_conv')[0]?.values||[]){conversions[normalizePartNumber(pn)]??={};conversions[normalizePartNumber(pn)][normalizeUnit(uom)]=factor;}
   return conversions;
 });
-const supplierImports=createSupplierImportStore(db,persist,id=>intake.detail(id));
+const supplierImports=createSupplierImportStore(db,persist,id=>intake.detail(id),{modelConfig:runtime.model,ocrConfig:runtime.ocr});
 persist();
 
 // 首次启动：从演示成本表播种
@@ -179,12 +179,19 @@ http.createServer(async (req, res) => {
   if(url.pathname.startsWith('/api/intake/files'))url.pathname=url.pathname.replace('/api/intake/files','/api/files');
   const pnMatch = url.pathname.match(/^\/api\/inventory\/([^/]+)$/);
   try {
-    const supplierPath=url.pathname.match(/^\/api\/inquiries\/([^/]+)\/supplier-imports(?:\/([^/]+))?(\/confirm)?$/);
+    const supplierPath=url.pathname.match(/^\/api\/inquiries\/([^/]+)\/supplier-imports(?:\/([^/]+))?(\/(?:confirm|retry))?$/);
     if(supplierPath){
-      const [,inquiryId,importId,confirmPath]=supplierPath;
+      const [,inquiryId,importId,operation]=supplierPath;
       if(req.method==='GET'){res.end(JSON.stringify(importId?supplierImports.read(inquiryId,importId):{imports:supplierImports.list(inquiryId)}));return;}
       if(req.method==='POST'){
-        const result=confirmPath&&importId?supplierImports.confirm(inquiryId,importId,await readBody(req,1_000_000)):!importId?await supplierImports.create(inquiryId,await readBody(req,12_100_000)):null;
+        let result;
+        if(importId&&operation==='/retry') {
+          result=await supplierImports.retry(inquiryId,importId,await readBody(req,50000));
+        } else if(importId&&operation==='/confirm') {
+          result=supplierImports.confirm(inquiryId,importId,await readBody(req,1_000_000));
+        } else if(!importId) {
+          result=await supplierImports.create(inquiryId,await readBody(req,12_100_000));
+        }
         if(!result)throw Object.assign(new Error('无效报价导入操作'),{status:400});
         res.end(JSON.stringify(result));return;
       }
