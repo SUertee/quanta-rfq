@@ -22,6 +22,11 @@ try{
  assert.equal((await fetch(origin+base+'missing.js',{headers})).status,404);
  const upload=await fetch(origin+base+'api/inquiries',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:'production-preview-01',files:[{name:'preview.txt',mime:'text/html',base64:Buffer.from('件号: TEST 数量: 1 单位: EA 件状: FN <script>alert(1)</script>').toString('base64')}]})});
  assert.equal(upload.status,200);const material=await upload.json();assert.equal(material.files.length,1);
+ const recoveryUrl=origin+base+'api/inquiries/'+material.id+'/recovery';
+ const recoveryCheck=await (await fetch(recoveryUrl)).json();assert.equal(recoveryCheck.canRecover,false);
+ assert.equal((await fetch(origin+base+'api/inquiries/missing/recovery')).status,404);
+ assert.equal((await fetch(recoveryUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:'null'})).status,400);
+ assert.equal((await fetch(recoveryUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requestId:'qa-recovery-route',fingerprint:recoveryCheck.fingerprint,operator:'QA'})})).status,409);
  const reviewUrl=origin+base+'api/inquiries/'+material.id+'/extraction-review';
  const extractionReview=await fetch(reviewUrl);assert.equal(extractionReview.status,200);assert.equal(typeof (await extractionReview.json()).fingerprint,'string');
  assert.equal((await fetch(reviewUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:'null'})).status,400);

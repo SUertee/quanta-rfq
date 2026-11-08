@@ -4,7 +4,7 @@ import {SupplierImportDialog} from './SupplierImportDialog';
 import {evaluateQuoteLine,type RulePolicy} from '../../shared/rfq-rules.mjs';
 import {citeReference,dragReference,type ChatReference} from '../engine/chatReferences';
 import {appFetch as fetch,appUrl} from '../engine/appUrl';
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { IntakeBatch } from "../engine/intake";
 type Pane = "files" | "issues" | "evidence";
 type Evidence = {
@@ -61,6 +61,33 @@ export function IntakeRecord({
     [selected, setSelected] = useState("");
   const [supplierImportOpen,setSupplierImportOpen]=useState(false);
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
+  const [recovering,setRecovering]=useState(false);
+  const [readEpoch,setReadEpoch]=useState(0);
+  const recoveryRequest=useRef<{requestId:string;fingerprint:string;operator:string}|null>(null);
+  const recoveryController=useRef<AbortController|null>(null);
+  useEffect(()=>{recoveryRequest.current=null;setRecovering(false);setRecord(null);return()=>recoveryController.current?.abort();},[batchId]);
+  const recover=async()=>{
+    if(busy||recovering)return;
+    const controller=new AbortController();recoveryController.current=controller;
+    setRecovering(true);setError('');
+    try {
+      if(!recoveryRequest.current){
+        const response=await fetch(`/api/inquiries/${batchId}/recovery`,{signal:controller.signal});
+        const check=await response.json();
+        if(!response.ok||!check.canRecover)throw Error(check.reason||check.error||'无法恢复处理');
+        if(controller.signal.aborted)return;
+        recoveryRequest.current={requestId:crypto.randomUUID(),fingerprint:check.fingerprint,operator:operator||'本机用户'};
+      }
+      const response=await fetch(`/api/inquiries/${batchId}/recovery`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(recoveryRequest.current),signal:controller.signal});
+      let data=await response.json();
+      if(!response.ok){if(response.status>=400&&response.status<500)recoveryRequest.current=null;throw Error(data.error||'恢复处理失败');}
+      if(controller.signal.aborted)return;
+      setRecord(data);onLoaded?.(data);onEvidenceRefresh?.();
+      setReadEpoch(value=>value+1);
+      recoveryRequest.current=null;
+    } catch(error){if(!controller.signal.aborted)setError(error instanceof Error?error.message:String(error));}
+    finally{if(!controller.signal.aborted)setRecovering(false);}
+  };
   const pane = view === undefined ? localPane : view;
   const load = async (refresh = false) => {
     setError("");
@@ -84,8 +111,25 @@ export function IntakeRecord({
     }
   };
   useEffect(() => {
-    void load();
-  }, [batchId, revisionKey]);
+    const controller=new AbortController();
+    const poll=async()=>{
+      let wasProcessing=false;
+      try {
+        while(!controller.signal.aborted){
+          const response=await fetch(`/api/inquiries/${batchId}`,{signal:controller.signal});
+          if(!response.ok)throw Error('询价记录读取失败');
+          const data=await response.json();
+          if(controller.signal.aborted)return;
+          setRecord(data);onLoaded?.(data);setBusy(false);
+          if(data.status!=='processing'){if(wasProcessing)onEvidenceRefresh?.();return;}
+          wasProcessing=true;
+          await new Promise(resolve=>setTimeout(resolve,600));
+        }
+      } catch(error){if(!controller.signal.aborted){setError(String(error));setBusy(false);}}
+    };
+    setBusy(true);setError('');void poll();
+    return()=>controller.abort();
+  }, [batchId, revisionKey,readEpoch]);
   const previewFile = record?.files.find(file => file.id === previewFileId);
   const previewContents = record?.contents.filter(content => content.file_id === previewFileId) || [];
   const lines = record?.lines || [];
@@ -127,6 +171,7 @@ export function IntakeRecord({
       aria-label="询价处理结果"
       hidden={view === null}
     >
+      {pane==='files'&&record&&['failed','interrupted'].includes(record.status)&&<div className="intake-recovery-actions"><button className="btn" disabled={busy||recovering} onClick={()=>void recover()}>{recovering?'正在恢复…':'恢复处理'}</button></div>}
       {supplierImportOpen&&<SupplierImportDialog inquiryId={batchId} operator={operator} onClose={()=>setSupplierImportOpen(false)} onImported={()=>load(true)} />}
       {view === undefined && (
         <div className="intake-summary">
@@ -178,7 +223,7 @@ export function IntakeRecord({
       )}
       {error && (
         <p className="intake-error" role="alert">
-          {error}
+          {error} <button className="btn" onClick={()=>setReadEpoch(value=>value+1)}>重新读取</button>
         </p>
       )}
       {pane && record && (

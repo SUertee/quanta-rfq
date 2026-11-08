@@ -1136,3 +1136,4 @@ tr:hover .material-reference-name>.reference-cite,.material-reference-name:focus
 .assistant-docked .intake-evidence-body { min-width:0; }
 .module-reference-dragging,.module-reference-dragging * { user-select:none!important;cursor:grabbing!important; }
 .workflow-section-heading { touch-action:none; }
+.intake-recovery-actions { display:flex;justify-content:flex-end;gap:12px;margin-bottom:12px; }

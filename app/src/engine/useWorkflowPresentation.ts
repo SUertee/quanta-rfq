@@ -49,7 +49,7 @@ export function useWorkflowPresentation(
     };
   }, [shown, taskKey, flow]);
   return {
-    shown,
+    shown: Math.min(shown,available),
     positions,
     busyStage:
       run?.state === "running" ? run.stage : (null as InquiryStage | null),

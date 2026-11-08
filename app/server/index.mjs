@@ -17,7 +17,7 @@ const { runAgent, validateAgentInput, RFQ_AGENT_DEFINITION } = await import('./a
 import initSqlJs from 'sql.js';
 import http from 'node:http';
 import { readFileSync, writeFileSync, existsSync, renameSync, copyFileSync } from 'node:fs';
-import {initIntake,seedPrices,createIntakeService} from './intake.mjs';
+import {initIntake,seedPrices,createIntakeService,recoverInterruptedIntakes} from './intake.mjs';
 import {getRuntimeConfig} from './runtime-config.mjs';
 import {createAgentAuditStore} from './agent-audit-store.mjs';
 import {resolveAgentScope} from './agent-scope.mjs';
@@ -74,7 +74,7 @@ agentAudit.registerAgent(RFQ_AGENT_DEFINITION);
 agentAudit.recoverInterrupted();
 const priceSeedPath=fileURLToPath(new URL('../public/data/prices.json',import.meta.url));
 seedPrices(db,existsSync(priceSeedPath)?JSON.parse(readFileSync(priceSeedPath,'utf8')):[]);
-db.run("UPDATE inquiry SET status='interrupted',issues='[\"服务重启中断了处理，已保留已接收文件\"]' WHERE status='processing'");
+recoverInterruptedIntakes(db);
 const runtime=getRuntimeConfig();
 const intake=createIntakeService(db,persist,{modelConfig:runtime.model,ocrConfig:runtime.ocr});
 const extractionReview=createExtractionReview(db,persist,id=>intake.detail(id));
@@ -198,6 +198,9 @@ http.createServer(async (req, res) => {
         res.end(JSON.stringify(result));return;
       }
     }
+    const recoveryPath=url.pathname.match(/^\/api\/inquiries\/([^/]+)\/recovery$/);
+    if(recoveryPath&&req.method==='GET'){res.end(JSON.stringify(intake.recovery(recoveryPath[1])));return;}
+    if(recoveryPath&&req.method==='POST'){res.end(JSON.stringify(await intake.recover(recoveryPath[1],await readBody(req,50000),{background:true})));return;}
     const extractionReviewPath=url.pathname.match(/^\/api\/inquiries\/([^/]+)\/extraction-review$/);
     if(extractionReviewPath&&req.method==='GET'){res.end(JSON.stringify(extractionReview.read(extractionReviewPath[1])));return;}
     if(extractionReviewPath&&req.method==='POST'){res.end(JSON.stringify(extractionReview.confirm(extractionReviewPath[1],await readBody(req,50000))));return;}

@@ -101,8 +101,15 @@ export function WorkbenchPage({
   const live = useRef(true);
   useEffect(() => { live.current = true; return () => { live.current = false; }; }, []);
   const [dismissedStageTip,setDismissedStageTip]=useState<number|null>(null);
+  const [intakeRecord,setIntakeRecord]=useState<IntakeBatch|null>(null);
   const {stage, flowRef, goToStage} = useStageNavigation(taskKey);
-  const activeRun=run||(email?.intakeStatus==='processing'?{stage:email.attachments.length?2:1,revealed:email.attachments.length?2:1,state:'running'} as WorkflowRun:undefined);
+  const materialStatus=intakeRecord?.id===email?.intakeBatchId?intakeRecord?.status:email?.intakeStatus;
+  const processingStage=intakeRecord?.files.every(file=>file.status!=='processing')?2:1;
+  const activeRun=materialStatus==='processing'?{stage:processingStage,revealed:processingStage,state:'running'} as WorkflowRun:materialStatus==='interrupted'||materialStatus==='failed'?{stage:1,revealed:1,state:'attention'} as WorkflowRun:run;
+  const acceptIntakeRecord=(record:IntakeBatch)=>{
+    setIntakeRecord(current=>current?.id===record.id&&(current.updated_at||'')>(record.updated_at||'')?current:record);
+    if(record.id===email?.intakeBatchId&&record.status!==email.intakeStatus)onDataRefresh?.();
+  };
   const {shown,positions,busyStage}=useWorkflowPresentation(taskKey,activeRun,flowRef);
   useModuleReferenceDrag(flowRef,stage=>({
     id:`module:${email?.intakeBatchId||taskKey}:${stage}:${intakeRecord?.updated_at||''}`,
@@ -112,7 +119,6 @@ export function WorkbenchPage({
   }));
   const [completionReviewOpen,setCompletionReviewOpen]=useState(false);
   const [extractionReviewOpen,setExtractionReviewOpen]=useState(false);
-  const [intakeRecord,setIntakeRecord]=useState<IntakeBatch|null>(null);
   const [exported,setExported]=useState(false);
   const exportedBasis=useRef<string|null>(null);
   const [rowFilter, setRowFilter] = useState<'all'|'review'|'unpriced'>('all');
@@ -149,6 +155,7 @@ export function WorkbenchPage({
       const data = await response.json();
       if (kind==='actions') {
         setReviewRows((data.rows ?? []).map((row: { action: string; detail: string }) => {
+          if(row.action==='恢复材料处理'){try{return {...row,detail:JSON.parse(row.detail).mode==='resume_saved_lines'?'沿用已保存物料行恢复检查':'重用已保存原件恢复解析与提取'};}catch{return row;}}
           if (row.action !== '人工复核需求提取') return row;
           try { return { ...row, detail: JSON.parse(row.detail).reason || row.detail }; }
           catch { return row; }
@@ -508,7 +515,7 @@ export function WorkbenchPage({
 
       <section hidden={shown<1} aria-busy={busyStage===1} className="workflow-section" data-current={stage===1} id="inquiry-stage-1" tabIndex={-1} data-inquiry-stage="1" aria-labelledby="inquiry-stage-title-1">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-1">{stageItems[0].label}</h2></header>
-      {email?.intakeBatchId&&<IntakeRecord batchId={email.intakeBatchId} revisionKey={JSON.stringify([run?.stage,email.intakeStatus,email.parsedRows?.map(l=>l.version)])} view="files" onLoaded={setIntakeRecord} onEvidenceRefresh={onDataRefresh} />}
+      {email?.intakeBatchId&&<IntakeRecord batchId={email.intakeBatchId} revisionKey={JSON.stringify([run?.stage,email.intakeStatus,email.parsedRows?.map(l=>l.version)])} view="files" operator={getCompany().operator||currentUserId||'本机用户'} onLoaded={acceptIntakeRecord} onEvidenceRefresh={onDataRefresh} />}
       {!email?.intakeBatchId&&<section className="panel stage-original"><div className="panel-title">原始材料 <Badge text="演示／历史记录" tone="gray" /></div>{email?<><div className="source-file-row"><span>邮件</span><b>{email.file}</b><span>{email.from}</span></div><pre className="stage-raw-text">{email.body||'邮件正文为空'}</pre>{email.attachments.map((name,i)=><div className="source-file-row" key={i}><span>附件</span><b>{name}</b></div>)}</>:<div className="source-file-row"><span>历史询价</span><b>{label}</b><span>{lines.length} 行</span></div>}</section>}
 
       </section>
@@ -750,7 +757,7 @@ export function WorkbenchPage({
       </section>
       <section hidden={shown<3} aria-busy={busyStage===3} className="workflow-section" data-current={stage===3} id="inquiry-stage-3" tabIndex={-1} data-inquiry-stage="3" aria-labelledby="inquiry-stage-title-3">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-3">{stageItems[2].label}</h2></header>
-      {email?.intakeBatchId&&<IntakeRecord batchId={email.intakeBatchId} revisionKey={JSON.stringify([run?.stage,email.intakeStatus,email.parsedRows?.map(l=>l.version)])} view="evidence" operator={getCompany().operator||currentUserId||'本机用户'} selectedBases={selectedBases} selectionDisabled={persistencePending} onSelectBasis={onSelectBasis} rules={{condFnNe:policy.condFnNe,certMutual:policy.certMutual,freightDays:policy.freightDays,fxRates:{...(policy.fxUsd?{USD:policy.fxUsd}:{}),...(policy.fxEur?{EUR:policy.fxEur}:{}),...(policy.fxRates||{})},unitConversions:ds.units}} onLoaded={setIntakeRecord} onEvidenceRefresh={onDataRefresh} />}
+      {email?.intakeBatchId&&<IntakeRecord batchId={email.intakeBatchId} revisionKey={JSON.stringify([run?.stage,email.intakeStatus,email.parsedRows?.map(l=>l.version)])} view="evidence" operator={getCompany().operator||currentUserId||'本机用户'} selectedBases={selectedBases} selectionDisabled={persistencePending} onSelectBasis={onSelectBasis} rules={{condFnNe:policy.condFnNe,certMutual:policy.certMutual,freightDays:policy.freightDays,fxRates:{...(policy.fxUsd?{USD:policy.fxUsd}:{}),...(policy.fxEur?{EUR:policy.fxEur}:{}),...(policy.fxRates||{})},unitConversions:ds.units}} onLoaded={acceptIntakeRecord} onEvidenceRefresh={onDataRefresh} />}
       {!email?.intakeBatchId&&<section className="panel"><div className="panel-title">库存与供应商依据</div><div className="table-wrap"><table><thead><tr><th>件号</th><th>库存</th><th>内部成本</th><th>供应商参考</th></tr></thead><tbody>{priced.map(p=><tr key={p.line.key}><td><b>{p.line.partNumber}</b></td><td>{p.cost?`${p.cost.stockQty} ${p.cost.uom}`:'未匹配'}</td><td>{p.cost?fmtMoney(p.cost.lastPurchasePrice||p.cost.avgCost):'缺依据'}</td><td>{p.candidates.length?<div className="candidate-evidence-list">{p.candidates.map((c,i)=><div className="candidate-evidence" key={i}><b>{c.row.supplierName}</b><span>{c.row.unitPrice} {c.row.currency}</span><span>{c.row.condition} · MOQ {c.row.moq} · {c.row.validUntil||'有效期缺失'}</span></div>)}</div>:'未匹配'}</td></tr>)}</tbody></table></div></section>}
 
       </section>

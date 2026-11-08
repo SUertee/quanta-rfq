@@ -81,6 +81,7 @@ export function initIntake(db) {
  CREATE INDEX IF NOT EXISTS evidence_line ON evidence(line_id);
  CREATE TABLE IF NOT EXISTS line_revision(id TEXT PRIMARY KEY,line_id TEXT NOT NULL REFERENCES inquiry_line(id),version INTEGER NOT NULL,fields TEXT NOT NULL,operator TEXT NOT NULL,created_at TEXT NOT NULL);
  CREATE TABLE IF NOT EXISTS schema_migration(id TEXT PRIMARY KEY,applied_at TEXT NOT NULL);
+ CREATE TABLE IF NOT EXISTS review_log(id INTEGER PRIMARY KEY AUTOINCREMENT,task TEXT DEFAULT '',pn TEXT DEFAULT '',action TEXT DEFAULT '',detail TEXT DEFAULT '',operator TEXT DEFAULT '',created_at TEXT DEFAULT '');
  `);
   migrateNormalization(db);
   migrateRequirementScope(db);
@@ -174,6 +175,13 @@ export function seedPrices(db, seed) {
     throw e;
   }
 }
+export function recoverInterruptedIntakes(db) {
+  for (const inquiry of rows(db,"SELECT id,issues FROM inquiry WHERE status='processing'")) {
+    const issues=[...new Set([...JSON.parse(inquiry.issues||'[]'),'服务重启中断了处理，已保留已接收文件'])];
+    db.run("UPDATE inquiry SET status='interrupted',issues=? WHERE id=?",[JSON.stringify(issues),inquiry.id]);
+  }
+}
+
 export function createIntakeService(
   db,
   persist,
@@ -306,6 +314,22 @@ export function createIntakeService(
     ]);
   }
   const ocr=(bytes,name,mime)=>readOcr(bytes,name,mime,ocrConfig);
+  function storeOriginal(file, id, parentId, source, at) {
+    const fid = randomUUID();
+    db.run(
+      "INSERT INTO file(id,inquiry_id,parent_id,source,file_type,mime_type,name,sha256,size,raw,status,parser_version,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
+      [fid, id, parentId, parentId ? "email_attachment" : source,
+        file.name.split(".").pop().toLowerCase(), file.mime, file.name,
+        hash(file.bytes), file.bytes.length, file.bytes, "processing", INTAKE_PARSER_VERSION, at],
+    );
+    db.run("UPDATE file SET document_type=? WHERE id=?", [file.documentType || "customer_inquiry", fid]);
+    return fid;
+  }
+  function assertNotProcessing(id) {
+    if (one('SELECT status FROM inquiry WHERE id=?', [id])?.status === 'processing') {
+      throw Object.assign(new Error('材料仍在处理中，请稍后核对'), {status: 409});
+    }
+  }
   async function create(input, onProgress = () => {}) {
     const source = input.source || "manual_upload";
     if (!["manual_upload", "paste", "chat"].includes(source))
@@ -368,51 +392,51 @@ export function createIntakeService(
     }
     const id = randomUUID(),
       at = now();
-    db.run("INSERT INTO inquiry(id,request_id,payload_hash,source,operator,title,status,created_at,updated_at,issues) VALUES(?,?,?,?,?,?,?,?,?,?)", [
-      id,
-      input.requestId,
-      digest,
-      source,
-      operator,
-      title,
-      "processing",
-      at,
-      at,
-      "[]",
-    ]);
-    persist();
+    db.run("BEGIN");
+    try {
+      db.run("INSERT INTO inquiry(id,request_id,payload_hash,source,operator,title,status,created_at,updated_at,issues) VALUES(?,?,?,?,?,?,?,?,?,?)", [
+        id,
+        input.requestId,
+        digest,
+        source,
+        operator,
+        title,
+        "processing",
+        at,
+        at,
+        "[]",
+      ]);
+      for(const file of files) file.id=storeOriginal(file,id,null,source,at);
+      db.run('COMMIT');
+      persist();
+    } catch(error) {
+      try { db.run('ROLLBACK'); } catch {}
+      db.run('DELETE FROM file WHERE inquiry_id=?',[id]);
+      db.run('DELETE FROM inquiry WHERE id=?',[id]);
+      throw error;
+    }
     onProgress(1, detail(id));
+    return process(id,files,source,at,onProgress);
+  }
+  async function process(id,files,source,at,onProgress=()=>{},reuseAttachments=false) {
+    const oldAttachments = reuseAttachments ? rows(db,'SELECT * FROM file WHERE inquiry_id=? AND parent_id IS NOT NULL ORDER BY rowid',[id]) : [];
+    const seenFiles = new Set();
     const issues = [],
       chunks = [];
     let count = 0,
       total = 0;
-    async function add(file, parentId = null, depth = 0) {
+    async function add(file, parentId = null, depth = 0, ordinal = 0) {
       if (
         ++count > 60 ||
         depth > 3 ||
         (total += file.bytes.length) > 32_000_000
       )
         throw new Error("邮件附件展开超过数量、层级或大小限制");
-      const fid = randomUUID();
-      db.run(
-        "INSERT INTO file(id,inquiry_id,parent_id,source,file_type,mime_type,name,sha256,size,raw,status,parser_version,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)",
-        [
-          fid,
-          id,
-          parentId,
-          parentId ? "email_attachment" : source,
-          file.name.split(".").pop().toLowerCase(),
-          file.mime,
-          file.name,
-          hash(file.bytes),
-          file.bytes.length,
-          file.bytes,
-          "processing",
-          INTAKE_PARSER_VERSION,
-          at,
-        ],
-      );
-      db.run("UPDATE file SET document_type=? WHERE id=?", [file.documentType || "customer_inquiry", fid]);
+      const oldAttachment = oldAttachments.filter(item=>item.parent_id===parentId)[ordinal];
+      const previous = file.id || (oldAttachment?.name===file.name && oldAttachment.sha256===hash(file.bytes) ? oldAttachment.id : null);
+      const fid = previous || storeOriginal(file,id,parentId,source,at);
+      seenFiles.add(fid);
+      db.run("UPDATE file SET status='processing',error=NULL,parser_version=? WHERE id=?",[INTAKE_PARSER_VERSION,fid]);
       persist();
       try {
         const parsed = await decodeFile(file.name, file.bytes);
@@ -439,9 +463,9 @@ export function createIntakeService(
           if (!ocrConfig?.baseURL) state = "needs_ocr";
         }
         for (const [ordinal, c] of extracted.entries()) {
-          const cid = randomUUID();
+          const cid = one('SELECT id FROM file_content WHERE file_id=? AND ordinal=?',[fid,ordinal])?.id || randomUUID();
           const chunk = { ...c, id: cid, fileId: fid };
-          db.run("INSERT INTO file_content VALUES(?,?,?,?,?,?,?)", [
+          db.run("INSERT INTO file_content VALUES(?,?,?,?,?,?,?) ON CONFLICT(file_id,ordinal) DO UPDATE SET locator=excluded.locator,format=excluded.format,text=excluded.text,cells=excluded.cells", [
             cid,
             fid,
             ordinal,
@@ -452,6 +476,7 @@ export function createIntakeService(
           ]);
           if (!file.documentType || file.documentType === "customer_inquiry") chunks.push(chunk);
         }
+        db.run('DELETE FROM file_content WHERE file_id=? AND ordinal>=?',[fid,extracted.length]);
         db.run("UPDATE file SET status=? WHERE id=?", [state, fid]);
         if (file.documentType && file.documentType !== "customer_inquiry") issues.push(`${file.name}：该资料已保存，需单独分类处理后使用`);
         if (state === "needs_ocr")
@@ -460,7 +485,7 @@ export function createIntakeService(
           );
         if (parsed.unsupported)
           issues.push(`${file.name}：暂不支持此文件类型，原件已保存`);
-        for (const child of parsed.children) await add({ ...child, documentType: file.documentType || "customer_inquiry" }, fid, depth + 1);
+        for (const [index,child] of parsed.children.entries()) await add({ ...child, documentType: file.documentType || "customer_inquiry" }, fid, depth + 1,index);
       } catch (e) {
         db.run("UPDATE file SET status=?,error=? WHERE id=?", [
           "failed",
@@ -475,6 +500,11 @@ export function createIntakeService(
     }
     try {
       for (const f of files) await add(f);
+      for(const attachment of oldAttachments.filter(file=>!seenFiles.has(file.id))){
+        const message=`${attachment.name}：重新解析未复现该附件，请核对原件`;
+        db.run("UPDATE file SET status='unsupported',error=? WHERE id=?",[message,attachment.id]);
+        issues.push(message);
+      }
       onProgress(2, detail(id));
       const result = extractStructured(chunks);
       let extra = { lines: [], issues: [] };
@@ -529,6 +559,7 @@ export function createIntakeService(
         db.run("ROLLBACK");
         throw e;
       }
+      db.run('UPDATE inquiry SET issues=?,updated_at=? WHERE id=?',[JSON.stringify(issues),now(),id]);
       persist();
       onProgress(3, detail(id));
       const unmatched =
@@ -549,7 +580,7 @@ export function createIntakeService(
         id,
       ]);
     } catch (e) {
-      issues.push(String(e.message).slice(0, 300));
+      issues.push('处理失败：'+String(e.message).slice(0, 300));
       db.run("UPDATE inquiry SET status=?,issues=?,updated_at=? WHERE id=?", [
         "failed",
         JSON.stringify(issues),
@@ -560,7 +591,94 @@ export function createIntakeService(
     persist();
     return detail(id);
   }
+  function recovery(id) {
+    const batch = detail(id);
+    if (!batch) throw Object.assign(new Error('询价不存在'), {status: 404});
+    const originals = rows(db, 'SELECT * FROM file WHERE inquiry_id=? AND parent_id IS NULL AND source=? ORDER BY rowid', [id, batch.source]);
+    const digest = hash(JSON.stringify({
+      source: batch.source, operator: batch.operator, title: batch.title,
+      files: originals.map(file => ['customer_inquiry', 'unknown'].includes(file.document_type)
+        ? [file.name, hash(file.raw)] : [file.name, hash(file.raw), file.document_type]),
+    }));
+    const complete = originals.length > 0 && digest === batch.payload_hash
+      && originals.every(file => hash(file.raw) === file.sha256);
+    const reason = !['interrupted', 'failed'].includes(batch.status) ? '当前材料无需恢复处理'
+      : !complete ? '已保存原件不完整，请补充原始上传材料' : '';
+    return {fingerprint: hash(JSON.stringify(batch)), canRecover: !reason, reason};
+  }
+  async function recover(id, input, {background = false} = {}) {
+    if (!input || typeof input.requestId !== 'string' || input.requestId.length < 8
+      || input.requestId.length > 120 || typeof input.fingerprint !== 'string'
+      || typeof input.operator !== 'string' || !input.operator.trim() || input.operator.length > 100) {
+      throw Object.assign(new Error('恢复请求无效'), {status: 400});
+    }
+    const prior = rows(db, "SELECT detail,operator FROM review_log WHERE task=? AND action='恢复材料处理' ORDER BY id DESC", [id])
+      .find(row => JSON.parse(row.detail).requestId === input.requestId);
+    if (prior) {
+      if (JSON.parse(prior.detail).fingerprint !== input.fingerprint || prior.operator !== input.operator.trim()) {
+        throw Object.assign(new Error('requestId已用于其他恢复请求'), {status: 409});
+      }
+      persist();
+      return detail(id);
+    }
+    const check = recovery(id);
+    if (!check.canRecover || check.fingerprint !== input.fingerprint) {
+      throw Object.assign(new Error(check.reason || '材料已变化，请重新载入后恢复'), {status: 409});
+    }
+    const batch = detail(id);
+    const audit = {
+      requestId: input.requestId, fingerprint: input.fingerprint, issues: batch.issues,
+      fileIds: batch.files.map(file => file.id),
+      lineVersions: batch.lines.map(line => ({id: line.id, version: line.version})),
+      mode: batch.lines.length ? 'resume_saved_lines' : 'reprocess_originals',
+    };
+    db.run('BEGIN');
+    let logId;
+    try {
+      db.run("UPDATE inquiry SET status='processing',issues='[]',updated_at=? WHERE id=?", [now(), id]);
+      db.run("INSERT INTO review_log(task,action,detail,operator,created_at) VALUES(?,?,?,?,?)",
+        [id, '恢复材料处理', JSON.stringify(audit), input.operator.trim(), now()]);
+      logId = one('SELECT last_insert_rowid() id').id;
+      db.run('COMMIT');
+      persist();
+    } catch (error) {
+      try { db.run('ROLLBACK'); } catch {}
+      db.run('UPDATE inquiry SET status=?,issues=?,updated_at=? WHERE id=?', [batch.status, JSON.stringify(batch.issues), batch.updated_at, id]);
+      if (logId) db.run('DELETE FROM review_log WHERE id=?', [logId]);
+      throw error;
+    }
+    const failRecovery = error => {
+      const current = detail(id);
+      const issues = [...new Set([...current.issues, '处理失败：'+String(error.message).slice(0,300)])];
+      db.run("UPDATE inquiry SET status='failed',issues=?,updated_at=? WHERE id=?", [JSON.stringify(issues),now(),id]);
+      // Keep memory retryable if the filesystem remains unavailable. Replay retries persistence.
+      try { persist(); } catch {}
+      return detail(id);
+    };
+    if (batch.lines.length) {
+      try {
+        const issues = batch.issues.filter(issue => issue !== '服务重启中断了处理，已保留已接收文件' && !issue.startsWith('处理失败：'));
+        db.run('UPDATE inquiry SET issues=? WHERE id=?', [JSON.stringify(issues), id]);
+        updateStatus(id);
+        persist();
+        return detail(id);
+      } catch(error) { return failRecovery(error); }
+    }
+    const originals = rows(db, 'SELECT * FROM file WHERE inquiry_id=? AND parent_id IS NULL AND source=? ORDER BY rowid', [id, batch.source]);
+    const files = originals.map(file => ({
+      id: file.id, name: file.name, bytes: Buffer.from(file.raw), mime: file.mime_type,
+      documentType: file.document_type === 'unknown' ? 'customer_inquiry' : file.document_type,
+    }));
+    const work = process(id, files, batch.source, now(), () => {}, true).catch(failRecovery);
+    if (background) {
+      // Processing persists terminal status. HTTP clients can reconnect through polling.
+      void work.catch(() => {});
+      return detail(id);
+    }
+    return work;
+  }
   function refresh(id) {
+    assertNotProcessing(id);
     if (!one("SELECT id FROM inquiry WHERE id=?", [id])) return null;
     db.run("BEGIN");
     try {
@@ -599,6 +717,7 @@ export function createIntakeService(
     batchId,
     { partNumber, quantity, uom, description = "", operator = "本机用户" },
   ) {
+    assertNotProcessing(batchId);
     if (!one("SELECT id FROM inquiry WHERE id=?", [batchId]))
       throw Object.assign(new Error("询价不存在"), { status: 404 });
     if (
@@ -699,6 +818,7 @@ export function createIntakeService(
     lineId,
     { version, patch, operator = "本机用户", confirmFields = [], confirmationReason = "" },
   ) {
+    assertNotProcessing(batchId);
     const old = one("SELECT * FROM inquiry_line WHERE id=? AND inquiry_id=?", [
       lineId,
       batchId,
@@ -806,6 +926,8 @@ export function createIntakeService(
   }
   return {
     create,
+    recovery,
+    recover,
     list,
     detail,
     refresh,

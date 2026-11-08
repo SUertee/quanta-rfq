@@ -87,7 +87,7 @@ window.matchMedia = () => ({
 const bundle = await build({
   stdin: {
     contents:
-      "export {HomePage} from './src/pages/HomePage';export {useModuleReferenceDrag} from './src/engine/useModuleReferenceDrag';export {useWorkflowPresentation} from './src/engine/useWorkflowPresentation';export {createIntake} from './src/engine/intake';",
+      "export {IntakeRecord} from './src/components/IntakeRecord';export {HomePage} from './src/pages/HomePage';export {useModuleReferenceDrag} from './src/engine/useModuleReferenceDrag';export {useWorkflowPresentation} from './src/engine/useWorkflowPresentation';export {createIntake} from './src/engine/intake';",
     resolveDir: process.cwd(),
     loader: "tsx",
   },
@@ -103,6 +103,7 @@ const temp = new URL("./.progressive-test.mjs", import.meta.url);
 writeFileSync(temp, bundle.outputFiles[0].text);
 const {
   HomePage,
+  IntakeRecord,
   useModuleReferenceDrag,
   useWorkflowPresentation,
   createIntake,
@@ -276,6 +277,49 @@ await act(async () => {
 assert.equal(document.querySelector(".module-reference-ghost"), null);
 await act(async () => root.unmount());
 window.removeEventListener("quanta-reference", capture);
+// Recovery survives navigation and a failed poll through an explicit read retry.
+let processing=true,failRead=false,loaded=null;
+const recoveryRecord={id:'recovery-ui',status:'processing',source:'manual_upload',issues:[],files:[],contents:[],lines:[]};
+globalThis.fetch=async()=>{
+  if(failRead){failRead=false;return new Response('{}',{status:503});}
+  return Response.json({...recoveryRecord,status:processing?'processing':'evidence_ready'});
+};
+root=createRoot(host);
+await act(async()=>{root.render(React.createElement(IntakeRecord,{batchId:'recovery-ui',view:'files',onLoaded:record=>{loaded=record;}}));await wait(30);});
+assert.equal(loaded.status,'processing');
+await act(async()=>root.unmount());
+root=createRoot(host);loaded=null;
+await act(async()=>{root.render(React.createElement(IntakeRecord,{batchId:'recovery-ui',view:'files',onLoaded:record=>{loaded=record;}}));await wait(30);});
+assert.equal(loaded.status,'processing');
+processing=false;
+await act(async()=>wait(650));assert.equal(loaded.status,'evidence_ready');
+failRead=true;
+await act(async()=>{root.render(React.createElement(IntakeRecord,{batchId:'recovery-ui',revisionKey:'retry',view:'files'}));await wait(30);});
+assert.ok(host.querySelector('[role="alert"]'));
+await act(async()=>{[...host.querySelectorAll('button')].find(button=>button.textContent==='重新读取').click();await wait(30);});
+assert.equal(host.querySelector('[role="alert"]'),null);
+await act(async()=>root.unmount());
+let failPost=true;const posted=[];
+globalThis.fetch=async(url,options={})=>{
+  if(String(url).endsWith('/recovery')){
+    if(options.method==='POST'){
+      posted.push(JSON.parse(options.body));
+      if(failPost){failPost=false;throw Error('QA lost response');}
+      return Response.json({...recoveryRecord,status:'processing'});
+    }
+    return Response.json({canRecover:true,fingerprint:'current'});
+  }
+  return Response.json({...recoveryRecord,status:'failed'});
+};
+root=createRoot(host);
+await act(async()=>{root.render(React.createElement(IntakeRecord,{batchId:'recovery-ui',view:'files',operator:'QA'}));await wait(30);});
+const clickRecovery=async()=>act(async()=>{[...host.querySelectorAll('button')].find(button=>button.textContent==='恢复处理').click();await wait(40);});
+await clickRecovery();await clickRecovery();
+assert.equal(posted[0].requestId,posted[1].requestId);assert.equal(posted[0].operator,'QA');
+await clickRecovery();assert.notEqual(posted[1].requestId,posted[2].requestId);
+await act(async()=>{root.render(React.createElement(IntakeRecord,{batchId:'other-batch',view:'files',operator:'QA'}));await wait(30);});
+assert.equal([...host.querySelectorAll('button')].find(button=>button.textContent==='恢复处理').disabled,false);
+await act(async()=>root.unmount());
 await window.happyDOM.close();
 db.close();
 console.log(
