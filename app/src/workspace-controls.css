@@ -982,11 +982,11 @@ html:has(.layout-reference),body:has(.layout-reference) { height:100%;overflow:h
 .layout-reference .issue-filter-menu { max-height:min(440px,65dvh);overflow-y:auto;overscroll-behavior:contain; }
 
 /* A reference stays separate from the instruction and retains its source after sending. */
-.chat-reference-drafts { grid-column:1 / -1;min-width:0; }
+.chat-reference-drafts { grid-column:1 / -1;min-width:0;max-height:min(240px,30dvh);overflow:auto; }
 .chat-references { display:grid;gap:8px;width:100%;min-width:0; }
-.chat-reference { margin:0;padding:10px 12px;border:1px solid var(--line);border-left:3px solid #5b7cf0;border-radius:10px;background:#f6f8fd;text-align:left; }
-.chat-reference>div { display:flex;align-items:center;justify-content:space-between;gap:12px; }
-.chat-reference strong { font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
+.chat-reference { min-width:0;max-width:100%;box-sizing:border-box;margin:0;padding:10px 12px;border:1px solid var(--line);border-left:3px solid #5b7cf0;border-radius:10px;background:#f6f8fd;text-align:left; }
+.chat-reference>div { min-width:0;display:flex;align-items:center;justify-content:space-between;gap:12px; }
+.chat-reference strong { min-width:0;flex:1;font-size:14px;color:var(--ink);overflow:hidden;text-overflow:ellipsis;white-space:nowrap; }
 .chat-reference p { margin:5px 0 0!important;font-size:14px!important;line-height:1.5!important;color:var(--ink-2);display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere; }
 .chat-reference button { flex-shrink:0;display:grid;place-items:center;width:32px;height:32px;padding:0;border:0;border-radius:8px;background:transparent;color:var(--ink);font-size:20px;cursor:pointer; }
 .chat-reference button:hover { background:#e9eef9; }
@@ -1051,3 +1051,14 @@ tr:hover .material-reference-name>.reference-cite,.material-reference-name:focus
 .supplier-original { margin:16px 0; }
 .supplier-original h4 { margin:0 0 8px;font:inherit;font-weight:600; }
 .supplier-original pre { white-space:pre-wrap;overflow-wrap:anywhere;overflow:auto;max-height:220px;margin:0;padding:16px;border:1px solid var(--line);border-radius:var(--field-radius);background:var(--hal-head);color:var(--ink);font:inherit;line-height:1.7; }
+
+/* Chat material routing shares existing field, button and modal tokens. */
+.chat-material-purpose { display:flex;flex-wrap:wrap;gap:8px;grid-column:1/-1;width:100%; }
+.chat-material-purpose .btn { min-height:36px;padding:6px 14px; }
+.chat-material-purpose .btn[aria-pressed=true],.chat-supplier-targets .btn[aria-pressed=true] { background:var(--ink);color:var(--panel); }
+.chat-supplier-dialog { width:min(620px,calc(100vw - 32px));max-height:calc(100dvh - 32px);display:flex;flex-direction:column;padding:0; }
+.chat-supplier-body { padding:24px;display:grid;gap:16px;overflow:auto;min-height:0; }
+.chat-supplier-body input { width:100%;min-width:0; }
+.chat-supplier-files { margin:0;padding-left:20px;overflow-wrap:anywhere; }
+.chat-supplier-targets { display:grid;gap:8px;max-height:280px;overflow:auto; }
+.chat-supplier-targets .btn { text-align:left;justify-content:flex-start;white-space:normal;overflow-wrap:anywhere;min-height:44px; }

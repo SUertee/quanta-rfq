@@ -11,6 +11,8 @@ export default defineConfig(({ mode }) => {
     port: 5176,
     host: '127.0.0.1',
     strictPort: true,
+    // Backend persistence and test bundles must not reload an in-progress browser workflow.
+    watch: {ignored:['**/server/**','**/scripts/**','**/*.tsbuildinfo']},
     proxy: {
       // 规避浏览器 CORS：/llm/* → MOI Genesis /v1/*（仅开发环境；生产由后端代理）
       '/llm': {

@@ -1,4 +1,6 @@
-import {shouldCreateChatInquiry, submitChatInquiry, type ChatIntakeRequest} from '../engine/chatIntake';
+import {ChatMaterialPurpose,ChatSupplierFlow,ChatSupplierResult} from './ChatMaterials';
+import {chatMaterialRoute,type MaterialPurpose,type ChatSupplierRequest,type ChatSupplierReceipt} from '../engine/chatMaterials';
+import {submitChatInquiry, type ChatIntakeRequest} from '../engine/chatIntake';
 import type {IntakeBatch} from '../engine/intake';
 import {ChatInquiryReceipt, chatInquiryResult, type ChatInquiryResult} from './ChatInquiryReceipt';
 import {ReferenceList,useChatReferences} from './ChatReferences';
@@ -22,8 +24,9 @@ type Turn = {
   content: string;
   createdAt?: string;
   inquiry?: ChatInquiryResult;
+  supplier?:ChatSupplierReceipt;
 };
-type Session = {context?: string; turns: Turn[]; state?: string; input?: string; creation?: ChatIntakeRequest};
+type Session = {context?: string; turns: Turn[]; state?: string; input?: string; creation?: ChatIntakeRequest; supplierCreation?:ChatSupplierRequest};
 interface PlatformChatProps {
   standalone?: boolean;
   docked?: boolean;
@@ -42,6 +45,7 @@ export function PlatformChat({standalone=false, docked=false, onDock, onInquiryC
   operator='本机用户', conversationKey='__no_task__', quickMessage, onQuickHandled, onClose, onHistory}: PlatformChatProps) {
   const [sessions, setSessions] = useStoredState<Record<string, Session>>('rfq-chat-v1', {});
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
+  const [materialPurpose,setMaterialPurpose]=useState<MaterialPurpose>('auto');
   const [attachmentEpoch, setAttachmentEpoch] = useState(0);
   const [input, setInputState] = useState(sessions[conversationKey]?.input || '');
   const [busy, setBusy] = useState(false);
@@ -95,13 +99,20 @@ export function PlatformChat({standalone=false, docked=false, onDock, onInquiryC
     if ((!text.trim() && !attachments.length && !references.items.length) ||
       attachments.some(file => file.status === 'reading') || pending.current) return;
     if (session?.creation) { setError('上次接收尚未完成，请先重试或取消。'); return; }
-    chatScroll.follow.current = true;
     const instruction = text.trim();
+    const route=chatMaterialRoute(instruction,attachments.length,materialPurpose);
+    if(route==='choose'){setError('请选择资料用途，再发送。');return;}
+    if(session?.supplierCreation){setError('请先完成或取消供应商报价接收。');return;}
+    setError('');
+    chatScroll.follow.current = true;
     append({role: 'user', content: instruction || (references.items.length ? '请核对引用内容。' : attachments.map(file => file.name).join('、')), attachments, references: references.items});
     setInput('');
     setAttachments([]);
     setAttachmentEpoch(number => number + 1);
-    if (shouldCreateChatInquiry(instruction, attachments.length)) {
+    patch({context:undefined});
+    setMaterialPurpose('auto');
+    if(route==='supplier'){patch({supplierCreation:{attachments,operator}});return;}
+    if (route==='inquiry') {
       await receiveInquiry({requestId: crypto.randomUUID(), instruction, attachments, operator});
       return;
     }
@@ -166,7 +177,7 @@ export function PlatformChat({standalone=false, docked=false, onDock, onInquiryC
         <div className="rfq-chat-text">
           {turn.references && <ReferenceList items={turn.references}/>}
           {turn.attachments && <div className="chat-attachment-strip">{turn.attachments.map(file => <ChatAttachmentPreview key={file.id} attachment={file}/>)}</div>}
-          {turn.inquiry ? <ChatInquiryReceipt result={turn.inquiry} onOpen={() => onOpenInquiry?.(turn.inquiry!.id, conversationKey)}/> : <ChatMarkdown text={turn.content}/>}
+          {turn.supplier ? <ChatSupplierResult receipt={turn.supplier} operator={operator} onOpen={()=>onOpenInquiry?.(turn.supplier!.inquiryId,conversationKey)} onImported={batch=>onInquiryCreated?.(batch,conversationKey)}/> : turn.inquiry ? <ChatInquiryReceipt result={turn.inquiry} onOpen={() => onOpenInquiry?.(turn.inquiry!.id, conversationKey)}/> : <ChatMarkdown text={turn.content}/>}
         </div>
       </article>)}
       {busy && <p role="status">{session?.creation ? '正在接收原件、提取物料并查询依据…' : '正在回复…'}</p>}
@@ -179,6 +190,7 @@ export function PlatformChat({standalone=false, docked=false, onDock, onInquiryC
     {standalone && <MessageRail container={chatScroll.containerRef} turns={turns}/>}
     <form ref={form} className="platform-chat-form" onSubmit={event => {event.preventDefault(); void send();}}>
       {references.composer}
+      {attachments.length>0&&<ChatMaterialPurpose value={materialPurpose} onChange={setMaterialPurpose} disabled={busy||!!session?.creation}/> }
       <ChatFiles showPicker key={attachmentEpoch} disabled={busy || !!session?.creation} onChange={setAttachments} onRead={context => patch({context})}/>
       <textarea rows={2} aria-label="向平台助手提问" placeholder="输入消息…" maxLength={2000} disabled={!!session?.creation}
         onCompositionStart={() => {composing.current = true;}} onCompositionEnd={() => {composing.current = false;}}
@@ -190,6 +202,7 @@ export function PlatformChat({standalone=false, docked=false, onDock, onInquiryC
       {busy ? <button type="button" className="btn" onClick={() => request.current?.abort()}>停止</button> :
         <button aria-label="发送消息" className="chat-send" disabled={!!session?.creation || (!input.trim() && !attachments.length && !references.items.length) || attachments.some(file => file.status === 'reading')}>↑</button>}
     </form>
+    {session?.supplierCreation&&<ChatSupplierFlow request={session.supplierCreation} onTarget={id=>patch({supplierCreation:{...session.supplierCreation!,inquiryId:id}})} onCancel={()=>patch({supplierCreation:undefined})} onReceived={receipt=>{append({role:'assistant',content:'',supplier:receipt});patch({supplierCreation:undefined,context:undefined});}}/>}
   </section>;
 }
 export function ConversationList({tasks,selected,onSelect,onNew}:{tasks:TaskSummary[];selected:string;onSelect:(key:string)=>void;onNew:()=>void}){

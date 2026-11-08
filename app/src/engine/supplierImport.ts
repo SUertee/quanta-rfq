@@ -71,6 +71,7 @@ export async function uploadSupplier(
   file: File,
   operator: string,
   requestId: string,
+  source?: "manual_upload" | "chat",
 ): Promise<SupplierImport> {
   const base64 = await new Promise<string>((resolve, reject) => {
     const reader = new FileReader();
@@ -80,6 +81,7 @@ export async function uploadSupplier(
   });
   return supplierRequest(`/api/inquiries/${inquiryId}/supplier-imports`, {
     requestId,
+    ...(source ? { source } : {}),
     operator,
     name: file.name,
     mime: file.type,

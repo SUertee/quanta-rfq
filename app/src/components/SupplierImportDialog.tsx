@@ -33,17 +33,20 @@ const states: Record<string, string> = {
 };
 export function SupplierImportDialog({
   inquiryId,
+  initialImportId,
   operator,
   onClose,
   onImported,
 }: {
   inquiryId: string;
+  initialImportId?: string;
   operator: string;
   onClose: () => void;
   onImported: () => Promise<void>;
 }) {
   const [imports, setImports] = useState<SupplierImport[]>([]),
     [current, setCurrent] = useState<SupplierImport | null>(null);
+  const [refreshNeeded, setRefreshNeeded] = useState(false);
   const [activeRow, setActiveRow] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
@@ -60,7 +63,16 @@ export function SupplierImportDialog({
     live.current = true;
     void supplierRequest(`/api/inquiries/${inquiryId}/supplier-imports`)
       .then((data) => {
-        if (live.current) setImports(data.imports);
+        if (live.current) {
+          setImports(data.imports);
+          const selected = data.imports.find(
+            (item: SupplierImport) => item.id === initialImportId,
+          );
+          if (selected) {
+            setCurrent(selected);
+            setActiveRow(selected.rows[0]?.id || "");
+          }
+        }
       })
       .catch((error) => {
         if (live.current) setError(error.message);
@@ -68,7 +80,7 @@ export function SupplierImportDialog({
     return () => {
       live.current = false;
     };
-  }, [inquiryId]);
+  }, [inquiryId, initialImportId]);
   const receive = (result: SupplierImport) => {
     setCurrent(result);
     setActiveRow(result.rows[0]?.id || "");
@@ -171,6 +183,22 @@ export function SupplierImportDialog({
       if (live.current) setBusy(false);
     }
   };
+  const retryRefresh = async () => {
+    if (busy) return;
+    setBusy(true);
+    setError("");
+    try {
+      await onImported();
+      if (live.current) setRefreshNeeded(false);
+    } catch (error) {
+      if (live.current)
+        setError(
+          error instanceof Error ? error.message : "依据刷新失败，请重试",
+        );
+    } finally {
+      if (live.current) setBusy(false);
+    }
+  };
   const confirm = async () => {
     if (!current || busy) return;
     setBusy(true);
@@ -185,7 +213,9 @@ export function SupplierImportDialog({
         },
       );
       if (live.current) receive(result);
+      setRefreshNeeded(true);
       await onImported();
+      if (live.current) setRefreshNeeded(false);
     } catch (error) {
       if (live.current)
         setError(error instanceof Error ? error.message : "报价入库失败");
@@ -440,6 +470,15 @@ export function SupplierImportDialog({
           </button>
         )}
         {current?.status === "confirmed" && <span role="status">已入库</span>}
+        {current?.status === "confirmed" && refreshNeeded && (
+          <button
+            className="btn primary"
+            disabled={busy}
+            onClick={() => void retryRefresh()}
+          >
+            重试刷新依据
+          </button>
+        )}
       </footer>
     </Modal>
   );

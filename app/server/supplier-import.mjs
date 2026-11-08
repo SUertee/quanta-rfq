@@ -226,6 +226,7 @@ export function createSupplierImportStore(
     const parsed = z
       .object({
         requestId: z.string().uuid(),
+        source: z.enum(["manual_upload", "chat"]).optional(),
         operator: z.string().trim().min(1).max(100),
         name: z.string().trim().min(1).max(255),
         mime: z.string().max(200),
@@ -279,7 +280,7 @@ export function createSupplierImportStore(
           fileId,
           inquiryId,
           null,
-          "manual_upload",
+          body.source || "manual_upload",
           body.name.split(".").pop().toLowerCase(),
           "supplier_quote",
           body.mime,
