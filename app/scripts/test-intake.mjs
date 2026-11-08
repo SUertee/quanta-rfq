@@ -468,3 +468,68 @@ missingPartDb.run("DELETE FROM schema_migration WHERE id='requirement-scope-v2'"
 initIntake(missingPartDb);
 assert.ok(createIntakeService(missingPartDb,()=>{}).detail(partInquiry.id).lines[0].issues.some(issue=>issue.includes('适用范围需确认')));
 console.log('PASS: single-row legacy requirements survive manual provenance changes; legacy part provenance without target identity is blocked');
+
+// Short model-facing IDs map back to durable provenance. Context-only rows cannot be cited.
+let sentPayload;
+const shortSources=[{id:'durable-unresolved-id',fileId:'notes',locator:{line:1},text:'AN3-5A 需附 EASA Form 1'}];
+const shortResult=await extractSemantic(shortSources,semanticFixture,{knownLines:[{contentId:'durable-csv-id',partNumber:'AN3-5A',quantity:10}],fetchImpl:async(url,options)=>{
+  sentPayload=JSON.parse(JSON.parse(options.body).messages[1].content);
+  return {ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({lines:[],requirements:[{contentId:sentPayload.sources[0].contentId,scope:'part',partNumber:'AN3-5A',field:'requirement',value:'EASA Form 1'}]})}}]})};
+}});
+assert.equal(sentPayload.sources[0].contentId,'S1');assert.equal(sentPayload.knownLines[0].contentId,undefined);
+assert.equal(shortResult.requirements[0].contentId,shortSources[0].id);assert.deepEqual(shortResult.issues,[]);
+const unknownSource=await extractSemantic(shortSources,semanticFixture,{fetchImpl:async()=>({ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({lines:[{contentId:'S999',partNumber:'AN3-5A',quantity:null}],requirements:[]})}}]})})});
+assert.equal(unknownSource.lines.length,0);assert.ok(unknownSource.issues.some(issue=>issue.includes('不存在的来源')));
+const collision=await extractSemantic([{...shortSources[0],id:'S1'}],semanticFixture,{fetchImpl:async(url,options)=>{
+  const data=JSON.parse(JSON.parse(options.body).messages[1].content);assert.equal(data.sources[0].contentId,'SS1');
+  return {ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({lines:[],requirements:[{contentId:'SS1',scope:'part',partNumber:'AN3-5A',field:'requirement',value:'EASA Form 1'}]})}}]})};
+}});assert.equal(collision.requirements[0].contentId,'S1');
+console.log('PASS: short source IDs preserve durable provenance, context-only rows omit returnable IDs, unknown references rejected and alias collisions avoided');
+const supplementKnown=[{contentId:'original-list',partNumber:'AN3-5A',quantity:10,uom:'EA',condition:'FN',issues:[],fieldSources:{}}];
+const requirementOnly=await extractSemantic(shortSources,semanticFixture,{knownLines:supplementKnown,fetchImpl:async()=>({ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({lines:[{contentId:'S1',partNumber:'AN3-5A',quantity:10,requirement:'需附 EASA Form 1'}],requirements:[{contentId:'S1',scope:'part',partNumber:'AN3-5A',field:'requirement',value:'需附 EASA Form 1'}]})}}]})})});
+assert.equal(requirementOnly.lines.length,0);assert.deepEqual(requirementOnly.issues,[]);assert.equal(requirementOnly.requirements.length,1);
+const separateDemand=await extractSemantic([{...shortSources[0],text:'AN3-5A 10 EA FN 需附 EASA Form 1'}],semanticFixture,{knownLines:supplementKnown,fetchImpl:async()=>({ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({lines:[{contentId:'S1',partNumber:'AN3-5A',quantity:10,uom:'EA',condition:'FN'}],requirements:[{contentId:'S1',scope:'part',partNumber:'AN3-5A',field:'requirement',value:'需附 EASA Form 1'}]})}}]})})});
+assert.equal(separateDemand.lines.length,1);assert.equal(mergeSemanticLines(supplementKnown,separateDemand.lines).lines.length,2);
+console.log('PASS: fully accounted part requirements attach without duplicate demand; quantity-bearing source remains a separate line');
+const multipleSources=[{id:'first-source',text:'TEST-A 2 EA FN',locator:{line:1}},{id:'second-source',text:'TEST-B 7 EA NE',locator:{line:2}}];
+const secondSource=await extractSemantic(multipleSources,semanticFixture,{knownLines:[{contentId:'first-source',partNumber:'TEST-A',quantity:2}],fetchImpl:async(url,options)=>{
+  const payload=JSON.parse(JSON.parse(options.body).messages[1].content);
+  assert.equal(payload.knownLines[0].contentId,payload.sources[0].contentId);
+  return {ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({lines:[{contentId:'S2',partNumber:'TEST-B',quantity:7,uom:'EA',condition:'NE'}]})}}]})};
+}});
+assert.equal(secondSource.lines[0].contentId,'second-source');assert.equal(secondSource.lines[0].fieldSources.quantity.contentId,'second-source');assert.equal(secondSource.lines[0].quantity,7);assert.deepEqual(secondSource.issues,[]);
+const onlyRequirementsService=createIntakeService(db,persist,{semantic:async chunks=>({lines:[],issues:[],requirements:[{contentId:chunks[0].id,scope:'part',partNumber:'PN-0001',field:'requirement',value:'需附 EASA Form 1'}]})});
+const onlyRequirementsBatch=await onlyRequirementsService.create({requestId:crypto.randomUUID(),files:[{name:'parts.csv',base64:Buffer.from('PN,Quantity,Unit,Condition\nPN-0001,2,EA,FN').toString('base64')},{name:'notes.txt',base64:Buffer.from('PN-0001 需附 EASA Form 1').toString('base64')}]});
+assert.equal(onlyRequirementsBatch.lines.length,1);assert.ok(!onlyRequirementsBatch.issues.some(issue=>issue.includes('未落实')));assert.ok(onlyRequirementsBatch.lines[0].requirement.includes('EASA Form 1'));
+assert.equal(requirementOnly.requirements[0].classification,'part_supplement');
+for(const text of ['AN3-5A 另需 5 支，需附 EASA Form 1','AN3-5A 10 Each 需附 EASA Form 1','AN3-5A 再要两件，需附 EASA Form 1']){
+ const quantity=text.includes('两')?2:text.includes('5 支')?5:10;
+ const result=await extractSemantic([{...shortSources[0],text}],semanticFixture,{knownLines:supplementKnown,fetchImpl:async()=>({ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({lines:[{contentId:'S1',partNumber:'AN3-5A',quantity}],requirements:[{contentId:'S1',scope:'part',partNumber:'AN3-5A',field:'requirement',value:text.replace('AN3-5A ','')}]})}}]})})});
+ assert.equal(result.lines.length,1,text);
+}
+const ambiguousSupplement=await extractSemantic(shortSources,semanticFixture,{knownLines:[...supplementKnown,{...supplementKnown[0],contentId:'another-list',condition:'OH'}],fetchImpl:async()=>({ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({lines:[{contentId:'S1',partNumber:'AN3-5A',quantity:null,requirement:'需附 EASA Form 1'}],requirements:[{contentId:'S1',scope:'part',partNumber:'AN3-5A',field:'requirement',value:'需附 EASA Form 1'}]})}}]})})});
+assert.equal(ambiguousSupplement.lines.length,1);
+for(const text of ['AN3-5A 另加 5，需8130-3','AN3-5A Qty. 5 需附 EASA Form 1','AN3-5A 数量为5 需附 EASA Form 1','AN3-5A ５支 需附 EASA Form 1']){
+ const result=await extractSemantic([{...shortSources[0],text}],semanticFixture,{knownLines:supplementKnown,fetchImpl:async()=>({ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({lines:[{contentId:'S1',partNumber:'AN3-5A',quantity:null}],requirements:[{contentId:'S1',scope:'part',partNumber:'AN3-5A',field:'requirement',value:text.replace('AN3-5A ','')}]})}}]})})});
+ assert.equal(result.lines.length,1,text);
+}
+const warrantyText='AN3-5A 保修12个月';
+const warranty=await extractSemantic([{...shortSources[0],text:warrantyText}],semanticFixture,{knownLines:supplementKnown,fetchImpl:async()=>({ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({lines:[{contentId:'S1',partNumber:'AN3-5A',quantity:null}],requirements:[{contentId:'S1',scope:'part',partNumber:'AN3-5A',field:'requirement',value:'保修12个月'}]})}}]})})});
+assert.equal(warranty.lines.length,0);assert.equal(warranty.requirements[0].targetContentId,'original-list');
+const mixedRequirements=[{contentId:'mixed-note',scope:'part',partNumber:'PN-0001',field:'requirement',value:'EASA Form 1'},{contentId:'mixed-note',scope:'part',partNumber:'ABSENT',field:'requirement',value:'CoC'}];
+const appliedMixed=mergeExtractedRequirements([{contentId:'parts',partNumber:'PN-0001',quantity:2,uom:'EA',condition:'FN',issues:[],fieldSources:{}}],mixedRequirements,[{id:'mixed-note',text:'PN-0001 EASA Form 1; ABSENT CoC',locator:{line:1}}]);
+assert.equal(appliedMixed.appliedRequirements.has(mixedRequirements[0]),true);assert.equal(appliedMixed.appliedRequirements.has(mixedRequirements[1]),false);
+const pinned=mergeExtractedRequirements([...supplementKnown,{...supplementKnown[0],contentId:'another-list'}],warranty.requirements,[{...shortSources[0],text:warrantyText}]);
+assert.ok(pinned.lines[0].requirement.includes('保修'));assert.equal(pinned.lines[1].requirement,undefined);
+const simultaneous=await extractSemantic([{id:'new-demand',text:'AN3-5A 3 EA FN',locator:{line:1}},{id:'same-part-note',text:'AN3-5A 需附 EASA Form 1',locator:{line:1}}],semanticFixture,{knownLines:supplementKnown,fetchImpl:async()=>({ok:true,json:async()=>({choices:[{message:{content:JSON.stringify({lines:[{contentId:'S1',partNumber:'AN3-5A',quantity:3,uom:'EA',condition:'FN'},{contentId:'S2',partNumber:'AN3-5A',quantity:null}],requirements:[{contentId:'S2',scope:'part',partNumber:'AN3-5A',field:'requirement',value:'需附 EASA Form 1'}]})}}]})})});
+assert.equal(simultaneous.lines.length,2);assert.equal(simultaneous.requirements[0].classification,undefined);
+const onlyAmbiguous=mergeExtractedRequirements([...supplementKnown,{...supplementKnown[0],contentId:'other-list'}],[{contentId:shortSources[0].id,scope:'part',partNumber:'AN3-5A',field:'requirement',value:'需附 EASA Form 1'}],shortSources);
+assert.equal(onlyAmbiguous.appliedRequirements.size,0);assert.ok(onlyAmbiguous.lines.every(line=>line.issues.some(issue=>issue.includes('适用范围'))));
+const orphanReqService=createIntakeService(db,persist,{semantic:async chunks=>({lines:[],issues:[],requirements:[{contentId:chunks[0].id,scope:'part',partNumber:'MS-ABC',field:'requirement',value:'需附 CoC'}]})});
+const orphanReq=await orphanReqService.create({requestId:crypto.randomUUID(),files:[{name:'parts.csv',base64:Buffer.from('PN,Quantity,Unit,Condition\nPN-0001,2,EA,FN').toString('base64')},{name:'note.txt',base64:Buffer.from('MS-ABC 需附 CoC').toString('base64')}]});
+assert.ok(orphanReq.issues.some(issue=>issue.includes('未落实')));
+const addedPart=onlyRequirementsService.addLine(onlyRequirementsBatch.id,{partNumber:'PN-0001',quantity:3,uom:'EA'}).lines.at(-1);
+assert.equal(addedPart.requirement,undefined);assert.ok(addedPart.issues.some(issue=>issue.includes('适用范围需确认')));
+const addedOther=onlyRequirementsService.addLine(onlyRequirementsBatch.id,{partNumber:'OTHER',quantity:1,uom:'EA'}).lines.at(-1);
+const renamedPart=onlyRequirementsService.updateLine(onlyRequirementsBatch.id,addedOther.id,{version:addedOther.version,patch:{partNumber:'PN-0001'}}).lines.find(line=>line.id===addedOther.id);
+assert.equal(renamedPart.requirement,undefined);assert.ok(renamedPart.issues.some(issue=>issue.includes('适用范围需确认')));

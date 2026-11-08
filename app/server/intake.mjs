@@ -525,7 +525,8 @@ export function createIntakeService(
       });
       const merged=mergeExtractedRequirements(semanticResult.lines,requirements,chunks);
       const pending=result.unresolved.filter(chunk=>{
-        const values=[...semanticResult.lines.filter(line=>line.contentId===chunk.id).flatMap(line=>Object.values(line.rawFields || {})),...requirements.filter(requirement=>requirement.contentId===chunk.id).map(requirement=>requirement.value)];
+        if(requirements.some(requirement=>requirement.contentId===chunk.id&&!merged.appliedRequirements.has(requirement)))return true;
+        const values=[...semanticResult.lines.filter(line=>line.contentId===chunk.id).flatMap(line=>Object.values(line.rawFields || {})),...requirements.filter(requirement=>requirement.contentId===chunk.id&&merged.appliedRequirements.has(requirement)).flatMap(requirement=>[requirement.value,...(requirement.scope==='part'?[requirement.partNumber]:[])])];
         if (!values.length) return /[0-9]|要求|证书|交期|有效|截止|FAA|EASA|certificate|delivery|condition|MOQ/i.test(chunk.text);
         return hasUnmappedText(chunk.text,Object.fromEntries(values.map((value,index)=>[index,value])));
       });
@@ -700,18 +701,20 @@ export function createIntakeService(
     persist();
     return detail(id);
   }
-  function applyInquiryRequirements(batchId, line) {
+  function applyInquiryRequirements(batchId, line, lineId=null) {
     const inquiry=detail(batchId);
     const chunks=inquiry.contents;
     let requirements=inquiry.requirements;
     if (!requirements.length) {
+      // Legacy part-scoped provenance belongs to its original demand; only global requirements inherit onto a new line.
       requirements=inquiry.lines.flatMap(existing=>Object.entries(existing.fieldSources || {}).flatMap(([field,origin])=>[...(origin.sources || []),...(origin.previousSources || []),...(origin.rejectedSources || [])].filter(source=>source.scope==='all'&&source.value).map(source=>({contentId:source.contentId,field,value:source.value,scope:'all'}))));
       requirements=requirements.filter(requirement=>{
         const chunk=chunks.find(content=>content.id===requirement.contentId);
         return chunk&&hasGlobalScope(chunk,inquiry.lines);
       });
     }
-    return mergeExtractedRequirements([line],requirements,chunks).lines[0];
+    const others=inquiry.lines.filter(existing=>existing.id!==lineId);
+    return mergeExtractedRequirements([...others,line],requirements,chunks).lines.at(-1);
   }
   function addLine(
     batchId,
@@ -884,7 +887,7 @@ export function createIntakeService(
       for(const [key,origin] of Object.entries(fields.fieldSources || {})) {
         if(origin.sources?.some(source=>source.scope==='part'&&normalizePartNumber(source.partNumber)!==fields.partNumber)) fields.issues.push(`共同要求的${extractionFieldLabel(key)}适用范围需确认`);
       }
-      Object.assign(fields,applyInquiryRequirements(batchId,fields));
+      Object.assign(fields,applyInquiryRequirements(batchId,fields,lineId));
     }
     const issues = [...fields.issues];
     fields.issues = issues;
