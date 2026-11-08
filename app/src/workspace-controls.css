@@ -612,8 +612,8 @@ html:has(dialog[open]) { overflow:hidden; }
 .intake-inline-preview-body table { border-collapse:collapse;min-width:100%; }
 .intake-inline-preview-body th,.intake-inline-preview-body td { border:1px solid var(--line);padding:8px 12px;white-space:nowrap;font-weight:400; }
 .intake-inline-preview>p { padding:0 16px;color:var(--red);font-size:14px; }
-.layout-reference .content { transition:padding-right 360ms cubic-bezier(.22,.8,.28,1); }
-@media(prefers-reduced-motion:reduce) { .layout-reference .content { transition:none; } }
+/* Page navigation applies its final content width immediately. */
+.layout-reference .content { transition:none; }
 
 /* The composer keeps attachment and send actions on one baseline. */
 .platform-chat-form,.rfq-chat-composer { position:relative; }
