@@ -1149,3 +1149,15 @@ tr:hover .material-reference-name>.reference-cite,.material-reference-name:focus
 }
 .chat-conversation-context>span { flex-shrink:0; }
 .chat-conversation-context>strong { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;color:var(--ink); }
+
+/* Module references use the same compact attachment shape in every chat surface. */
+.chat-reference-drafts .chat-references { display:flex;flex-wrap:wrap;gap:8px; }
+.chat-reference { display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:var(--radius-control);background:var(--hal-head); }
+.chat-reference>div.chat-reference-content { display:block;flex:1;min-width:0; }
+.chat-reference-icon { flex-shrink:0;width:24px;height:28px;fill:none;stroke:var(--ink-2);stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round; }
+.chat-reference-content strong { display:block; }
+.chat-reference-content p { -webkit-line-clamp:1; }
+.chat-reference-drafts .chat-reference { flex:0 1 300px;width:300px;padding:8px 10px; }
+.chat-reference-drafts .chat-reference button { width:28px;height:28px;min-width:28px;border-radius:50%; }
+.workflow-section .panel-title { cursor:grab; }
+.workflow-section .panel-title button { cursor:pointer; }

@@ -1,12 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
+import { INQUIRY_STAGES } from '../engine/workflow';
 import { readStored, useStoredState } from '../engine/persistence';
 import { REFERENCE_MIME, readReference, type ChatReference } from '../engine/chatReferences';
 
 export function ReferenceList({items,onRemove}:{items:ChatReference[];onRemove?:(id:string)=>void}) {
   if (!items.length) return null;
-  return <div className="chat-references" aria-label="引用内容">{items.map(item=><blockquote key={item.id} className="chat-reference">
-    <div><strong>{item.label}</strong>{onRemove&&<button type="button" aria-label={`移除引用 ${item.label}`} onClick={()=>onRemove(item.id)}>×</button>}</div>
-    <p>{item.excerpt}</p>
+  return <div className="chat-references" aria-label="引用内容">{items.map(item=><blockquote key={item.id} className="chat-reference" title={`${item.label}\n${item.excerpt}`}>
+    <svg className="chat-reference-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a1 1 0 0 0-1 1v16a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8l-5-5Zm0 0v5h5M8 12h8M8 16h6"/></svg>
+    <div className="chat-reference-content"><strong>{item.stage ? INQUIRY_STAGES[item.stage - 1] : item.label}</strong><p>{item.excerpt}</p></div>
+    {onRemove&&<button type="button" aria-label={`移除引用 ${item.label}`} onClick={()=>onRemove(item.id)}>×</button>}
   </blockquote>)}</div>;
 }
 

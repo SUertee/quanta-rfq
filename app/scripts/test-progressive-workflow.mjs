@@ -253,15 +253,25 @@ assert.equal(document.body.classList.contains('module-reference-dragging'),false
 assert.equal(host.querySelector('[data-reference-holding]'),null);
 const target = host.querySelector(".rfq-chat-composer");
 document.elementFromPoint = () => target;
-const pointer = (type, x, y) =>
+const pointer = (type, x, y, pointerType = "touch") =>
   new window.PointerEvent(type, {
     bubbles: true,
     cancelable: true,
     button: 0,
     pointerId: 7,
+    pointerType,
     clientX: x,
     clientY: y,
   });
+await act(async () => {
+  host.querySelector('section').dispatchEvent(pointer('pointerdown', 20, 20, 'mouse'));
+  window.dispatchEvent(pointer('pointermove', 40, 50, 'mouse'));
+});
+assert.ok(document.querySelector('.module-reference-ghost'), 'mouse drag starts directly from the card without a hold');
+await act(async () => window.dispatchEvent(pointer('pointerup', 400, 500, 'mouse')));
+assert.equal(cited.stage, 2);
+assert.equal(document.body.classList.contains('module-reference-dragging'), false);
+cited = null;
 await act(async () => {
   host.querySelector("h2").dispatchEvent(pointer("pointerdown", 20, 20));
   await wait(480);
