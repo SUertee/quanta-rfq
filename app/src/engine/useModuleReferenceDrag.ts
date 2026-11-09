@@ -1,7 +1,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 import { citeReference, dragReference, type ChatReference } from "./chatReferences";
 
-/** Drag a module into chat with a mouse, or hold before dragging on touch screens. */
+/** Only the module heading starts a reference drag. Body text remains selectable. */
 export function useModuleReferenceDrag(
   root: RefObject<HTMLElement>,
   reference: (stage: number) => ChatReference,
@@ -59,6 +59,7 @@ export function useModuleReferenceDrag(
         event.target.closest('button,input,textarea,select,a,label,summary,[contenteditable],[role=button],[tabindex]:not([tabindex="-1"])')
       )
         return;
+      if (!event.target.closest('[data-module-reference]')) return;
       const draggable=event.target.closest('[draggable=true]');
       if(draggable&&(!draggable.hasAttribute('data-module-reference')||event.pointerType!=='touch'))return;
       const section = event.target.closest<HTMLElement>("[data-inquiry-stage]");

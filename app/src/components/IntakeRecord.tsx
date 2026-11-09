@@ -263,8 +263,8 @@ export function IntakeRecord({
                     aria-controls={`file-preview-${batchId}`}
                     onClick={() => setPreviewFileId(current => current === file.id ? null : file.id)}
                   >
-                    <span className="intake-file-icon" aria-hidden="true">{file.file_type?.toUpperCase() || file.name.split('.').pop()?.toUpperCase()}</span>
-                    <b>{file.name}</b>
+                    <span className="intake-file-icon" aria-hidden="true">{file.file_type==='eml'?'邮件':file.file_type?.toUpperCase() || file.name.split('.').pop()?.toUpperCase()}</span>
+                    <b>{file.metadata?.subject||file.name}</b>{file.parent_id&&<span className="badge badge-gray">附件</span>}
                     {file.status !== 'parsed' && <span className="badge badge-amber">{fileStates[file.status] || file.status}</span>}
                   </button>
                 ))}
@@ -279,6 +279,7 @@ export function IntakeRecord({
                     </div>
                   </header>
                   <div className="intake-inline-preview-body">
+                    {previewFile.file_type==='eml'&&<dl className="mail-envelope">{[['发件人',previewFile.metadata?.from],['收件人',previewFile.metadata?.to],['日期',previewFile.metadata?.date]].filter(([,value])=>value).map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>}
                     {['png', 'jpg', 'jpeg', 'webp'].includes(previewFile.file_type) ? (
                       <img src={appUrl(`/api/files/${encodeURIComponent(previewFile.id)}/preview`)} alt={previewFile.name} />
                     ) : previewFile.file_type === 'pdf' ? (
@@ -324,7 +325,7 @@ export function IntakeRecord({
           {pane === "evidence" && (
             <>
               <div className="intake-evidence-toolbar">
-                <span>{matched} 行有匹配依据 · {lines.length - matched} 行待补充</span>
+                <strong>物料 {lines.length} 行 · 已找到货源 {matched} 行 · 未找到 {lines.length - matched} 行</strong>
                 <div className="intake-evidence-actions">
                   <button className="btn" onClick={()=>setSupplierImportOpen(true)}>导入供应商报价</button>
                   <button className="btn" disabled={busy} onClick={()=>void load(true)}>{busy?'查询中…':'刷新依据'}</button>
@@ -349,9 +350,9 @@ export function IntakeRecord({
                 <div className="intake-evidence-body">
                   {line ? (
                     <>
-                      <section className="intake-source reference-source" aria-label="原文依据" draggable onDragStart={event=>dragReference(event,sourceReference)}>
+                      <section className="intake-source reference-source" aria-label="原文依据">
                         <div className="intake-source-label">
-                          <span>原文 · {file?.name} · {position(content?.locator)}</span><button type="button" className="reference-cite" onClick={()=>citeReference(sourceReference)}>引用</button>
+                          <span>原文 · {file?.name} · {position(content?.locator)}</span><button type="button" className="reference-cite" draggable onDragStart={event=>dragReference(event,sourceReference)} onClick={()=>citeReference(sourceReference)}>引用</button>
                         </div>
                         <pre>{content?.text || "无原文"}</pre>
                       </section>
@@ -372,7 +373,7 @@ export function IntakeRecord({
                                     const origin=record?.contents.find(content=>content.id===source.contentId);
                                     const originFile=record?.files.find(file=>file.id===origin?.file_id);
                                     const reference:ChatReference={id:`content:${source.contentId}:${line.version||1}`,label:`${label} · ${originFile?.name||'材料'}`,excerpt:origin?.text||String(source.value||'要求原文'),inquiryId:batchId,lineId:line.id,contentId:source.contentId||undefined,version:line.version};
-                                    return <small className="reference-source" draggable onDragStart={event=>dragReference(event,reference)} key={index}>{originFile?.name} · {position(origin?.locator)} · {source.value}</small>;
+                                    return <small className="reference-source" key={index}>{originFile?.name} · {position(origin?.locator)} · {source.value} <button className="reference-cite" draggable onDragStart={event=>dragReference(event,reference)} onClick={()=>citeReference(reference)}>引用</button></small>;
                                   })}
                                 </td>
                               </tr>
@@ -381,75 +382,32 @@ export function IntakeRecord({
                         </div>
                       )}
                       {evidence.length ? (
-                        evaluatedEvidence.map((e) => (
-                          <article className="evidence-card reference-source" key={e.id} draggable onDragStart={event=>dragReference(event,evidenceReference(e))}>
-                            <header>
-                              <strong>
-                                {e.source === "inventory"
-                                  ? "内部库存与成本"
-                                  : (e.snapshot.supplierName ? String(e.snapshot.supplierName) : "供应商报价")}
-                              </strong>
-                              <div className="reference-actions">{resourceResult?.selected?.id===e.id&&<span className="badge badge-green">{selectedBases[`intake-${batchId}-${line.lineNo}`]?'已选依据':'自动选用'}</span>}<span>
-                                {e.snapshot.dataSource === "official_demo"
-                                  ? "演示数据"
-                                  : e.source === "inventory"
-                                    ? "库存记录"
-                                    : "供应商报价"}
-                                {e.snapshot.sourceDocument&&typeof e.snapshot.sourceDocument==='object'?` · ${String((e.snapshot.sourceDocument as Record<string,unknown>).fileName||'')}`:''}
-                              </span><button type="button" className="reference-cite" aria-label={`引用依据 ${e.source_key}`} onClick={()=>citeReference(evidenceReference(e))}>引用</button></div>
-                            </header>
-                            {onSelectBasis&&<div className="evidence-selection"><button type="button" className="btn" disabled={selectionDisabled||e.current_match?.state!=='usable'||!!line.issues?.length||selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id} aria-pressed={selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id} onClick={()=>onSelectBasis(`intake-${batchId}-${line.lineNo}`,e.id)}>{selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id?'已选为报价依据':'选为报价依据'}</button></div>}
-                            {e.current_match && (
-                              <section className="resource-checks" aria-label="候选适用条件">
-                                <strong className={`badge badge-${e.current_match.state === 'usable' ? 'green' : e.current_match.state === 'conflict' ? 'red' : 'amber'}`}>
-                                  {matchStates[e.current_match.state] || '待确认'}
-                                </strong>
-                                <ul>{e.current_match.checks.filter(check => check.state !== 'pass').map(check => <li key={check.code}>{check.message}</li>)}</ul>
-                                <span>完整件号匹配{e.snapshot.sourceDocument&&typeof e.snapshot.sourceDocument==='object'?` · ${position((e.snapshot.sourceDocument as {locator?:Record<string,unknown>}).locator)}`:''}{e.matched_at&&` · 取数 ${new Intl.DateTimeFormat('zh-CN',{timeZone:'Asia/Shanghai'}).format(new Date(e.matched_at))}`}</span>
-                              </section>
-                            )}
-                            <dl>
-                              {(e.source === "inventory"
-                                ? [
-                                    ["库存数量", e.snapshot.stockQty],
-                                    ["单位", e.snapshot.uom],
-                                    ["件状", e.snapshot.stockCondition],
-                                    [
-                                      "最近采购价",
-                                      `${value(e.snapshot.lastPurchasePrice)} ${value(e.snapshot.currency)}`,
-                                    ],
-                                    [
-                                      "平均成本",
-                                      `${value(e.snapshot.avgCost)} ${value(e.snapshot.currency)}`,
-                                    ],
-                                    ["仓库", e.snapshot.warehouse],
-                                    ["更新日期", e.snapshot.costUpdateDate],
-                                  ]
-                                : [
-                                    [
-                                      "供应商单价",
-                                      `${value(e.snapshot.unitPrice)} ${value(e.snapshot.currency)}`,
-                                    ],
-                                    ["起订量", e.snapshot.moq],
-                                    ["件状", e.snapshot.condition],
-                                    [
-                                      "交期",
-                                      e.snapshot.leadDays === null
-                                        ? "—"
-                                        : `${value(e.snapshot.leadDays)} 天`,
-                                    ],
-                                    ["有效期", e.snapshot.validUntil],
-                                    ["证书", e.snapshot.certType],
-                                  ]
-                              ).map(([label, v]) => (
-                                <div key={String(label)}>
-                                  <dt>{value(label)}</dt>
-                                  <dd>{value(v)}</dd>
-                                </div>
-                              ))}
-                            </dl>
-                          </article>
-                        ))
+                        <div className="resource-table-scroll"><table className="resource-table">
+                          <thead><tr><th>货源</th><th>成本单价</th><th>可供数量 / 起订量</th><th>供货条件</th><th>匹配结果</th><th>操作</th></tr></thead>
+                          <tbody>{evaluatedEvidence.map(e => {
+                            const inventory=e.source==='inventory';
+                            const selected=resourceResult?.selected?.id===e.id;
+                            const source=e.snapshot.sourceDocument as {fileName?:string}|undefined;
+                            return <tr key={e.id}>
+                              <td data-label="货源"><strong>{inventory?'内部库存':String(e.snapshot.supplierName||'供应商报价')}</strong>
+                                <span>{inventory?value(e.snapshot.warehouse):source?.fileName||'供应商报价'}</span>
+                                {e.snapshot.dataSource==='official_demo'&&<span className="badge badge-gray">演示数据</span>}
+                              </td>
+                              <td data-label="成本单价"><strong>{value(inventory?e.snapshot.lastPurchasePrice||e.snapshot.avgCost:e.snapshot.unitPrice)} {value(e.snapshot.currency)}</strong><span>每 {value(e.snapshot.uom)}</span></td>
+                              <td data-label="数量">{inventory?`${value(e.snapshot.stockQty)} ${value(e.snapshot.uom)}`:`最少 ${value(e.snapshot.moq)} ${value(e.snapshot.uom)}`}</td>
+                              <td data-label="供货条件"><span>件状 {value(inventory?e.snapshot.stockCondition:e.snapshot.condition)}</span>
+                                {!inventory&&<><span>交期 {value(e.snapshot.leadDays)} 天</span><span>有效期 {value(e.snapshot.validUntil)}</span><span>证书 {value(e.snapshot.certType)}</span></>}
+                              </td>
+                              <td data-label="匹配结果"><strong className={`badge badge-${e.current_match?.state==='usable'?'green':e.current_match?.state==='conflict'?'red':'amber'}`}>{matchStates[e.current_match?.state||'']||'待确认'}</strong>
+                                {!!e.current_match?.checks.some(check=>check.state!=='pass')&&<ul>{e.current_match.checks.filter(check=>check.state!=='pass').map(check=><li key={check.code}>{check.message}</li>)}</ul>}
+                                {selected&&<span className="resource-selected">{selectedBases[`intake-${batchId}-${line.lineNo}`]?'已选依据':'自动选用'}</span>}
+                              </td>
+                              <td data-label="操作"><div className="resource-row-actions">{onSelectBasis&&<button type="button" className="btn" disabled={selectionDisabled||e.current_match?.state!=='usable'||!!line.issues?.length||selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id} aria-pressed={selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id} onClick={()=>onSelectBasis(`intake-${batchId}-${line.lineNo}`,e.id)}>{selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id?'已选用':'选用'}</button>}
+                                <button type="button" className="reference-cite" aria-label={`引用依据 ${e.source_key}`} draggable onDragStart={event=>dragReference(event,evidenceReference(e))} onClick={()=>citeReference(evidenceReference(e))}>引用</button>
+                              </div></td>
+                            </tr>;
+                          })}</tbody>
+                        </table></div>
                       ) : (
                         <div className="intake-no-evidence">
                           未找到精确件号依据

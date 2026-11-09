@@ -218,7 +218,7 @@ function ModuleHarness({ run }) {
       React.createElement(
         "section",
         { "data-inquiry-stage": "2" },
-        React.createElement("h2", null, "提取需求"),
+        React.createElement("h2", {"data-module-reference":""}, "提取需求"),
         React.createElement("div", {draggable:true,"data-module-reference":""}, "拖动模块"),
         React.createElement("input"),
       ),
@@ -267,9 +267,9 @@ await act(async () => {
   host.querySelector('section').dispatchEvent(pointer('pointerdown', 20, 20, 'mouse'));
   window.dispatchEvent(pointer('pointermove', 40, 50, 'mouse'));
 });
-assert.ok(document.querySelector('.module-reference-ghost'), 'mouse drag starts directly from the card without a hold');
+assert.equal(document.querySelector('.module-reference-ghost'), null, 'card body stays available for text selection');
 await act(async () => window.dispatchEvent(pointer('pointerup', 400, 500, 'mouse')));
-assert.equal(cited.stage, 2);
+assert.equal(cited, undefined);
 assert.equal(document.body.classList.contains('module-reference-dragging'), false);
 cited = null;
 await act(async () => {
