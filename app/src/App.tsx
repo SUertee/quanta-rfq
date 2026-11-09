@@ -1,7 +1,7 @@
 import type {WorkflowRun,InquiryStage} from './engine/workflow';
 import {useInquiryQuote} from './engine/useInquiryQuote';
 import {appFetch as fetch,appUrl} from './engine/appUrl';
-import {conversationMeta,newConversation,updateConversation} from './engine/conversations';
+import {conversationMeta,newConversation,updateConversation,inquiryConversation,clearConversationReferences,normalizeConversationTask} from './engine/conversations';
 import {PlatformChat,ConversationList} from './components/AssistantConversations';
 import {AccountMenu} from './components/AccountMenu';
 import {Modal} from './components/Modal';
@@ -39,21 +39,22 @@ export default function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection,setSettingsSection]=useState<'pricing'|'services'>('pricing');
   const [importRequested, setImportRequested] = useState(new URLSearchParams(location.search).get('new') === '1');
-  const [activeChat,setActiveChat]=useStoredState<string|null>('active-chat-v1',null);
+  const [activeChat, setActiveChat] = useState<string | null>(() => 'chat:' + crypto.randomUUID());
   const automaticRuns=useRef(new Set<string>());
   const [workflowRuns,setWorkflowRuns]=useState<Record<string,WorkflowRun>>({});
   const [quickMessage,setQuickMessage]=useState<{id:number;text:string;inquiryId?:string;workflow?:boolean}|null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantDocked, setAssistantDocked] = useState(false);
+  const [chatRefreshing, setChatRefreshing] = useState(false);
   useEffect(()=>{const cite=()=>setAssistantOpen(true);window.addEventListener('quanta-reference',cite);return()=>window.removeEventListener('quanta-reference',cite);},[]);
   const [agentLineKey, setAgentLineKey] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
   const [userName, setUserName] = useState(() => localStorage.getItem('quanta-user-name') || '林');
-  const [mode, setMode] = useStoredState<'workbench' | 'agent'>('mode', 'workbench');
+  const [mode, setMode] = useState<'workbench' | 'agent'>('workbench');
   const [ds, setDs] = useState<Dataset | null>(null);
   const [err, setErr] = useState('');
-  const [view, setView] = useStoredState<View>('view', 'home');
-  const [source, setSource] = useStoredState<Source | null>('source', null);
+  const [view, setView] = useState<View>('home');
+  const [source, setSource] = useState<Source | null>(null);
   const currentSource=useRef(source);currentSource.current=source;
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -183,7 +184,48 @@ export default function App() {
   if (err) return <div className="boot">数据载入失败：{err}</div>;
   if (!dsx2) return <div className="boot">正在载入…</div>;
 
-  const openTask = (s: Source) => { if(activeChat&&conversationMeta()[activeChat]?.taskKey!==sourceKey(s))setActiveChat(null); setSource(s); setView('workbench'); setMode('workbench'); setAgentLineKey(null); setAssistantOpen(false); setAssistantDocked(false); };
+  const selectInquiry = (nextSource: Source, preferredKey = activeChat) => {
+    const nextKey = inquiryConversation(sourceKey(nextSource), preferredKey);
+    if (!source || sourceKey(source) !== sourceKey(nextSource)) {
+      clearConversationReferences(activeChat, nextKey);
+      setQuickMessage(null);
+    }
+    updateConversation(nextKey, {taskKey:normalizeConversationTask(sourceKey(nextSource)), lastOpenedAt:new Date().toISOString()});
+    setActiveChat(nextKey);
+    setSource(nextSource);
+    setAgentLineKey(null);
+  };
+  const openTask = (nextSource: Source, preferredKey = activeChat) => {
+    selectInquiry(nextSource, preferredKey);
+    setView('workbench');
+    setMode('workbench');
+    setAssistantOpen(false);
+    setAssistantDocked(false);
+  };
+  const startConversation = () => {
+    const key = newConversation();
+    if (!key) return;
+    clearConversationReferences(activeChat, key);
+    setQuickMessage(null);
+    setActiveChat(key);
+    setSource(null);
+    setAgentLineKey(null);
+  };
+  const restoreConversation = (key: string) => {
+    const metadata = conversationMeta()[key];
+    const task = tasks.find(item => Object.prototype.hasOwnProperty.call(metadata || {}, 'taskKey')
+      ? item.key === normalizeConversationTask(metadata?.taskKey || '')
+      : key === item.key || key.startsWith(item.key + ':line:'));
+    clearConversationReferences(activeChat, key);
+    setQuickMessage(null);
+    updateConversation(key, {lastOpenedAt:new Date().toISOString()});
+    setActiveChat(key);
+    setSource(task?.source || null);
+    setAgentLineKey(task && key.startsWith(task.key + ':line:') ? key.slice(task.key.length + 6) : null);
+    setChatRefreshing(true);
+    if (source && task && normalizeConversationTask(sourceKey(source)) === task.key) quoteSync.retry();
+    void loadData().then(setDs).catch(error => setErr(String(error))).finally(() => setChatRefreshing(false));
+  };
   const applyLlmRows = (rows: RawRow[]) => {
     if (source?.kind === 'email') { setSource({ ...source, llmRows: rows }); setTaskRows((old) => ({ ...old, [source.id]: rows })); }
   };
@@ -209,28 +251,27 @@ export default function App() {
     const email=batchEmail(batch);
     setDs(old=>old?{...old,emails:[...old.emails.filter(item=>item.id!==email.id),email]}:old);
     setWorkflowRuns(old=>({...old,[batch.id]:{stage,revealed:stage,state:'running'}}));
-    if(stage===1){setActiveChat(null);setSource({kind:'email',id:email.id});setView('workbench');setMode('workbench');}
+    if(stage===1){selectInquiry({kind:'email',id:email.id});setView('workbench');setMode('workbench');}
   };
   const newTask = (email: EmailSample, llmRows?: RawRow[]) => {
     if(email.intakeBatchId) { setDs(old=>old?{...old,emails:[...old.emails.filter(e=>e.id!==email.id),email]}:old); void loadData().then(setDs).catch(e=>setErr(String(e))); }
     else setExtraEmails((arr) => [...arr, email]);
     if (llmRows) setTaskRows((old) => ({ ...old, [email.id]: llmRows }));
     if (userId.trim()) setAssignees(old => ({ ...old, [`email:${email.id}`]: userId.trim() }));
-    setSource({ kind: 'email', id: email.id, llmRows });
+    selectInquiry({ kind: 'email', id: email.id, llmRows });
     setView('workbench');
   };
 
   const receiveChatInquiry = (batch: IntakeBatch, conversationKey: string) => {
     const email = batchEmail(batch);
     newTask(email);
-    updateConversation(conversationKey, {taskKey: `email:${email.id}`});
+    updateConversation(conversationKey, {taskKey: `email-${email.id}`});
     setActiveChat(conversationKey);
     setAgentLineKey(null);
     if (mode === 'workbench') setAssistantOpen(true);
   };
   const openChatInquiry = (id: string, conversationKey: string) => {
-    setActiveChat(conversationKey);
-    openTask({kind: 'email', id: `intake-${id}`});
+    openTask({kind: 'email', id: `intake-${id}`}, conversationKey);
   };
 
   return (
@@ -263,9 +304,9 @@ export default function App() {
 
         <FloatingAssistant onSend={text=>{setQuickMessage({id:Date.now(),text});setAssistantOpen(true);}} open={assistantOpen} expanded={mode==='agent'} docked={assistantDocked && assistantOpen && mode==='workbench'} onOpen={()=>setAssistantOpen(true)} onCollapse={()=>{setAssistantOpen(false);setAssistantDocked(false);setMode('workbench');}}>
         <div className={mode === 'agent' ? "agent-mode-host" : "embedded-agent-host"}>
-          {mode==='agent'&&<ConversationList tasks={tasks} selected={activeChat||(source?sourceKey(source)+(agentLineKey?':line:'+agentLineKey:''):'__no_task__')} onNew={()=>{const key=newConversation();if(key){setActiveChat(key);setSource(null);setAgentLineKey(null);}}} onSelect={(key)=>{setQuickMessage(null);setActiveChat(key.startsWith('chat:')?key:null);const linked=conversationMeta()[key]?.taskKey;if(key.startsWith('chat:')||Object.prototype.hasOwnProperty.call(conversationMeta()[key]||{},'taskKey')){setActiveChat(key);const linkedTask=tasks.find(t=>t.key===linked);setSource(linkedTask?.source||null);setAgentLineKey(null);return;}if(key==='__no_task__'){setSource(null);setAgentLineKey(null);return;}const task=tasks.find(t=>key===t.key||key.startsWith(t.key+':line:'));if(task){setSource(task.source);setAgentLineKey(key.startsWith(task.key+':line:')?key.slice(task.key.length+6):null);}}} />}
+          {mode==='agent'&&<ConversationList tasks={tasks} selected={activeChat||(source?sourceKey(source)+(agentLineKey?':line:'+agentLineKey:''):'__no_task__')} onNew={startConversation} onSelect={restoreConversation} />}
           {!source && <PlatformChat operator={userName} onInquiryCreated={receiveChatInquiry} onOpenInquiry={openChatInquiry} standalone={mode==='agent'} docked={assistantDocked} onDock={()=>setAssistantDocked(value=>!value)} key={activeChat||'__no_task__'} conversationKey={activeChat||'__no_task__'} onQuickHandled={()=>setQuickMessage(null)} quickMessage={quickMessage?.inquiryId?null:quickMessage} onClose={()=>{setMode('workbench');setAssistantOpen(false);setAssistantDocked(false);}} onHistory={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}} />}
-          {source&&quoteSync.ready&&<div className="copilot-body"><AgentPage onWorkflowProgress={(stage,state)=>{const id=current.email?.intakeBatchId;if(id&&state==='running')automaticRuns.current.add(id);if(id)setWorkflowRuns(old=>({...old,[id]:{stage,state,revealed:state==='done'?6:Math.max(old[id]?.revealed||6,stage) as InquiryStage}}));}} operator={userName} onInquiryCreated={receiveChatInquiry} key={(activeChat||'')+sourceKey(source)+(agentLineKey||'')}
+          {source&&quoteSync.ready&&<div className="copilot-body"><AgentPage onWorkflowProgress={(stage,state)=>{const id=current.email?.intakeBatchId;if(id&&state==='running')automaticRuns.current.add(id);if(id)setWorkflowRuns(old=>({...old,[id]:{stage,state,revealed:state==='done'?6:Math.max(old[id]?.revealed||6,stage) as InquiryStage}}));}} operator={userName} onInquiryCreated={receiveChatInquiry} key={(activeChat||'')+sourceKey(source)}
             sessionOverride={activeChat||undefined} onQuickHandled={()=>setQuickMessage(null)} quickMessage={source&&(!quickMessage?.inquiryId||quickMessage.inquiryId===current.email?.intakeBatchId)?quickMessage:null} onHistory={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}} embedded expanded={mode === 'agent'} docked={assistantDocked} selectedLineKey={agentLineKey}
             onClearLine={() => setAgentLineKey(null)}
             onClose={() => { setMode('workbench'); setAssistantOpen(false); setAssistantDocked(false); }}
@@ -279,8 +320,8 @@ export default function App() {
               fetch('/api/review', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({task:current.lines[0]?.rfqId || current.label,pn:line.partNumber,action:'接受Agent建议单价',detail:`单价 ${price} CNY；业务风险未自动核销`,operator:userName})}).catch(() => {});
             }}
             onNewInquiry={() => { setMode('workbench'); setView('home'); setImportRequested(true); setAssistantOpen(false); setAssistantDocked(false); }}
-            onSelectTask={(s) => { setSource(s); setAgentLineKey(null); }}
-            quoteVersion={current.email?.intakeBatchId?quoteSync.version:undefined} persistencePending={!!current.email?.intakeBatchId&&(!quoteSync.ready||quoteSync.saving||!!quoteSync.error)} selectedBases={selectedBases} addedLines={addedLines} tasks={tasks} ds={dsx2} policy={policyFull} activeSource={source} lineEdits={lineEdits}
+            onSelectTask={selectInquiry}
+            quoteVersion={current.email?.intakeBatchId?quoteSync.version:undefined} persistencePending={chatRefreshing || (!!current.email?.intakeBatchId&&(!quoteSync.ready||quoteSync.saving||!!quoteSync.error))} selectedBases={selectedBases} addedLines={addedLines} tasks={tasks} ds={dsx2} policy={policyFull} activeSource={source} lineEdits={lineEdits}
             priceBook={priceBook} setPriceBook={setPriceBook}
             resolved={resolved} setResolved={setResolved}
             estCost={estCost} setEstCost={setEstCost}

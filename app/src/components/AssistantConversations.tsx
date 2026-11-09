@@ -13,7 +13,7 @@ import type {ChatAttachment} from '../engine/chatAttachments';
 import {ChatMarkdown} from './ChatMarkdown';
 import {readChatStream} from '../engine/chatStream';
 import {ChatFiles} from './ChatFiles';
-import {conversationMeta,updateConversation} from '../engine/conversations';
+import {conversationMeta,updateConversation,normalizeConversationTask} from '../engine/conversations';
 import {useEffect,useRef,useState} from 'react';
 import {readStored,useStoredState} from '../engine/persistence';
 import type {TaskSummary} from '../task';
@@ -224,7 +224,7 @@ export function ConversationList({tasks,selected,onSelect,onNew}:{tasks:TaskSumm
  const keys=[...new Set([...Object.keys(sessions),...Object.keys(meta)])];
  const records=keys.filter(key=>sessions[key]?.turns?.some(t=>t.role==='user')&&!!meta[key]?.archived===archived).sort((a,b)=>(sessions[b]?.turns.slice(-1)[0]?.createdAt||meta[b]?.createdAt||'').localeCompare(sessions[a]?.turns.slice(-1)[0]?.createdAt||meta[a]?.createdAt||'')).map(key=>{
   const turns=sessions[key]?.turns||[];
-  const task=tasks.find(t=>Object.prototype.hasOwnProperty.call(meta[key]||{},'taskKey')?t.key===meta[key]?.taskKey:key===t.key||key.startsWith(t.key+':line:'));
+  const task=tasks.find(t=>Object.prototype.hasOwnProperty.call(meta[key]||{},'taskKey')?t.key===normalizeConversationTask(meta[key]?.taskKey || ''):key===t.key||key.startsWith(t.key+':line:'));
   const title=turns.find(t=>t.role==='user')?.content.split('\n')[0]||'文件询价';
   return {key,title,task,search:[title,task?.title,...turns.map(t=>t.content)].join(' ').toLowerCase()};
  }).filter(record=>record.search.includes(query.trim().toLowerCase()));

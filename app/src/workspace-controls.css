@@ -1142,3 +1142,10 @@ tr:hover .material-reference-name>.reference-cite,.material-reference-name:focus
 .workflow-section-heading h2[data-module-reference]::after { content:"";display:inline-block;vertical-align:middle;width:14px;height:20px;margin-left:12px;opacity:.35;background:radial-gradient(circle,currentColor 1.3px,transparent 1.5px) 0 0 / 6px 6px; }
 .workflow-section-heading h2[data-module-reference]:hover::after { opacity:.8; }
 .rfq-chat[data-reference-drop] .rfq-chat-composer,.platform-chat[data-reference-drop] .platform-chat-form { outline:2px solid var(--hal-accent);outline-offset:3px; }
+
+.chat-conversation-context {
+ display:flex;align-items:center;gap:8px;min-width:0;padding:0 12px 8px;
+ color:var(--ink-2);font-size:14px;line-height:1.5;
+}
+.chat-conversation-context>span { flex-shrink:0; }
+.chat-conversation-context>strong { min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;color:var(--ink); }
