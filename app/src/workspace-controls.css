@@ -1195,19 +1195,19 @@ tr:hover .material-reference-name>.reference-cite,.material-reference-name:focus
 .layout-reference .workflow-section h2[data-module-reference] { cursor:grab;touch-action:none; }
 .layout-reference .workflow-section { user-select:text; }
 @media(max-width:860px) {
- .layout-reference:not(.mode-agent):has(.floating-assistant.assistant-visible) { height:50dvh;min-height:0; }
- .layout-reference:not(.mode-agent):has(.floating-assistant.assistant-visible) .content { flex:1;min-height:0;overflow-y:auto;padding-bottom:24px; }
- .floating-assistant.assistant-visible:not(.expanded) .floating-assistant-panel { left:0!important;top:auto!important;bottom:0!important;width:100%!important;height:50dvh!important;border-radius:var(--radius-surface) var(--radius-surface) 0 0; }
- .floating-assistant.assistant-visible:not(.expanded) .assistant-capsule { display:none; }
- .floating-assistant.assistant-visible:not(.expanded) .floating-assistant-panel .chat-send,
- .floating-assistant.assistant-visible:not(.expanded) .floating-assistant-panel .send-btn,
- .floating-assistant.assistant-visible:not(.expanded) .floating-assistant-panel .stop-btn,
- .floating-assistant.assistant-visible:not(.expanded) .floating-assistant-panel .platform-chat-form>button { visibility:visible; }
- .floating-assistant.assistant-visible:not(.expanded) .rfq-chat-footer { padding:0 12px max(12px,env(safe-area-inset-bottom)); }
- .floating-assistant.assistant-visible:not(.expanded) .platform-chat-form { margin:0 12px max(12px,env(safe-area-inset-bottom)); }
- .floating-assistant.assistant-visible:not(.expanded) .rfq-chat-composer,
- .floating-assistant.assistant-visible:not(.expanded) .platform-chat-form { padding-right:14px; }
- .floating-assistant.assistant-visible:not(.expanded) .copilot-header { min-height:56px;padding:12px 16px; }
+ .layout-reference:not(.mode-agent):has(.floating-assistant.docked.assistant-visible) { height:50dvh;min-height:0; }
+ .layout-reference:not(.mode-agent):has(.floating-assistant.docked.assistant-visible) .content { flex:1;min-height:0;overflow-y:auto;padding-bottom:24px; }
+ .floating-assistant.docked.assistant-visible:not(.expanded) .floating-assistant-panel { border-radius:var(--radius-surface); }
+ .floating-assistant.docked.assistant-visible:not(.expanded) .assistant-capsule { display:none; }
+ .floating-assistant.docked.assistant-visible:not(.expanded) .floating-assistant-panel .chat-send,
+ .floating-assistant.docked.assistant-visible:not(.expanded) .floating-assistant-panel .send-btn,
+ .floating-assistant.docked.assistant-visible:not(.expanded) .floating-assistant-panel .stop-btn,
+ .floating-assistant.docked.assistant-visible:not(.expanded) .floating-assistant-panel .platform-chat-form>button { visibility:visible; }
+ .floating-assistant.docked.assistant-visible:not(.expanded) .rfq-chat-footer { padding:0 12px max(12px,env(safe-area-inset-bottom)); }
+ .floating-assistant.docked.assistant-visible:not(.expanded) .platform-chat-form { margin:0 12px max(12px,env(safe-area-inset-bottom)); }
+ .floating-assistant.docked.assistant-visible:not(.expanded) .rfq-chat-composer,
+ .floating-assistant.docked.assistant-visible:not(.expanded) .platform-chat-form { padding-right:14px; }
+ .floating-assistant.docked.assistant-visible:not(.expanded) .copilot-header { min-height:56px;padding:12px 16px; }
  .layout-reference .stage-intake .intake-detail { padding:18px; }
  .layout-reference .export-checklist { grid-template-columns:1fr;gap:24px; }
  .layout-reference .export-checklist>div { display:grid;grid-template-columns:1fr auto;align-items:center;padding:0;gap:8px 16px; }
@@ -1239,3 +1239,19 @@ tr:hover .material-reference-name>.reference-cite,.material-reference-name:focus
 @media(max-width:650px) {
  .layout-reference .workflow-section>.panel { padding:18px; }
 }
+/* Saved inquiries open in place; progressive motion is reserved for live work. */
+.layout-reference .quotation-workbench:not([data-processing=true]) .workflow-section,
+.layout-reference .quotation-workbench:not([data-processing=true]) .stage-node { animation:none; }
+.layout-reference.view-workbench .content { overflow-anchor:none; }
+.inquiry-loading { display:flex;align-items:center;justify-content:center;gap:16px;flex:1;min-height:260px;border:0;background:transparent; }
+.inquiry-loading-spinner { display:block;width:32px;height:32px;box-sizing:border-box;border:3px solid var(--line);border-top-color:var(--hal-accent);border-radius:50%;animation:stage-spin .8s linear infinite; }
+@media(prefers-reduced-motion:reduce) { .inquiry-loading-spinner { animation-duration:2s; } }
+.workflow-section>.panel,.stage-intake .intake-detail { position:relative; }
+.module-border-grips { position:absolute;inset:0;z-index:2;pointer-events:none; }
+.module-border-grips>span { position:absolute;display:block;pointer-events:auto;touch-action:none;cursor:grab; }
+.module-border-top,.module-border-bottom { height:12px;left:12px;right:12px; }
+.module-border-top { top:0; }
+.module-border-bottom { bottom:0; }
+.module-border-left,.module-border-right { width:12px;top:12px;bottom:12px; }
+.module-border-left { left:0; }
+.module-border-right { right:0; }

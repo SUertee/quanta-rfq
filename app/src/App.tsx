@@ -353,7 +353,9 @@ export default function App() {
               setWorkflowRuns(old=>({...old,[email.intakeBatchId!]:{stage:ready?4:2,revealed:ready?4:3,state:ready?'queued':'attention'}}));
             }
           }} taskTime={taskTime} />}
-        {view === 'workbench' && source && !quoteSync.ready && <section className="panel" role="status">{quoteSync.error?'询价审核尚未恢复':'正在载入询价审核…'}</section>}
+        {view === 'workbench' && source && !quoteSync.ready && <section className="inquiry-loading" role={quoteSync.error?'alert':'status'} aria-label={quoteSync.error?'询价加载失败':'正在载入询价'}>
+          {quoteSync.error?<><strong>询价加载失败</strong><button className="btn" onClick={quoteSync.retry}>重新加载</button></>:<span className="inquiry-loading-spinner" aria-hidden="true" />}
+        </section>}
         {view === 'workbench' && source && quoteSync.ready && (
           <WorkbenchPage run={current.email?.intakeBatchId?workflowRuns[current.email.intakeBatchId]:undefined} persistenceError={quoteSync.error} persistenceConflict={quoteSync.conflict} onRetryQuote={()=>{if(quoteSync.conflict){quoteSync.loadServer();setInvVersion(version=>version+1);}else quoteSync.retry();}} quoteVersion={current.email?.intakeBatchId?quoteSync.version:undefined} persistencePending={!quoteSync.ready||quoteSync.saving||!!quoteSync.error} key={sourceKey(source)} onDataRefresh={()=>setInvVersion(v=>v+1)}
             onAskAgent={(key) => { setAgentLineKey(key); setAssistantOpen(true); }}

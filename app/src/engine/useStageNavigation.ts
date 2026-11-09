@@ -1,4 +1,4 @@
-import {useEffect, useRef, useState} from 'react';
+import {useLayoutEffect, useRef, useState} from 'react';
 import type {InquiryStage} from './workflow';
 
 /** View location is independent of business completion and approval. */
@@ -6,27 +6,42 @@ export function useStageNavigation(taskKey: string) {
   const [stage, setStage] = useState<InquiryStage>(1);
   const flowRef = useRef<HTMLElement>(null);
   const navigation = useRef<{target: InquiryStage; timer: ReturnType<typeof setTimeout>} | null>(null);
+  const scrollContainer = () => flowRef.current?.closest<HTMLElement>('.content');
+  const visibleBounds = () => {
+    const rect = scrollContainer()?.getBoundingClientRect();
+    return {top:rect?.top ?? 0, bottom:Math.min(rect?.bottom ?? window.innerHeight,window.innerHeight)};
+  };
   const goToStage = (next: InquiryStage) => {
     const section = flowRef.current?.querySelector<HTMLElement>(`[data-inquiry-stage="${next}"]`);
     if (!section || section.hidden) return;
     if (navigation.current) clearTimeout(navigation.current.timer);
     navigation.current = {target: next, timer: setTimeout(() => { navigation.current = null; }, 1800)};
     setStage(next);
-    section.scrollIntoView({ behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth', block: 'start' });
+    const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth';
+    const container = scrollContainer();
+    if (container) {
+      container.scrollTo({top:container.scrollTop + section.getBoundingClientRect().top - visibleBounds().top - 24,behavior});
+    } else {
+      section.scrollIntoView({behavior,block:'start'});
+    }
     section.focus({ preventScroll: true });
   };
-  useEffect(() => {
+  useLayoutEffect(() => {
     let frame = 0;
+    setStage(1);
+    // A newly opened inquiry always starts at its own heading.
+    scrollContainer()?.scrollTo({top:0,behavior:'instant' as ScrollBehavior});
     const update = () => {
       frame = 0;
       if (navigation.current) return;
       const sections = [...(flowRef.current?.querySelectorAll<HTMLElement>('[data-inquiry-stage]') ?? [])].filter(node=>!node.hidden);
       if (!sections.length) return;
-      const anchor = Math.min(160, window.innerHeight * .25);
+      const bounds = visibleBounds();
+      const anchor = scrollContainer() ? bounds.top + 32 : Math.min(160, window.innerHeight * .25);
       const passed = sections.filter(node => node.getBoundingClientRect().top <= anchor);
       const last = sections[sections.length - 1];
       const lastRect = last.getBoundingClientRect();
-      const current = lastRect.top < window.innerHeight && lastRect.bottom <= window.innerHeight + 8
+      const current = lastRect.top < bounds.bottom && lastRect.bottom <= bounds.bottom + 8
         ? last : passed[passed.length - 1] ?? sections[0];
       setStage(Number(current.dataset.inquiryStage) as InquiryStage);
     };

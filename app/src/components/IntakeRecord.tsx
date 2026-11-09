@@ -1,3 +1,4 @@
+import {ModuleBorderGrips} from "./ModuleBorderGrips";
 import {PdfPreview} from './PdfPreview';
 import {fieldConflictIssues} from '../../shared/field-review.mjs';
 import {SupplierImportDialog} from './SupplierImportDialog';
@@ -231,7 +232,7 @@ export function IntakeRecord({
         </p>
       )}
       {pane && record && (
-        <div className="intake-detail">
+        <div className="intake-detail">{view!==undefined&&<ModuleBorderGrips/>}
           <div className="intake-detail-head">
             <strong>
               {pane === "files"

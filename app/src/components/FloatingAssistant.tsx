@@ -53,10 +53,12 @@ export function FloatingAssistant({open,expanded,docked=false,onOpen,onCollapse,
  const workspace=typeof document==='undefined'?null:document.querySelector('.layout-reference .sidebar')?.getBoundingClientRect();
  const workspaceWidth=workspace?.width||Math.min(innerWidth-40,1680);
  const mobile=innerWidth<=860;
- const dockWidth=innerWidth<=860?innerWidth-24:workspaceWidth*.4;
- const panelWidth=docked?dockWidth:Math.min(380,innerWidth-24),panelHeight=mobile?Math.round(innerHeight*.5):docked?Math.max(180,innerHeight-dockTop-16):Math.min(520,innerHeight-24);
- const panelLeft=mobile?0:docked?(innerWidth<=860?12:(workspace?.right||(innerWidth+workspaceWidth)/2)-panelWidth):Math.max(12,Math.min(point.x+76-panelWidth,innerWidth-panelWidth-12)),panelTop=mobile?innerHeight-panelHeight:docked?dockTop:Math.max(12,Math.min(point.y+76-panelHeight,innerHeight-panelHeight-12));
- const panelStyle={position:'fixed',left:panelLeft,top:panelTop,width:mobile?innerWidth:panelWidth,height:panelHeight,'--panel-start-x':`${point.x-panelLeft}px`,'--panel-start-y':`${point.y-panelTop}px`,'--panel-start-scale-x':52/panelWidth,'--panel-start-scale-y':52/panelHeight,'--anchor-local-x':`${point.x+26-panelLeft}px`,'--anchor-local-y':`${point.y+26-panelTop}px`,'--assistant-anchor-x':`${point.x}px`,'--assistant-anchor-y':`${point.y}px`} as CSSProperties;
+ const dockWidth=mobile?workspaceWidth:workspaceWidth*.4;
+ const panelWidth=docked?dockWidth:Math.min(380,innerWidth-24);
+ const panelHeight=docked?(mobile?Math.round(innerHeight*.5)-12:Math.max(180,innerHeight-dockTop-16)):Math.min(520,innerHeight-24);
+ const panelLeft=docked?(mobile?workspace?.left??12:(workspace?.right||(innerWidth+workspaceWidth)/2)-panelWidth):Math.max(12,Math.min(point.x+76-panelWidth,innerWidth-panelWidth-12));
+ const panelTop=docked?(mobile?innerHeight-panelHeight-12:dockTop):Math.max(12,Math.min(point.y+76-panelHeight,innerHeight-panelHeight-12));
+ const panelStyle={position:'fixed',left:panelLeft,top:panelTop,width:panelWidth,height:panelHeight,'--panel-start-x':`${point.x-panelLeft}px`,'--panel-start-y':`${point.y-panelTop}px`,'--panel-start-scale-x':52/panelWidth,'--panel-start-scale-y':52/panelHeight,'--anchor-local-x':`${point.x+26-panelLeft}px`,'--anchor-local-y':`${point.y+26-panelTop}px`,'--assistant-anchor-x':`${point.x}px`,'--assistant-anchor-y':`${point.y}px`} as CSSProperties;
  if(open&&!expanded)lastPanelStyle.current=panelStyle;
  const wide=!open&&!exiting&&!dragging&&(hover||focused)&&!!onSend,growsRight=point.x<Math.min(288,innerWidth/2);
  return <div className={`floating-assistant ${expanded?'expanded':''} ${docked?'docked':''} ${dragging?'dragging':''} ${open?'assistant-visible':''}`} onPointerDown={down} onPointerMove={move} onPointerUp={finish} onPointerCancel={finish}>

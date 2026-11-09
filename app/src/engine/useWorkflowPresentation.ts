@@ -7,10 +7,10 @@ export function useWorkflowPresentation(
   run: WorkflowRun | undefined,
   flow: RefObject<HTMLElement>,
 ) {
-  const [shown, setShown] = useState(1);
-  const [positions, setPositions] = useState<number[]>([]);
   const available = run?.revealed || 6;
-  useEffect(() => setShown(1), [taskKey]);
+  const [shown, setShown] = useState<number>(() => run?.state === "running" ? 1 : available);
+  const [positions, setPositions] = useState<number[]>([]);
+  useEffect(() => setShown(run?.state === "running" ? 1 : available), [taskKey]);
   useEffect(() => {
     if (shown >= available) return;
     if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {

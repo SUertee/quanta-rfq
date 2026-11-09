@@ -272,6 +272,17 @@ await act(async () => window.dispatchEvent(pointer('pointerup', 400, 500, 'mouse
 assert.equal(cited, undefined);
 assert.equal(document.body.classList.contains('module-reference-dragging'), false);
 cited = null;
+const borderCard=host.querySelector('section');
+borderCard.classList.add('panel');
+borderCard.getBoundingClientRect=()=>({left:0,top:0,right:200,bottom:200,width:200,height:200});
+await act(async()=>{
+  borderCard.dispatchEvent(pointer('pointerdown',3,80,'mouse'));
+  window.dispatchEvent(pointer('pointermove',40,100,'mouse'));
+});
+assert.ok(document.querySelector('.module-reference-ghost'),'blank card border starts a module drag');
+await act(async()=>window.dispatchEvent(pointer('pointerup',400,500,'mouse')));
+assert.equal(cited.stage,2);
+cited=null;
 await act(async () => {
   host.querySelector("h2").dispatchEvent(pointer("pointerdown", 20, 20));
   await wait(480);
@@ -362,6 +373,10 @@ await act(async()=>{root.render(React.createElement(IntakeRecord,{batchId:'switc
 assert.ok(!host.textContent.includes('old-file.txt'));assert.ok(!host.textContent.includes('正在恢复'));
 await act(async()=>{releasePost();releaseRead();await wait(30);});
 assert.equal([...host.querySelectorAll('button')].find(button=>button.textContent==='恢复处理').disabled,false);
+await act(async()=>root.unmount());
+root=createRoot(host);
+await act(async()=>root.render(React.createElement(ModuleHarness,{})));
+assert.equal(host.querySelector('[data-shown]').dataset.shown,'6','saved inquiries show every available stage immediately');
 await act(async()=>root.unmount());
 await window.happyDOM.close();
 db.close();

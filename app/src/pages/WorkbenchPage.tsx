@@ -1,3 +1,4 @@
+import {ModuleBorderGrips} from "../components/ModuleBorderGrips";
 import {useWorkflowPresentation} from '../engine/useWorkflowPresentation';
 import {useModuleReferenceDrag} from '../engine/useModuleReferenceDrag';
 import type {WorkflowRun} from '../engine/workflow';
@@ -498,7 +499,7 @@ export function WorkbenchPage({
   const seenReviewBasis=useRef(reviewBasis);
   useEffect(()=>{if(seenReviewBasis.current!==reviewBasis){seenReviewBasis.current=reviewBasis;const keys=new Set(lines.map(l=>l.key));if([...resolved].some(k=>keys.has(k)))setResolved(new Set([...resolved].filter(k=>!keys.has(k))));}},[reviewBasis]);
   return (
-    <div className="quotation-workbench">
+    <div className="quotation-workbench" data-processing={run?.state==='running'}>
       {inquiryError && <div className="check-box" role="alert"><strong>部分材料尚未完成核对</strong><button className="btn" onClick={()=>goToStage(1)}>查看原始材料</button></div>}
       {run?.error&&<p role="alert">{run.error}</p>}
       <header className="inquiry-page-head">
@@ -519,7 +520,7 @@ export function WorkbenchPage({
       {completionReviewOpen&&intakeRecord&&<ExtractionCompletionReview inquiryId={intakeRecord.id} operator={currentUserId||'本机用户'} onClose={()=>setCompletionReviewOpen(false)} onSaved={batch=>{setIntakeRecord(batch);setCompletionReviewOpen(false);onDataRefresh?.();}}/>}
       {extractionReviewOpen&&intakeRecord&&<ExtractionReview batch={intakeRecord} operator={currentUserId||'本机用户'} onClose={()=>setExtractionReviewOpen(false)} onSaved={batch=>{setIntakeRecord(batch);setExtractionReviewOpen(false);onDataRefresh?.();}}/>}
       {intakeRecord?.issues.length? <div className="stage-input-issues">{intakeRecord.issues.map((issue,i)=><button key={i} onClick={()=>goToStage(1)}>{issue} ↗</button>)}</div>:null}
-      <div className="panel inquiry-materials-panel" id="rfq-materials" role="region" aria-label="物料核对">
+      <div className="panel inquiry-materials-panel" id="rfq-materials" role="region" aria-label="物料核对"><ModuleBorderGrips/>
         <div className="panel-title">物料明细
           <span className="material-header-actions" style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           {email && !email.intakeBatchId && unreadRows > 0 && aiOk === true && (
@@ -758,7 +759,7 @@ export function WorkbenchPage({
       </section>
       <section hidden={shown<4} aria-busy={busyStage===4} className="workflow-section" data-current={stage===4} id="inquiry-stage-4" tabIndex={-1} data-inquiry-stage="4" aria-labelledby="inquiry-stage-title-4">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-4" draggable data-module-reference title="拖到右侧输入框提问">{stageItems[3].label}</h2></header>
-      {<section className="panel stage-checks"><div className="panel-title">供货条件核对 · {activePriced.length} 项物料</div><div className="stage-check-filters"><FilterTabs label="条件检查筛选" value={checkFilter} onChange={setCheckFilter} items={[{value:'pending',label:'待核对',count:activePriced.filter(p=>!resolved.has(p.line.key)).length},{value:'all',label:'全部',count:activePriced.length}]} /></div>{activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).map(p=><article className="stage-check-row" key={p.line.key}><div><b>{p.line.partNumber||'件号待补'}</b><span>{p.line.quantity} {p.line.uom}</span></div><div className="stage-check-findings">{p.ruleIssues?.length?p.ruleIssues.map(issue=><span className="check-finding" key={issue}><span className="check-finding-mark" aria-hidden="true">!</span><span>{issue}</span></span>):yellowReasons(p).length?yellowReasons(p).map(f=><span className="check-finding" key={f}><span className="check-finding-mark" aria-hidden="true">!</span><span>{FLAG_PLAIN[f]}</span></span>):<span className="check-neutral">规则未发现阻断项 · 待人工核对</span>}</div><div className="stage-check-actions"><button className="btn" onClick={()=>{goToStage(2);setOpen(p.line.key)}}>查看物料</button><button className="btn" disabled={persistencePending} onClick={()=>toggleResolved(p.line.key)}>{resolved.has(p.line.key)?'撤销核对':'标记人工已核对'}</button></div></article>)}{!activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).length&&<div className="stage-empty"><span>✓</span><strong>{activePriced.length?'当前没有待核对行':'暂无物料'}</strong><button className="btn" onClick={()=>goToStage(2)}>打开物料表</button></div>}</section>}
+      {<section className="panel stage-checks"><ModuleBorderGrips/><div className="panel-title">供货条件核对 · {activePriced.length} 项物料</div><div className="stage-check-filters"><FilterTabs label="条件检查筛选" value={checkFilter} onChange={setCheckFilter} items={[{value:'pending',label:'待核对',count:activePriced.filter(p=>!resolved.has(p.line.key)).length},{value:'all',label:'全部',count:activePriced.length}]} /></div>{activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).map(p=><article className="stage-check-row" key={p.line.key}><div><b>{p.line.partNumber||'件号待补'}</b><span>{p.line.quantity} {p.line.uom}</span></div><div className="stage-check-findings">{p.ruleIssues?.length?p.ruleIssues.map(issue=><span className="check-finding" key={issue}><span className="check-finding-mark" aria-hidden="true">!</span><span>{issue}</span></span>):yellowReasons(p).length?yellowReasons(p).map(f=><span className="check-finding" key={f}><span className="check-finding-mark" aria-hidden="true">!</span><span>{FLAG_PLAIN[f]}</span></span>):<span className="check-neutral">规则未发现阻断项 · 待人工核对</span>}</div><div className="stage-check-actions"><button className="btn" onClick={()=>{goToStage(2);setOpen(p.line.key)}}>查看物料</button><button className="btn" disabled={persistencePending} onClick={()=>toggleResolved(p.line.key)}>{resolved.has(p.line.key)?'撤销核对':'标记人工已核对'}</button></div></article>)}{!activePriced.filter(p=>checkFilter==='all'||!resolved.has(p.line.key)).length&&<div className="stage-empty"><span>✓</span><strong>{activePriced.length?'当前没有待核对行':'暂无物料'}</strong><button className="btn" onClick={()=>goToStage(2)}>打开物料表</button></div>}</section>}
 
       </section>
       <section hidden={shown<5} aria-busy={busyStage===5} className="workflow-section" data-current={stage===5} id="inquiry-stage-5" tabIndex={-1} data-inquiry-stage="5" aria-labelledby="inquiry-stage-title-5">
@@ -831,7 +832,7 @@ export function WorkbenchPage({
       </div>
 
       </section>
-      <div className="panel inquiry-quote-panel" id="rfq-quote-preview" role="region" aria-label="报价草稿">
+      <div className="panel inquiry-quote-panel" id="rfq-quote-preview" role="region" aria-label="报价草稿"><ModuleBorderGrips/>
         <div className="panel-title">
           报价单预览 · {activePriced.length} 项物料
           <button className="btn" onClick={fillAll}>按规则填入建议价</button>
@@ -929,7 +930,7 @@ export function WorkbenchPage({
       </section>
       <section hidden={shown<6} aria-busy={busyStage===6} className="workflow-section" data-current={stage===6} id="inquiry-stage-6" tabIndex={-1} data-inquiry-stage="6" aria-labelledby="inquiry-stage-title-6">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-6" draggable data-module-reference title="拖到右侧输入框提问">{stageItems[5].label}</h2></header>
-      <section className="panel stage-export">
+      <section className="panel stage-export"><ModuleBorderGrips/>
         <div className="panel-title">导出报价单</div>
         <div className="quote-signature-row"><div className="quote-signature-identity"><b>报价签名</b>{quoteSignature.signature?<><SignaturePreview signature={quoteSignature.signature}/><span>{quoteSignature.signature.signer}</span></>:<span>尚未签名</span>}</div><div className="quote-signature-actions">{quoteSignature.signature&&<button className="btn" onClick={quoteSignature.clear}>清除签名</button>}<button className="btn" disabled={!quoteSignature.basis||!stageExportable} onClick={()=>setSignatureOpen(true)}>{quoteSignature.signature?'重新签名':'手写签名'}</button></div></div>
         {quoteSignature.error&&<div role="alert" className="check-box">{quoteSignature.error}</div>}

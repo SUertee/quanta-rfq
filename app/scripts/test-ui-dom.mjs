@@ -115,4 +115,19 @@ root=createRoot(host);let exited=false;await mount(React.createElement(AccountMe
 root=createRoot(host);await mount(React.createElement(FloatingAssistant,{open:false,expanded:true,onOpen(){},onCollapse(){}},React.createElement('div',null,'对话')));const fullPanel=host.querySelector('.floating-assistant-panel');assert.equal(fullPanel.style.transition,'none');assert.equal(fullPanel.style.transform,'none');assert.equal(fullPanel.style.position,'static');await act(async()=>root.unmount());
 console.log('PASS: account exit and full-page chat geometry overrides');
 
+window.happyDOM.setViewport({width:390,height:844});
+const phoneShell=document.createElement('div');phoneShell.className='layout-reference';
+const phoneHeader=document.createElement('div');phoneHeader.className='sidebar';
+phoneHeader.getBoundingClientRect=()=>({left:20,right:370,top:12,bottom:76,width:350,height:64});
+phoneShell.append(phoneHeader);document.body.append(phoneShell);
+root=createRoot(host);
+const phoneProps={open:true,expanded:false,onOpen(){},onCollapse(){}};
+await mount(React.createElement(FloatingAssistant,phoneProps,React.createElement('div',null,'对话')));
+assert.equal(host.querySelector('.floating-assistant-panel').style.width,'366px','phone opens as a floating panel');
+await mount(React.createElement(FloatingAssistant,{...phoneProps,docked:true},React.createElement('div',null,'对话')));
+const dockPanel=host.querySelector('.floating-assistant-panel');
+assert.equal(dockPanel.style.left,'20px');assert.equal(dockPanel.style.width,'350px');
+assert.equal(dockPanel.style.top,'422px');assert.equal(dockPanel.style.height,'410px','expanded phone panel occupies lower half with a bottom inset');
+await act(async()=>root.unmount());phoneShell.remove();
+console.log('PASS: mobile floating state, explicit half-screen expansion and header-aligned gutters');
 await window.happyDOM.close();
