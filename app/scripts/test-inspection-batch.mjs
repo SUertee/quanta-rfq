@@ -1,0 +1,35 @@
+import assert from 'node:assert/strict';
+import {writeFileSync,unlinkSync} from 'node:fs';
+import {build} from 'esbuild';
+import initSqlJs from 'sql.js';
+import {initIntake,createIntakeService,seedPrices} from '../server/intake.mjs';
+const bundle=await build({stdin:{contents:"export * from './src/engine/inspection';export {batchEmail} from './src/engine/intake';export {DEFAULT_SCHEMA} from './src/engine/fieldSchema';export {DEFAULT_POLICY} from './src/engine/pricingPolicy';",resolveDir:process.cwd(),loader:'ts'},bundle:true,packages:'external',platform:'node',format:'esm',write:false,define:{'import.meta.env':JSON.stringify({BASE_URL:'/'})}});
+const temporary=new URL('./.inspection-test.mjs',import.meta.url);writeFileSync(temporary,bundle.outputFiles[0].text);
+let code;try{code=await import(temporary.href);}finally{unlinkSync(temporary);}
+const {inspectTask,checkInspectionSelection,batchEmail,DEFAULT_SCHEMA,DEFAULT_POLICY}=code;
+const SQL=await initSqlJs(),db=new SQL.Database();
+db.run('CREATE TABLE inventory(partNumber TEXT PRIMARY KEY,uom TEXT,stockQty REAL,lastPurchasePrice REAL,currency TEXT,stockCondition TEXT)');initIntake(db);
+seedPrices(db,[{id:'qa-price',partNumber:'AN3-5A',supplierName:'QA',unitPrice:20,currency:'CNY',uom:'EA',condition:'FN',moq:1,leadDays:1,validFrom:'2020-01-01',validUntil:'2099-12-31',taxBasis:'exclusive',authorized:true}]);
+const service=createIntakeService(db,()=>{},{});
+const batch=await service.create({source:'paste',requestId:crypto.randomUUID(),operator:'QA',files:[{name:'qa.csv',base64:Buffer.from('件号,数量,单位,件状\nAN3-5A,10,EA,FN\nMISSING-1,2,EA,FN').toString('base64')}]});
+const ds={emails:[batchEmail(batch)],kanban:[],prices:[],cost:[],costIdx:new Map(),priceIdx:new Map(),units:{},attachments:{},fieldSchema:DEFAULT_SCHEMA};
+const task={key:'email-intake-'+batch.id,title:'QA',source:{kind:'email',id:'intake-'+batch.id}};
+const state={policy:DEFAULT_POLICY,priceBook:{},estCost:{},resolved:new Set(),skipped:new Set(),addedLines:{},lineEdits:{},selectedBases:{}};
+const rows=inspectTask(task,ds,state);
+assert.equal(rows.length,2);assert.ok(rows.every(row=>row.issues.length>=2),'multiple problems remain in one material row');
+const requests=[],progress=[];
+const fetcher=async(path,options)=>{
+ requests.push({path,method:options?.method||'GET'});
+ if(path.endsWith('/evidence'))return {ok:true,json:async()=>service.refresh(batch.id)};
+ return {ok:true,json:async()=>({stale:false,state:{policy:DEFAULT_POLICY,lines:rows.map(row=>({key:row.lineKey,price:25,reviewed:true,skipped:false,manualCost:null}))}})};
+};
+const results=await checkInspectionSelection(rows,[task],ds,state,{fetcher,signal:new AbortController().signal,onProgress:row=>progress.push(row.status)});
+assert.equal(requests.filter(request=>request.method==='POST').length,1,'refresh one inquiry once for its selected materials');
+assert.equal(results[0].status,'已解决');assert.equal(results[0].suggestedPrice,25);
+assert.equal(results[1].status,'待确认');assert.equal(results[1].suggestedPrice,undefined,'unmatched lines cannot receive invented prices');
+assert.ok(progress.includes('处理中'));assert.ok(requests.every(request=>request.method!=='PUT'),'batch checks never approve or overwrite quote prices');
+const failures=await checkInspectionSelection(rows,[task],ds,state,{fetcher:async()=>({ok:false,json:async()=>({error:'无权限'})}),signal:new AbortController().signal,onProgress(){}});
+assert.ok(failures.every(row=>row.status==='处理失败'&&row.error==='无权限'));
+const cancelled=new AbortController();cancelled.abort();await assert.rejects(()=>checkInspectionSelection(rows,[task],ds,state,{fetcher,signal:cancelled.signal,onProgress(){}}),{name:'AbortError'});
+db.close();
+console.log('PASS: material issue grouping, one refresh per inquiry, saved review/price reads, real rule results, no automatic approval, scoped failures and cancellation');

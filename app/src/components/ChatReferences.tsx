@@ -59,7 +59,14 @@ export function useChatReferences(conversationKey:string,disabled:boolean) {
     return()=>{root.removeEventListener('drop',drop);root.removeEventListener('dragover',over);root.removeEventListener('dragleave',leave);window.removeEventListener('quanta-reference',cite);};
   },[setDrafts]);
   const remove=(id:string)=>setDrafts(current=>({...current,[conversationKey]:(current[conversationKey]||[]).filter(item=>item.id!==id)}));
-  const clear=()=>setDrafts(current=>({...current,[conversationKey]:[]}));
+  const clear=()=>{setError('');setDrafts(current=>({...current,[conversationKey]:[]}));};
+  const restore=(sent:ChatReference[])=>{
+    if(!sent.length)return;
+    setDrafts(current=>{
+      const existing=current[conversationKey]||[];
+      return {...current,[conversationKey]:[...existing,...sent.filter(item=>!existing.some(value=>value.id===item.id))].slice(0,6)};
+    });
+  };
   const composer=<div className="chat-reference-drafts" ref={anchor} hidden={!items.length&&!error}><ReferenceList items={items} onRemove={disabled?undefined:remove}/>{error&&<p role="alert">{error}</p>}</div>;
-  return {items,clear,composer};
+  return {items,clear,restore,composer};
 }

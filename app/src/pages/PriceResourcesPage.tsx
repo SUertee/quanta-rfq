@@ -4,143 +4,145 @@ import type { PriceRow } from '../types';
 import { appFetch as fetch } from '../engine/appUrl';
 import { fmtMoney } from '../engine/amount';
 import { fieldsFor } from '../engine/fieldSchema';
-import { Badge, StatCard } from '../components/ui';
+import { Badge, FilterTabs, RecordToolbar, DataTable } from '../components/ui';
+import { Modal } from '../components/Modal';
+import './price-resources.css';
 
-const EDITABLE = ['supplierName', 'unitPrice', 'currency', 'condition', 'moq', 'leadDays', 'validFrom', 'validUntil', 'certType', 'taxBasis'] as const;
+type Resource = PriceRow & { account_id?: string; account_name?: string };
+const FIELDS = [
+  ['partNumber', '件号', 'text'], ['supplierName', '供应商', 'text'],
+  ['unitPrice', '采购单价', 'number'], ['currency', '币种', 'text'],
+  ['uom', '单位', 'text'], ['condition', '件状', 'text'],
+  ['moq', '最小起订量', 'number'], ['leadDays', '交期天数', 'number'],
+  ['validFrom', '生效日期', 'date'], ['validUntil', '有效期至', 'date'],
+  ['certType', '证书类型', 'text'], ['taxBasis', '计税口径', 'text'],
+] as const;
 const NUMERIC = new Set(['unitPrice', 'moq', 'leadDays']);
-const LABEL: Record<string, string> = {
-  supplierName: '供应商', unitPrice: '单价', currency: '币种', condition: '件状', moq: '起订量',
-  leadDays: '交期(天)', validFrom: '生效日期', validUntil: '有效期至', certType: '证书', taxBasis: '税基',
-};
 
-/** 价目与依据管理：供应商价格资源可搜索、增删改、含企业自定义字段（extra）。 */
+function expired(row: Resource) {
+  const date = row.validUntil?.slice(0, 10);
+  const now = new Date();
+  const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+  return Boolean(date && /^\d{4}-\d{2}-\d{2}$/.test(date) && date < today);
+}
+
 export function PriceResourcesPage({ ds, onRefresh }: { ds: Dataset; onRefresh: () => void }) {
-  const [rows, setRows] = useState<PriceRow[]>([]);
+  const [rows, setRows] = useState<Resource[]>([]);
   const [q, setQ] = useState('');
-  const [err, setErr] = useState('');
-  const [adding, setAdding] = useState(false);
-  const [draft, setDraft] = useState({ partNumber: '', supplierName: '', unitPrice: '', currency: 'CNY', condition: '', validUntil: '' });
-
-  const load = async () => {
-    try {
-      const r = await fetch('/api/price-resources');
-      if (!r.ok) throw new Error(`HTTP ${r.status}（后端未启动？）`);
-      const j = await r.json();
-      setRows(j.prices ?? []);
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
-  };
-  useEffect(() => { void load(); }, []);
-
-  const save = async (row: PriceRow) => {
-    try {
-      const r = await fetch('/api/price-resources', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ row }),
-      });
-      if (!r.ok) throw new Error((await r.text()).slice(0, 120));
-      await load();
-      onRefresh();
-    } catch (e) { setErr(e instanceof Error ? e.message : String(e)); }
-  };
-  const del = async (id: string) => {
-    if (!window.confirm(`删除价格资源 ${id}？`)) return;
-    await fetch(`/api/price-resources/${encodeURIComponent(id)}`, { method: 'DELETE' });
-    await load();
-    onRefresh();
-  };
-  const add = async () => {
-    if (!draft.partNumber.trim()) { setErr('件号必填'); return; }
-    const id = `PR-${Date.now().toString(36).toUpperCase()}`;
-    await save({
-      id, partNumber: draft.partNumber.trim(), supplierName: draft.supplierName.trim(),
-      unitPrice: Number(draft.unitPrice) || 0, currency: draft.currency || 'CNY',
-      condition: draft.condition, validUntil: draft.validUntil,
-    } as PriceRow);
-    setAdding(false);
-    setDraft({ partNumber: '', supplierName: '', unitPrice: '', currency: 'CNY', condition: '', validUntil: '' });
-  };
-
-  const filtered = useMemo(() => rows.filter((r) => {
-    if (!q.trim()) return true;
-    const s = q.trim().toLowerCase();
-    return r.partNumber.toLowerCase().includes(s) || r.supplierName.toLowerCase().includes(s);
-  }), [rows, q]);
+  const [filter, setFilter] = useState<'all' | 'expired'>('all');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [editor, setEditor] = useState<Resource | null>(null);
+  const [formError, setFormError] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Resource | null>(null);
   const customDefs = fieldsFor(ds.fieldSchema, 'supplier', { customOnly: true });
 
-  const cell = (row: PriceRow, key: typeof EDITABLE[number]) => {
-    const value = row[key];
-    return (
-      <input key={`${row.id}:${key}:${String(value ?? '')}`} className="cell-input" defaultValue={String(value ?? '')}
-        type={NUMERIC.has(key) ? 'number' : key.startsWith('valid') ? 'date' : 'text'}
-        onBlur={(e) => {
-          const v = e.target.value.trim();
-          if (v === String(value ?? '')) return;
-          const next = { ...row, [key]: NUMERIC.has(key) ? Number(v) || 0 : v };
-          void save(next);
-        }} />
-    );
-  };
+  async function load() {
+    setLoading(true);
+    setError('');
+    try {
+      const response = await fetch('/api/price-resources');
+      if (!response.ok) throw new Error('报价列表读取失败，请重试');
+      const data = await response.json();
+      setRows(data.prices ?? []);
+    } catch (e) { setError(e instanceof Error ? e.message : '报价列表读取失败，请重试'); }
+    finally { setLoading(false); }
+  }
+  useEffect(() => { void load(); }, []);
 
-  return (
-    <div>
-      <div className="stat-row">
-        <StatCard label="价格资源" value={rows.length} sub="供应商报价依据库" />
-        <StatCard label="件号" value={new Set(rows.map((r) => r.partNumber)).size} />
-        <StatCard label="自定义字段" value={customDefs.length} />
-      </div>
-      <div className="panel">
-        <div className="panel-title">
-          价目与依据
-          <input className="search-input" placeholder="搜索件号 / 供应商" value={q} onChange={(e) => setQ(e.target.value)} />
-          <button className="btn primary" onClick={() => setAdding(!adding)}>+ 新增价格</button>
-        </div>
-        {err && <div className="hint limitation">{err}</div>}
-        <div className="hint">单元格点进去直接改，移开即保存。后端未启动时列表为空，先启动 <code>启动后端.bat</code>。</div>
-        {adding && (
-          <div className="check-box">
-            <div className="toolbar">
-              <input className="cell-input" placeholder="件号 *" value={draft.partNumber} onChange={(e) => setDraft({ ...draft, partNumber: e.target.value })} />
-              <input className="cell-input" placeholder="供应商" value={draft.supplierName} onChange={(e) => setDraft({ ...draft, supplierName: e.target.value })} />
-              <input className="cell-input" type="number" placeholder="单价" value={draft.unitPrice} onChange={(e) => setDraft({ ...draft, unitPrice: e.target.value })} />
-              <input className="cell-input" placeholder="币种" value={draft.currency} onChange={(e) => setDraft({ ...draft, currency: e.target.value })} style={{ width: 70 }} />
-              <input className="cell-input" placeholder="件状" value={draft.condition} onChange={(e) => setDraft({ ...draft, condition: e.target.value })} style={{ width: 70 }} />
-              <input className="cell-input" type="date" placeholder="有效期至" value={draft.validUntil} onChange={(e) => setDraft({ ...draft, validUntil: e.target.value })} />
-              <button className="btn primary" onClick={add}>保存</button>
-            </div>
-          </div>
-        )}
-        <div className="table-wrap">
-          <table>
-            <thead><tr>
-              <th>件号</th>
-              {EDITABLE.map((k) => <th key={k}>{LABEL[k]}</th>)}
-              {customDefs.map((d) => <th key={d.key}>{d.label}</th>)}
-              <th>操作</th>
-            </tr></thead>
-            <tbody>
-              {filtered.slice(0, 200).map((row) => (
-                <tr key={row.id}>
-                  <td><b>{row.partNumber}</b><div className="hint" style={{ margin: 0 }}>{row.id}</div></td>
-                  {EDITABLE.map((k) => <td key={k}>{cell(row, k)}</td>)}
-                  {customDefs.map((d) => (
-                    <td key={d.key}>
-                      <input key={`${row.id}:extra:${d.key}:${String(row.extra?.[d.key] ?? '')}`} className="cell-input"
-                        defaultValue={String(row.extra?.[d.key] ?? '')}
-                        onBlur={(e) => {
-                          const v = e.target.value.trim();
-                          if (v === String(row.extra?.[d.key] ?? '')) return;
-                          void save({ ...row, extra: { ...(row.extra ?? {}), [d.key]: v } });
-                        }} />
-                    </td>
-                  ))}
-                  <td><button className="btn" onClick={() => del(row.id)}>删除</button></td>
-                </tr>
-              ))}
-              {!filtered.length && <tr><td colSpan={14} className="empty-cell">暂无价格资源</td></tr>}
-            </tbody>
-          </table>
-        </div>
-        {filtered.length > 200 && <div className="hint">共 {filtered.length} 条，仅显示前 200 条，请搜索缩小范围。</div>}
-      </div>
+  const filtered = useMemo(() => rows.filter(row => {
+    if (filter === 'expired' && !expired(row)) return false;
+    const search = q.trim().toLowerCase();
+    return !search || `${row.partNumber} ${row.supplierName ?? ''}`.toLowerCase().includes(search);
+  }), [rows, q, filter]);
+
+  function edit(row?: Resource) {
+    setFormError('');
+    setEditor(row ? { ...row, extra: { ...row.extra } } : { id: crypto.randomUUID(), currency: 'CNY' } as Resource);
+  }
+
+  async function save() {
+    if (!editor || saving) return;
+    if (!editor.partNumber?.trim()) { setFormError('请填写件号'); return; }
+    if (!Number.isFinite(editor.unitPrice) || editor.unitPrice < 0) { setFormError('请填写零或正数的采购单价'); return; }
+    if ([editor.moq, editor.leadDays].some(value => value != null && (!Number.isFinite(value) || value < 0))) { setFormError('起订量和交期应填写零或正数'); return; }
+    if (editor.validFrom && editor.validUntil && editor.validFrom.slice(0, 10) > editor.validUntil.slice(0, 10)) { setFormError('有效期至应晚于或等于生效日期'); return; }
+    setSaving(true);
+    setFormError('');
+    try {
+      const response = await fetch('/api/price-resources', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ row: { ...editor, partNumber: editor.partNumber.trim() }, accountId: editor.account_id }),
+      });
+      if (!response.ok) throw new Error('保存失败，请检查填写内容并重试');
+      setEditor(null);
+      await load();
+      onRefresh();
+    } catch (e) { setFormError(e instanceof Error ? e.message : '保存失败，请重试'); }
+    finally { setSaving(false); }
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget || saving) return;
+    setSaving(true);
+    setFormError('');
+    try {
+      const response = await fetch(`/api/price-resources/${encodeURIComponent(deleteTarget.id)}`, { method: 'DELETE' });
+      if (!response.ok) throw new Error('删除失败，请重试');
+      setDeleteTarget(null);
+      await load();
+      onRefresh();
+    } catch (e) { setFormError(e instanceof Error ? e.message : '删除失败，请重试'); }
+    finally { setSaving(false); }
+  }
+
+  return <div className="page-prices">
+    <div className="page-heading"><h1>价目与依据</h1></div>
+    <RecordToolbar filters={<FilterTabs label="供应商报价筛选" value={filter} onChange={setFilter} items={[
+      { value: 'all', label: '全部报价', count: rows.length },
+      { value: 'expired', label: '已过期', count: rows.filter(expired).length },
+    ]} />}>
+      <input className="search-input" aria-label="搜索件号或供应商" placeholder="搜索件号、供应商" value={q} onChange={e => setQ(e.target.value)} />
+      <button className="btn primary" onClick={() => edit()}>新增报价</button>
+    </RecordToolbar>
+    {error && <div className="price-error" role="alert">{error}<button className="btn" onClick={() => void load()}>重试</button></div>}
+    <div className="panel price-records" aria-busy={loading}>
+      {loading ? <div className="price-loading" role="status"><span className="price-spinner" /><span>读取报价中</span></div> : <DataTable
+        rows={filtered} rowKey={row => row.id}
+        cols={[
+          { title: '件号', w: '17%', render: row => <strong>{row.partNumber}</strong> },
+          { title: '供应商', w: '22%', render: row => <span className="price-supplier">{row.supplierName || '—'}</span> },
+          { title: '采购单价', render: row => <span className="price-amount">{row.currency || '—'} {Number.isFinite(row.unitPrice) ? fmtMoney(row.unitPrice) : '—'}</span> },
+          { title: '件状', render: row => row.condition || '—' },
+          { title: '起订量', render: row => row.moq == null ? '—' : `${row.moq}${row.uom ? ` ${row.uom}` : ''}` },
+          { title: '交期', render: row => row.leadDays == null ? '—' : `${row.leadDays} 天` },
+          { title: '有效期至', render: row => <span className="price-validity">{row.validUntil?.slice(0, 10) || '—'}{expired(row) && <Badge text="已过期" tone="amber" />}</span> },
+          { title: '操作', render: row => <div className="price-row-actions"><button className="btn" onClick={() => edit(row)}>编辑</button><button className="btn" onClick={() => { setFormError(''); setDeleteTarget(row); }}>删除</button></div> },
+        ]}
+      />}
     </div>
-  );
+    {editor && <Modal title={rows.some(row => row.id === editor.id) ? '编辑供应商报价' : '新增供应商报价'} className="price-editor" busy={saving} onClose={() => setEditor(null)}>
+      <form onSubmit={e => { e.preventDefault(); void save(); }}>
+        <fieldset className="price-fieldset" disabled={saving}>
+          <div className="dialog-fields price-fields">
+            {FIELDS.map(([key, label, type]) => <label key={key}>{label}<input
+              type={type} autoFocus={key === 'partNumber'} required={key === 'partNumber' || key === 'unitPrice'}
+              min={type === 'number' ? 0 : undefined} step={key === 'unitPrice' ? 'any' : undefined}
+              value={String(editor[key] ?? '').slice(0, type === 'date' ? 10 : undefined)}
+              onChange={e => setEditor({ ...editor, [key]: NUMERIC.has(key) ? (e.target.value === '' ? undefined : Number(e.target.value)) : e.target.value })}
+            /></label>)}
+            {customDefs.map(def => <label key={def.key}>{def.label}<input value={String(editor.extra?.[def.key] ?? '')} onChange={e => setEditor({ ...editor, extra: { ...editor.extra, [def.key]: e.target.value } })} /></label>)}
+          </div>
+        </fieldset>
+        {formError && <p className="price-form-error" role="alert">{formError}</p>}
+        <footer className="app-dialog-actions"><button type="button" className="btn" disabled={saving} onClick={() => setEditor(null)}>取消</button><button className="btn primary" disabled={saving} type="submit">{saving ? '保存中…' : '保存报价'}</button></footer>
+      </form>
+    </Modal>}
+    {deleteTarget && <Modal title="删除供应商报价" busy={saving} onClose={() => setDeleteTarget(null)}>
+      <p>确认删除 {deleteTarget.partNumber} 的{deleteTarget.supplierName || '供应商'}报价？</p>
+      {formError && <p className="price-form-error" role="alert">{formError}</p>}
+      <footer className="app-dialog-actions"><button className="btn" disabled={saving} onClick={() => setDeleteTarget(null)}>取消</button><button className="btn primary" disabled={saving} onClick={() => void confirmDelete()}>{saving ? '删除中…' : '确认删除'}</button></footer>
+    </Modal>}
+  </div>;
 }

@@ -1,3 +1,4 @@
+import {ChatCorrectionCard,type ChatCorrection} from './ChatCorrectionCard';
 import {ChatMaterialPurpose,ChatSupplierFlow,ChatSupplierResult} from './ChatMaterials';
 import {chatMaterialRoute,type MaterialPurpose,type ChatSupplierRequest,type ChatSupplierReceipt} from '../engine/chatMaterials';
 import {submitChatInquiry, type ChatIntakeRequest} from '../engine/chatIntake';
@@ -18,6 +19,7 @@ import {useEffect,useRef,useState} from 'react';
 import {readStored,useStoredState} from '../engine/persistence';
 import type {TaskSummary} from '../task';
 type Turn = {
+  correction?:ChatCorrection;
   references?: ChatReference[];
   attachments?: ChatAttachment[];
   role: 'user' | 'assistant';
@@ -26,8 +28,9 @@ type Turn = {
   inquiry?: ChatInquiryResult;
   supplier?:ChatSupplierReceipt;
 };
-type Session = {context?: string; turns: Turn[]; state?: string; input?: string; creation?: ChatIntakeRequest; supplierCreation?:ChatSupplierRequest};
+type Session = {inspectionContext?:string;context?: string; turns: Turn[]; state?: string; input?: string; creation?: ChatIntakeRequest; supplierCreation?:ChatSupplierRequest};
 interface PlatformChatProps {
+  onCorrectionSaved?:()=>void;
   standalone?: boolean;
   docked?: boolean;
   onDock?: () => void;
@@ -35,13 +38,13 @@ interface PlatformChatProps {
   onOpenInquiry?: (id: string, conversationKey: string) => void;
   operator?: string;
   conversationKey?: string;
-  quickMessage: {id: number; text: string} | null;
+  quickMessage: {id: number; text: string;context?:string} | null;
   onQuickHandled: () => void;
   onClose: () => void;
   onHistory: () => void;
 }
 
-export function PlatformChat({standalone=false, docked=false, onDock, onInquiryCreated, onOpenInquiry,
+export function PlatformChat({onCorrectionSaved,standalone=false, docked=false, onDock, onInquiryCreated, onOpenInquiry,
   operator='本机用户', conversationKey='__no_task__', quickMessage, onQuickHandled, onClose, onHistory}: PlatformChatProps) {
   const [sessions, setSessions] = useStoredState<Record<string, Session>>('rfq-chat-v1', {});
   const [attachments, setAttachments] = useState<ChatAttachment[]>([]);
@@ -95,7 +98,7 @@ export function PlatformChat({standalone=false, docked=false, onDock, onInquiryC
     }
   };
 
-  const send = async (text=input) => {
+  const send = async (text=input,inspectionContext?:string) => {
     if ((!text.trim() && !attachments.length && !references.items.length) ||
       attachments.some(file => file.status === 'reading') || pending.current) return;
     if (session?.creation) { setError('上次接收尚未完成，请先重试或取消。'); return; }
@@ -106,10 +109,11 @@ export function PlatformChat({standalone=false, docked=false, onDock, onInquiryC
     setError('');
     chatScroll.follow.current = true;
     append({role: 'user', content: instruction || (references.items.length ? '请核对引用内容。' : attachments.map(file => file.name).join('、')), attachments, references: references.items});
+    references.clear();
     setInput('');
     setAttachments([]);
     setAttachmentEpoch(number => number + 1);
-    patch({context:undefined});
+    patch({context:undefined,...(inspectionContext?{inspectionContext}:{})});
     setMaterialPurpose('auto');
     if(route==='supplier'){patch({supplierCreation:{attachments,operator}});return;}
     if (route==='inquiry') {
@@ -129,7 +133,7 @@ export function PlatformChat({standalone=false, docked=false, onDock, onInquiryC
         body: JSON.stringify({
           references: activeReferences,
           instruction: instruction || (references.items.length ? '请解释引用的内容和需要核对的条件。' : '请根据附件内容简洁总结需求，未识别的附件不要推断。'),
-          context: session?.context,
+          context: inspectionContext||session?.inspectionContext||session?.context,
           history: turns.filter(turn => turn.content.trim()).slice(-6).map(turn => ({role: turn.role, content: turn.content.slice(0, 2000)})),
         }),
       });
@@ -144,10 +148,9 @@ export function PlatformChat({standalone=false, docked=false, onDock, onInquiryC
           updated[last] = {...updated[last], content};
           return {...old, [conversationKey]: {...saved, turns: updated}};
         });
-      });
-      references.clear();
+      },event=>{if(event.correction&&!controller.signal.aborted)setSessions(old=>{const saved=old[conversationKey];if(!saved)return old;const turns=[...saved.turns];turns[turns.length-1]={...turns[turns.length-1],correction:event.correction};return {...old,[conversationKey]:{...saved,turns}};});});
     } catch (failure) {
-      if (!controller.signal.aborted) setError(failure instanceof Error ? failure.message : String(failure));
+      if (!controller.signal.aborted) { references.restore(references.items); setError(failure instanceof Error ? failure.message : String(failure)); }
     } finally {
       pending.current = false;
       setBusy(false);
@@ -157,7 +160,7 @@ export function PlatformChat({standalone=false, docked=false, onDock, onInquiryC
     if (quickMessage && seen.current !== quickMessage.id) {
       seen.current = quickMessage.id;
       onQuickHandled();
-      void send(quickMessage.text);
+      void send(quickMessage.text,quickMessage.context);
     }
   }, [quickMessage]);
 
@@ -179,6 +182,7 @@ export function PlatformChat({standalone=false, docked=false, onDock, onInquiryC
           {turn.attachments && <div className="chat-attachment-strip">{turn.attachments.map(file => <ChatAttachmentPreview key={file.id} attachment={file}/>)}</div>}
           {turn.supplier ? <ChatSupplierResult receipt={turn.supplier} operator={operator} onOpen={()=>onOpenInquiry?.(turn.supplier!.inquiryId,conversationKey)} onImported={batch=>onInquiryCreated?.(batch,conversationKey)}/> : turn.inquiry ? <ChatInquiryReceipt result={turn.inquiry} onOpen={() => onOpenInquiry?.(turn.inquiry!.id, conversationKey)}/> : <ChatMarkdown text={turn.content}/>}
         </div>
+        {turn.correction&&<ChatCorrectionCard proposal={turn.correction} disabled={busy} onSaved={onCorrectionSaved} onChange={correction=>setSessions(old=>{const saved=old[conversationKey];const turns=[...saved.turns];turns[index]={...turns[index],correction};return {...old,[conversationKey]:{...saved,turns}};})}/>}
       </article>)}
       {busy && <p role="status">{session?.creation ? '正在接收原件、提取物料并查询依据…' : '正在回复…'}</p>}
       {error && <p role="alert">{error}</p>}

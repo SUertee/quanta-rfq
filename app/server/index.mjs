@@ -1,3 +1,5 @@
+import {chatCorrectionTools} from './chat-correction.mjs';
+import {createResourceCorrectionStore} from './resource-correction.mjs';
 import {createExtractionReview} from './extraction-review.mjs';
 import {readSchema,writeSchema} from './field-schema-store.mjs';
 import {createAccountStore} from './accounts.mjs';
@@ -337,6 +339,14 @@ http.createServer(async (req, res) => {
       intake.setOwner(id,ownerId);
       res.end(JSON.stringify(intake.detail(id,ctx)));return;
     }
+    const correctionPath=url.pathname.match(/^\/api\/inquiries\/([^/]+)\/evidence\/([^/]+)\/correction$/);
+    if(correctionPath&&['GET','POST'].includes(req.method)){
+      const [,inquiryId,evidenceId]=correctionPath;
+      guardInquiry(inquiryId,true);
+      const corrections=createResourceCorrectionStore(db,persist,intake);
+      const result=req.method==='GET'?corrections.read(inquiryId,evidenceId,ctx):corrections.save(inquiryId,evidenceId,await readBody(req,50000),ctx);
+      res.end(JSON.stringify(result));return;
+    }
     const supplierPath=url.pathname.match(/^\/api\/inquiries\/([^/]+)\/supplier-imports(?:\/([^/]+))?(\/(?:confirm|retry))?$/);
     if(supplierPath){
       const [,inquiryId,importId,operation]=supplierPath;
@@ -444,10 +454,12 @@ http.createServer(async (req, res) => {
       body.context=referenceContext(body.context,references);
       const referencedInquiries=new Set(references.filter(reference=>reference.inquiryId).map(reference=>reference.inquiryId));
       if(referencedInquiries.size===1)body.inquiryTitle=references.find(reference=>reference.inquiryId)?.inquiryTitle;
-      if(!streaming){res.end(JSON.stringify(await platformChat(body,{signal:controller.signal})));return;}
+      const correction=chatCorrectionTools(references,createResourceCorrectionStore(db,persist,intake),ctx,guardInquiry);
+      const chatOptions={signal:controller.signal,correction};
+      if(!streaming){res.end(JSON.stringify(await platformChat(body,chatOptions)));return;}
       res.setHeader('Content-Type','application/x-ndjson; charset=utf-8');res.setHeader('Cache-Control','no-cache, no-transform');res.setHeader('X-Accel-Buffering','no');res.flushHeaders();
       const write=event=>{if(!res.destroyed&&!res.writableEnded)res.write(JSON.stringify(event)+'\n');};
-      try{const result=await platformChat(body,{signal:controller.signal,onDelta:text=>write({type:'delta',text})});write({type:'done',...result});}
+      try{const result=await platformChat(body,{...chatOptions,onDelta:text=>write({type:'delta',text})});write({type:'done',...result});}
       catch{write({type:'error',error:'回复中断或模型连接失败，请重试。'});}
       if(!res.writableEnded)res.end();return;
     }

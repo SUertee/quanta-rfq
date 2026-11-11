@@ -63,6 +63,7 @@ export function resolveChatReferences(value,detail,{inquiryId,quote}={}) {
       inquiryId:inquiry.id,
       inquiryTitle:inquiry.title,
       lineId:line?.id,
+      evidenceId:evidence?.id,
       text:JSON.stringify({inquiry:inquiry.title,...(file?{file:file.name,position:content.locator}:{}),
         ...(line?{line:{partNumber:line.partNumber,description:line.description,quantity:line.quantity,uom:line.uom,condition:line.condition,requirement:line.requirement,dueDate:line.dueDate,needByDate:line.needByDate,quoteDeadline:line.quoteDeadline,version:line.version}}:{}),
         ...(content?{original:content.text.slice(0,2500)}:{}),

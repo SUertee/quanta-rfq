@@ -1,3 +1,4 @@
+import {ResourceCorrectionDialog} from './ResourceCorrectionDialog';
 import {ModuleBorderGrips} from "./ModuleBorderGrips";
 import {PdfPreview} from './PdfPreview';
 import {fieldConflictIssues} from '../../shared/field-review.mjs';
@@ -42,8 +43,10 @@ export function IntakeRecord({
   view,
   onLoaded,
   onEvidenceRefresh,
-  operator='本机用户',rules,selectedBases={},selectionDisabled=false,onSelectBasis,
+  initialLineNo,onConfigureRules,operator='本机用户',rules,selectedBases={},selectionDisabled=false,onSelectBasis,
 }: {
+  initialLineNo?:number;
+  onConfigureRules?:()=>void;
   selectedBases?:Record<string,string>;
   selectionDisabled?:boolean;
   onSelectBasis?:(key:string,id:string|null)=>void;
@@ -60,6 +63,7 @@ export function IntakeRecord({
     [busy, setBusy] = useState(false),
     [localPane, setPane] = useState<Pane | null>(null),
     [selected, setSelected] = useState("");
+  const [correctionId,setCorrectionId]=useState<string|null>(null);
   const [supplierImportOpen,setSupplierImportOpen]=useState(false);
   const [previewFileId, setPreviewFileId] = useState<string | null>(null);
   const [recovering,setRecovering]=useState(false);
@@ -91,7 +95,7 @@ export function IntakeRecord({
     finally{if(!controller.signal.aborted)setRecovering(false);}
   };
   const pane = view === undefined ? localPane : view;
-  const load = async (refresh = false) => {
+  const load = async (refresh = false, propagateError = false) => {
     loadController.current?.abort();
     const controller=new AbortController();loadController.current=controller;
     setError("");
@@ -111,6 +115,7 @@ export function IntakeRecord({
       if(refresh)onEvidenceRefresh?.();
     } catch (e) {
       if(!controller.signal.aborted)setError(String(e));
+      if(propagateError)throw e;
     } finally {
       if(!controller.signal.aborted)setBusy(false);
     }
@@ -157,7 +162,7 @@ export function IntakeRecord({
   const matched = lines.filter(
     (l) => (l as typeof l & { evidence?: Evidence[] }).evidence?.length,
   ).length;
-  const line = lines.find((l) => l.id === selected) || lines[0];
+  const line = lines.find((l) => l.id === selected) || lines.find(l=>l.lineNo===initialLineNo) || lines[0];
   const content = record?.contents.find((c) => c.id === line?.contentId);
   const file = record?.files.find((f) => f.id === content?.file_id);
   const changedFields = Object.entries(fieldLabels).filter(([key]) => {
@@ -340,7 +345,7 @@ export function IntakeRecord({
           {pane === "evidence" && (
             <>
               <div className="intake-evidence-toolbar">
-                <strong>物料 {lines.length} 行 · 已找到货源 {matched} 行 · 未找到 {lines.length - matched} 行</strong>
+                <div className="evidence-heading"><h3>货源匹配</h3><div className="evidence-match-counts"><span>{lines.length} 项物料</span><span>{matched} 项有候选</span>{lines.length>matched&&<span className="evidence-unmatched">{lines.length-matched} 项待补充</span>}</div></div>
                 <div className="intake-evidence-actions">
                   <button className="btn" onClick={()=>setSupplierImportOpen(true)}>导入供应商报价</button>
                   <button className="btn" disabled={busy} onClick={()=>void load(true)}>{busy?'查询中…':'刷新依据'}</button>
@@ -348,10 +353,11 @@ export function IntakeRecord({
               </div>
               {line&&selectedBases[`intake-${batchId}-${line.lineNo}`]&&onSelectBasis&&<div className="evidence-selection"><span>{resourceResult?.selected?'已指定报价依据':'已选依据待重新确认'}</span><button type="button" className="btn" disabled={selectionDisabled} onClick={()=>onSelectBasis(`intake-${batchId}-${line.lineNo}`,null)}>恢复自动选择</button></div>}
               <div className="intake-evidence-layout">
-                <nav aria-label="选择物料依据">
+                <nav className="evidence-material-tabs unified-tabs" aria-label="选择物料依据">
                   {lines.map((l) => (
                     <button
                       className={line?.id === l.id ? "active" : ""}
+                      aria-pressed={line?.id === l.id}
                       key={l.id}
                       onClick={() => setSelected(l.id)}
                     >
@@ -367,7 +373,7 @@ export function IntakeRecord({
                     <>
                       <section className="intake-source reference-source" aria-label="原文依据">
                         <div className="intake-source-label">
-                          <span>原文 · {file?.name} · {position(content?.locator)}</span><button type="button" className="reference-cite" draggable onDragStart={event=>dragReference(event,sourceReference)} onClick={()=>citeReference(sourceReference)}>引用</button>
+                          <span>原文 · {file?.name} · {position(content?.locator)}</span><button type="button" className="btn reference-cite" draggable onDragStart={event=>dragReference(event,sourceReference)} onClick={()=>citeReference(sourceReference)}>引用</button>
                         </div>
                         <pre>{content?.text || "无原文"}</pre>
                       </section>
@@ -388,7 +394,7 @@ export function IntakeRecord({
                                     const origin=record?.contents.find(content=>content.id===source.contentId);
                                     const originFile=record?.files.find(file=>file.id===origin?.file_id);
                                     const reference:ChatReference={id:`content:${source.contentId}:${line.version||1}`,label:`${label} · ${originFile?.name||'材料'}`,excerpt:origin?.text||String(source.value||'要求原文'),inquiryId:batchId,lineId:line.id,contentId:source.contentId||undefined,version:line.version};
-                                    return <small className="reference-source" key={index}>{originFile?.name} · {position(origin?.locator)} · {source.value} <button className="reference-cite" draggable onDragStart={event=>dragReference(event,reference)} onClick={()=>citeReference(reference)}>引用</button></small>;
+                                    return <small className="reference-source" key={index}>{originFile?.name} · {position(origin?.locator)} · {source.value} <button className="btn reference-cite" draggable onDragStart={event=>dragReference(event,reference)} onClick={()=>citeReference(reference)}>引用</button></small>;
                                   })}
                                 </td>
                               </tr>
@@ -417,8 +423,8 @@ export function IntakeRecord({
                                 {!!e.current_match?.checks.some(check=>check.state!=='pass')&&<ul>{e.current_match.checks.filter(check=>check.state!=='pass').map(check=><li key={check.code}>{check.message}</li>)}</ul>}
                                 {selected&&<span className="resource-selected">{selectedBases[`intake-${batchId}-${line.lineNo}`]?'已选依据':'自动选用'}</span>}
                               </td>
-                              <td data-label="操作"><div className="resource-row-actions">{onSelectBasis&&<button type="button" className="btn" disabled={selectionDisabled||e.current_match?.state!=='usable'||!!line.issues?.length||selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id} aria-pressed={selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id} onClick={()=>onSelectBasis(`intake-${batchId}-${line.lineNo}`,e.id)}>{selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id?'已选用':'选用'}</button>}
-                                <button type="button" className="reference-cite" aria-label={`引用依据 ${e.source_key}`} draggable onDragStart={event=>dragReference(event,evidenceReference(e))} onClick={()=>citeReference(evidenceReference(e))}>引用</button>
+                              <td data-label="操作"><div className="resource-row-actions">{!inventory&&<button type="button" className="btn" disabled={busy||selectionDisabled} onClick={()=>setCorrectionId(e.id)}>{e.current_match?.state==='usable'?'核对报价':'处理冲突'}</button>}{onSelectBasis&&<button type="button" className="btn" disabled={selectionDisabled||e.current_match?.state!=='usable'||!!line.issues?.length||selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id} aria-pressed={selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id} onClick={()=>onSelectBasis(`intake-${batchId}-${line.lineNo}`,e.id)}>{selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id?'已选用':'选用'}</button>}
+                                <button type="button" className="btn reference-cite" aria-label={`引用依据 ${e.source_key}`} draggable onDragStart={event=>dragReference(event,evidenceReference(e))} onClick={()=>citeReference(evidenceReference(e))}>引用</button>
                               </div></td>
                             </tr>;
                           })}</tbody>
@@ -438,6 +444,7 @@ export function IntakeRecord({
           )}
         </div>
       )}
+      {correctionId&&<ResourceCorrectionDialog inquiryId={batchId} evidenceId={correctionId} rules={rules} onConfigureRules={onConfigureRules} onClose={()=>setCorrectionId(null)} onRefresh={()=>load(true,true)}/>}
     </section>
   );
 }

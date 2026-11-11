@@ -71,15 +71,14 @@ async function executeAgent(value,costs,{signal,modelOverride,onAuditEvent,resou
  await agent.invoke({messages:[...(input.history||[]),{role:'user',content:input.instruction}]},{signal,recursionLimit:12});
  // Never return raw model prose: upstream gateways may mix reasoning text into content.
  const finalDraft=draft||{mode:'analysis',lines:[],questions:['Agent 未完成工具流程，未生成报价，请检查委托后重试。'],limitations:[]};
- const evidenceQuestion=/(来源|来自哪里|哪来的|依据|出处|缺什么|缺少什么|缺哪些|哪些.*(不能|无法|缺)|不能报价|信息缺口|风险)/.test(input.instruction);
  const requestsDraft=!/(只|仅).{0,8}(分析|检查|核对)|不要.{0,5}(报价|出价)|不生成.{0,5}(价格|报价)/.test(input.instruction)&&/(生成|形成|输出|制作|出具|计算|填入).{0,12}(报价|草稿|价格|单价)/.test(input.instruction);
- const evidenceComplete=!draft&&!!evidenceLines&&evidenceQuestion&&!requestsDraft;
+ const evidenceComplete=!draft&&!!evidenceLines&&!requestsDraft;
  if(evidenceComplete)finalDraft.questions=[];
  const incomplete=!draft&&!evidenceComplete;
  const priced=finalDraft.lines.filter(l=>Number.isFinite(l.suggestedPrice)).length;
  const unresolved=finalDraft.lines.filter(l=>l.issues.length>0).length;
  const summary=incomplete?'本次处理未完成，请重试。':evidenceComplete?'已查询当前物料的报价依据。':`已${finalDraft.mode==='analysis'?'分析':'处理'} ${finalDraft.lines.length} 行，生成建议价 ${priced} 行，存在信息缺口 ${unresolved} 行。${finalDraft.mode==='analysis'?'本次仅分析，不生成价格。':''}全部结果待人工核对，未写入或发送报价。`;
- let answer=summary;
+ let answer=evidenceComplete?`已核对 ${evidenceLines.length} 行物料，找到可用成本依据 ${evidenceLines.filter(line=>line.source).length} 行。${evidenceLines.filter(line=>line.issues.length).length?'部分物料仍有供货条件需要核实。':'最终售价与供货条件仍待人工核对。'}`:summary;
  const answerLines=draft?.lines||evidenceLines;
  if(answerLines && /(来源|来自哪里|哪来的|依据|出处)/.test(input.instruction)) {
   answer='本次报价依据来自已保存的库存或供应商资源：\n'+answerLines.map(l=>`${l.partNumber||l.key}：${l.source||'未找到精确件号成本记录'}；${Number.isFinite(l.cost)?`${l.basisSource==='supplier_price'?'供应商成本':'内部成本'} ${l.cost} CNY`:'没有可用的人民币成本'}。`).join('\n')+'\n采用的资源及适用条件已列出，最终报价仍待人工核对。';

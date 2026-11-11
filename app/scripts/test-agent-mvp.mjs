@@ -100,3 +100,10 @@ const evidenceAudit=await runAgent({...input,instruction:'这些成本来自哪�
 assert.equal(resourceStore.getRun(evidenceAudit.runId).status,'completed');
 assert.equal(evidenceAudit.outcome,'evidence');
 console.log('PASS: absent/incomplete quote tools fail the run and audit; successful evidence-only questions remain completed');
+
+const ordinaryFollowup=await runAgent({...input,instruction:'这个呢？'},[cost],{modelOverride:new ScriptModel([{name:'read_inquiry'},{name:'lookup_costs'}])});
+assert.equal(ordinaryFollowup.status,'needs_review','completed lookup is valid for a question that does not request a draft');
+assert.equal(ordinaryFollowup.outcome,'evidence');
+assert.deepEqual(ordinaryFollowup.draft.lines,[],'a lookup-only answer does not fabricate a quote');
+assert.match(ordinaryFollowup.answer,/1 行物料/);
+console.log('PASS: non-draft follow-up accepts completed lookup without inventing quote results');

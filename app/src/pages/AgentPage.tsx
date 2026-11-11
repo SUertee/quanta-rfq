@@ -1,3 +1,4 @@
+import {ChatCorrectionCard,type ChatCorrection} from '../components/ChatCorrectionCard';
 import type {InquiryStage,WorkflowRun} from '../engine/workflow';
 import {ChatMaterialPurpose,ChatSupplierFlow,ChatSupplierResult} from '../components/ChatMaterials';
 import {chatMaterialRoute,type MaterialPurpose,type ChatSupplierRequest,type ChatSupplierReceipt} from '../engine/chatMaterials';
@@ -24,17 +25,19 @@ import type { EstCost, InquiryLine } from '../types';
 import type { PricingPolicy } from '../engine/pricingPolicy';
 import { isYellow, priceAll } from '../engine/pricing';
 import { certificatesFor, condAliasesFor } from '../engine/fieldSchema';
+import {isReferenceQuestion} from '../engine/agentIntent';
 import {ExecutionSteps} from '../components/ExecutionSteps';
 import {MessageRail} from '../components/MessageRail';
 
 type DraftLine = { key: string; partNumber: string; quantity: number; uom?: string; cost?: number; basisSource?:string; basisId?:string; basisLabel?:string; suggestedPrice?: number; currency: string; source?: string; issues: string[] };
 type AgentResult = { runId: string; status: 'needs_review' | 'failed'; summary: string; answer?: string; model: string; draft: { lines: DraftLine[]; questions: string[]; mode?: string; limitations?: string[] }; events: { tool: string; state: string; detail: string }[] };
-type Turn = { references?:ChatReference[]; attachments?:ChatAttachment[]; createdAt?:string; inquiry?:ChatInquiryResult; supplier?:ChatSupplierReceipt; role: 'user' | 'assistant'; content: string; basis?: string; result?: AgentResult; elapsed?: number };
+type Turn = { correction?:ChatCorrection; references?:ChatReference[]; attachments?:ChatAttachment[]; createdAt?:string; inquiry?:ChatInquiryResult; supplier?:ChatSupplierReceipt; role: 'user' | 'assistant'; content: string; basis?: string; result?: AgentResult; elapsed?: number };
 type Session = { state: 'idle' | 'running' | 'failed' | 'stopped'; input: string; turns: Turn[]; error?: string; progressEvents?:{tool:string;state:string}[]; creation?:ChatIntakeRequest; supplierCreation?:ChatSupplierRequest };
 const fresh = (): Session => ({ state: 'idle', input: '', turns: [] });
 const money = (v?: number) => v == null ? '—' : `¥${v.toLocaleString('zh-CN', { maximumFractionDigits: 2 })}`;
 
-export function AgentPage({ onWorkflowProgress, onInquiryCreated, operator='本机用户', sessionOverride, quickMessage, onQuickHandled, onHistory, priceBook, tasks, ds, policy, activeSource, lineEdits, resolved, onOpenTask, onSelectTask, onNewInquiry, embedded = false, expanded = false, docked = false, selectedLineKey = null, onClearLine, onClose, onExpand, onApplyPrice, skipped = new Set(), addedLines = {},selectedBases={},persistencePending=false,quoteVersion }: {
+export function AgentPage({ onCorrectionSaved, onWorkflowProgress, onInquiryCreated, operator='本机用户', sessionOverride, quickMessage, onQuickHandled, onHistory, priceBook, tasks, ds, policy, activeSource, lineEdits, resolved, onOpenTask, onSelectTask, onNewInquiry, embedded = false, expanded = false, docked = false, selectedLineKey = null, onClearLine, onClose, onExpand, onApplyPrice, skipped = new Set(), addedLines = {},selectedBases={},persistencePending=false,quoteVersion }: {
+  onCorrectionSaved?:()=>void;
   onWorkflowProgress?: (stage:InquiryStage,state:WorkflowRun['state'])=>void;
   onInquiryCreated?: (batch:IntakeBatch,conversationKey:string)=>void;
   operator?:string;
@@ -157,20 +160,20 @@ export function AgentPage({ onWorkflowProgress, onInquiryCreated, operator='本�
     });
     const history = session.turns.filter(t => (!t.basis || t.basis === basis) && t.content.trim()).slice(-6).map(t => ({role:t.role,content:t.content.slice(0,2000)}));
     append(sessionKey, {role:'user',content:instruction,basis,attachments:automatic?[]:attachments,references:automatic?[]:references.items});
-    if(!automatic){setAttachments([]);setAttachmentEpoch(n=>n+1);setMaterialPurpose('auto');setAttachmentContext('');}
+    if(!automatic){references.clear();setAttachments([]);setAttachmentEpoch(n=>n+1);setMaterialPurpose('auto');setAttachmentContext('');}
     patch(sessionKey,{state:'running',input:automatic?session.input:'',error:undefined,progressEvents:[]});
     try {
       const greeting = /^(你好|您好|嗨|hello\b|hi\b|你能做什么|你可以做什么|你能帮我|你是谁|介绍一下你|谢谢|感谢)/i.test(instruction);
       const requestsWork = /(生成|计算|核对|检查|查询|分析|报价草稿|单价|库存)/.test(instruction);
-      const explainReference=activeReferences.length>0&&/(解释|为什么|什么|如何|怎么|来源|说明)/.test(instruction)&&!/(生成|计算|填入|执行)/.test(instruction);
+      const explainReference=!automatic&&(isReferenceQuestion(instruction,activeReferences.length>0)||/(修改|调整|改为|改成|补全|解决冲突)/.test(instruction)||!/(生成|形成|输出|制作|出具|计算|填入|执行|重新核价|检查|核对|查询|分析)/.test(instruction));
       if(!automatic&&route==='question'&&attachments.length||!current.lines.length||(greeting&&!requestsWork&&!attachments.length&&!attachmentContext)||explainReference){
         append(sessionKey,{role:'assistant',content:'',basis});
         const response=await fetch('/api/assistant/chat',{method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({instruction,history,references:activeReferences,inquiryId:current.email?.intakeBatchId,inquiryTitle:task.title.slice(0,300),context:attachmentContext||(!current.lines.length?JSON.stringify({lineCount:0,status:current.email?.intakeStatus,issues:current.email?.intakeIssues||[],materials:current.email?.attachments||[]}):undefined)})});
         await readChatStream(response,content=>{
           if(id!==generation.current||latestBasis.current!==basis)return;
           setSessions(old=>{const saved=old[sessionKey];if(!saved)return old;const turns=[...saved.turns];const last=turns.length-1;if(turns[last]?.role!=='assistant')return old;turns[last]={...turns[last],content};return {...old,[sessionKey]:{...saved,turns}};});
-        });
-        if(id===generation.current){if(!automatic)references.clear();patch(sessionKey,{state:'idle'});}
+        },event=>{if(event.correction&&id===generation.current)setSessions(old=>{const saved=old[sessionKey];if(!saved)return old;const turns=[...saved.turns];turns[turns.length-1]={...turns[turns.length-1],correction:event.correction};return {...old,[sessionKey]:{...saved,turns}};});});
+        if(id===generation.current)patch(sessionKey,{state:'idle',progressEvents:[]});
         return;
       }
       const reportsWorkflow=(!!preset&&quickMessage?.workflow&&(!quickMessage.inquiryId||quickMessage.inquiryId===current.email?.intakeBatchId))||(!explainReference&&/(生成|计算).{0,12}(报价|草稿)/.test(instruction));
@@ -194,12 +197,12 @@ export function AgentPage({ onWorkflowProgress, onInquiryCreated, operator='本�
       if (latestBasis.current !== basis) throw new Error('询价或策略已修改，本轮结果未采用。请重新提问。');
       if (!data.draft || !Array.isArray(data.draft.lines) || !Array.isArray(data.events)) throw new Error('服务返回不完整，请重试。');
       append(sessionKey,{role:'assistant',content:((/生成.{0,8}(报价|草稿)/.test(instruction) ? data.summary : data.answer) || data.summary || '核对完成，请查看本轮结果。'),basis,result:data,elapsed:performance.now()-started});
-      if(!automatic)references.clear();
       if(workflowStage.current)onWorkflowProgress?.(data.status==='failed'?workflowStage.current:data.draft.mode==='analysis'?4:6,data.status==='failed'?'failed':data.draft.mode==='analysis'?'attention':'done');
-      patch(sessionKey,{state:data.status==='failed'?'failed':'idle',error:data.status==='failed'?'本次处理未完成，请重新发送。':undefined});
+      patch(sessionKey,{state:data.status==='failed'?'failed':'idle',error:undefined,progressEvents:[]});
     } catch(error) {
       if (id !== generation.current) return;
       if(workflowStage.current)onWorkflowProgress?.(workflowStage.current,controller.signal.aborted?'stopped':'failed');
+      if(!automatic&&!controller.signal.aborted)references.restore(references.items);
       patch(sessionKey,{state:controller.signal.aborted ? 'stopped':'failed',error:error instanceof Error ? error.message : String(error)});
     } finally { if (id === generation.current) { busy.current=false; request.current=null;workflowStage.current=null; } }
   };
@@ -230,6 +233,8 @@ export function AgentPage({ onWorkflowProgress, onInquiryCreated, operator='本�
       {session.turns.map((turn,i) => {
         const result=turn.result, stale=!!turn.basis&&turn.basis!==basis, failed=result?.status==='failed';
         return <article key={i} className={`rfq-chat-turn ${turn.role}`}>{turn.role==='assistant'&&<div className="rfq-chat-speaker">Quanta{stale&&<span>旧询价记录</span>}</div>}{result&&<ExecutionSteps events={result.events} lines={result.draft.lines} mode={result.draft.mode}/>}<div className={turn.role==='assistant'&&result?'rfq-response-event':undefined}><div className="rfq-chat-text">{turn.references&&<ReferenceList items={turn.references}/ >}{turn.attachments&&<div className="chat-attachment-strip">{turn.attachments.map(file=><ChatAttachmentPreview key={file.id} attachment={file}/>)}</div>}{turn.supplier ? <ChatSupplierResult receipt={turn.supplier} operator={operator} onOpen={()=>onOpenTask({kind:'email',id:`intake-${turn.supplier!.inquiryId}`})} onImported={batch=>onInquiryCreated?.(batch,sessionKey)}/> : turn.inquiry ? <ChatInquiryReceipt result={turn.inquiry} onOpen={() => onOpenTask({kind:'email',id:`intake-${turn.inquiry!.id}`})}/> : <ChatMarkdown text={turn.content || result?.summary || ''} />}</div>
+          {turn.correction&&<ChatCorrectionCard proposal={turn.correction} disabled={session.state==='running'||stale} onSaved={onCorrectionSaved} onChange={correction=>setSessions(old=>{const saved=old[sessionKey];const turns=[...saved.turns];turns[i]={...turns[i],correction};return {...old,[sessionKey]:{...saved,turns}};})}/>}
+          {failed && <button className="btn" disabled={session.state==='running'} onClick={()=>run(session.turns[i-1]?.content)}>重试本次处理</button>}
           {result && <>{result.draft.lines.length>0 && result.draft.mode!=='analysis' && !embedded && <button className="rfq-chat-output" disabled={stale} onClick={openDraft}><span>▤</span><strong>{result.draft.mode==='analysis'?'缺口清单':'报价草稿'} · {result.draft.lines.length} 行</strong><small>{stale?'旧记录':'查看当前草稿 →'}</small></button>}
             {embedded && result.draft.mode!=='analysis' && result.draft.lines.length>0 && <section className="copilot-results" aria-label="报价建议">
               <header className="copilot-result-title"><strong>报价建议</strong><span>{result.draft.lines.length} 项物料</span></header>
@@ -256,7 +261,7 @@ export function AgentPage({ onWorkflowProgress, onInquiryCreated, operator='本�
       })}
       {session.state==='running' && <div className="rfq-chat-thinking" role="status">{session.progressEvents?.length?<ExecutionSteps events={session.progressEvents} running/>:<span>正在回复…</span>}</div>}
       {session.creation&&session.state!=='running'&&<div className="chat-intake-recovery"><button className="btn" onClick={()=>receiveInquiry(session.creation)}>重试接收</button><button className="btn" onClick={()=>patch(sessionKey,{creation:undefined,error:undefined,state:'idle'})}>放弃重试</button></div>}
-      {session.error && <div className="rfq-chat-error" role="alert">{session.progressEvents?.length?<ExecutionSteps events={session.progressEvents}/>:null}{session.error}</div>}
+      {session.error && !(session.state==='failed'&&session.turns[session.turns.length-1]?.result?.status==='failed') && <div className="rfq-chat-error" role="alert">{session.progressEvents?.length?<ExecutionSteps events={session.progressEvents}/>:null}{session.error}</div>}
 
     </div>
     {!embedded&&<MessageRail container={chatScroll.containerRef} turns={session.turns}/>}

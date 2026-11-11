@@ -93,13 +93,14 @@ function Workspace({account,onLogout,loginRequired}:{account:AuthAccount;onLogou
   const ns = (key: string) => `${account.id}:${key}`;
   const [assignees, setAssignees] = useStoredState<Record<string, string>>(ns('task-assignees'), {});
   const [manualTasks, setManualTasks] = useStoredState<string[]>(ns('manual-tasks'), []);
+  const [inspectionTarget,setInspectionTarget]=useState<{id:number;stage:InquiryStage;lineKey:string}|null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection,setSettingsSection]=useState<'pricing'|'services'>('pricing');
   const [importRequested, setImportRequested] = useState(new URLSearchParams(location.search).get('new') === '1');
   const [activeChat, setActiveChat] = useState<string | null>(() => 'chat:' + crypto.randomUUID());
   const automaticRuns=useRef(new Set<string>());
   const [workflowRuns,setWorkflowRuns]=useState<Record<string,WorkflowRun>>({});
-  const [quickMessage,setQuickMessage]=useState<{id:number;text:string;inquiryId?:string;workflow?:boolean}|null>(null);
+  const [quickMessage,setQuickMessage]=useState<{id:number;text:string;inquiryId?:string;workflow?:boolean;context?:string}|null>(null);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [assistantDocked, setAssistantDocked] = useState(false);
   const [chatRefreshing, setChatRefreshing] = useState(false);
@@ -257,6 +258,7 @@ function Workspace({account,onLogout,loginRequired}:{account:AuthAccount;onLogou
     setAgentLineKey(null);
   };
   const openTask = (nextSource: Source, preferredKey = activeChat) => {
+    setInspectionTarget(null);
     selectInquiry(nextSource, preferredKey);
     setView('workbench');
     setMode('workbench');
@@ -368,7 +370,7 @@ function Workspace({account,onLogout,loginRequired}:{account:AuthAccount;onLogou
             <span className="nav-label">询价任务</span>
           </button>
           <button className={`nav-item ${mode === 'workbench' && view === 'inspect' ? 'active' : ''}`} onClick={() => { setMode('workbench'); setView('inspect'); setAssistantOpen(false); setAssistantDocked(false); }}>
-            <span className="nav-label">异常巡检</span>
+            <span className="nav-label">异常处理</span>
           </button>
           <button className={`nav-item ${mode === 'workbench' && view === 'prices' ? 'active' : ''}`} onClick={() => { setMode('workbench'); setView('prices'); setAssistantOpen(false); setAssistantDocked(false); }}>
             <span className="nav-label">价目与依据</span>
@@ -391,8 +393,8 @@ function Workspace({account,onLogout,loginRequired}:{account:AuthAccount;onLogou
         <FloatingAssistant onSend={text=>{setQuickMessage({id:Date.now(),text});setAssistantOpen(true);}} open={assistantOpen} expanded={mode==='agent'} docked={assistantDocked && assistantOpen && mode==='workbench'} onOpen={()=>setAssistantOpen(true)} onCollapse={()=>{setAssistantOpen(false);setAssistantDocked(false);setMode('workbench');}}>
         <div className={mode === 'agent' ? "agent-mode-host" : "embedded-agent-host"}>
           {mode==='agent'&&<ConversationList tasks={tasks} selected={activeChat||(source?sourceKey(source)+(agentLineKey?':line:'+agentLineKey:''):'__no_task__')} onNew={startConversation} onSelect={restoreConversation} />}
-          {!source && <PlatformChat operator={userName} onInquiryCreated={receiveChatInquiry} onOpenInquiry={openChatInquiry} standalone={mode==='agent'} docked={assistantDocked} onDock={()=>setAssistantDocked(value=>!value)} key={activeChat||'__no_task__'} conversationKey={activeChat||'__no_task__'} onQuickHandled={()=>setQuickMessage(null)} quickMessage={quickMessage?.inquiryId?null:quickMessage} onClose={()=>{setMode('workbench');setAssistantOpen(false);setAssistantDocked(false);}} onHistory={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}} />}
-          {source&&quoteSync.ready&&<div className="copilot-body"><AgentPage onWorkflowProgress={(stage,state)=>{const id=current.email?.intakeBatchId;if(id&&state==='running')automaticRuns.current.add(id);if(id)setWorkflowRuns(old=>({...old,[id]:{stage,state,revealed:state==='done'?6:Math.max(old[id]?.revealed||6,stage) as InquiryStage}}));}} operator={userName} onInquiryCreated={receiveChatInquiry} key={(activeChat||'')+sourceKey(source)}
+          {!source && <PlatformChat onCorrectionSaved={()=>setInvVersion(v=>v+1)} operator={userName} onInquiryCreated={receiveChatInquiry} onOpenInquiry={openChatInquiry} standalone={mode==='agent'} docked={assistantDocked} onDock={()=>setAssistantDocked(value=>!value)} key={activeChat||'__no_task__'} conversationKey={activeChat||'__no_task__'} onQuickHandled={()=>setQuickMessage(null)} quickMessage={quickMessage?.inquiryId?null:quickMessage} onClose={()=>{setMode('workbench');setAssistantOpen(false);setAssistantDocked(false);}} onHistory={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}} />}
+          {source&&quoteSync.ready&&<div className="copilot-body"><AgentPage onCorrectionSaved={()=>setInvVersion(v=>v+1)} onWorkflowProgress={(stage,state)=>{const id=current.email?.intakeBatchId;if(id&&state==='running')automaticRuns.current.add(id);if(id)setWorkflowRuns(old=>({...old,[id]:{stage,state,revealed:state==='done'?6:Math.max(old[id]?.revealed||6,stage) as InquiryStage}}));}} operator={userName} onInquiryCreated={receiveChatInquiry} key={(activeChat||'')+sourceKey(source)}
             sessionOverride={activeChat||undefined} onQuickHandled={()=>setQuickMessage(null)} quickMessage={source&&(!quickMessage?.inquiryId||quickMessage.inquiryId===current.email?.intakeBatchId)?quickMessage:null} onHistory={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}} embedded expanded={mode === 'agent'} docked={assistantDocked} selectedLineKey={agentLineKey}
             onClearLine={() => setAgentLineKey(null)}
             onClose={() => { setMode('workbench'); setAssistantOpen(false); setAssistantDocked(false); }}
@@ -446,7 +448,7 @@ function Workspace({account,onLogout,loginRequired}:{account:AuthAccount;onLogou
           {quoteSync.error?<><strong>询价加载失败</strong><button className="btn" onClick={quoteSync.retry}>重新加载</button></>:<span className="inquiry-loading-spinner" aria-hidden="true" />}
         </section>}
         {view === 'workbench' && source && quoteSync.ready && (
-          <WorkbenchPage run={current.email?.intakeBatchId?workflowRuns[current.email.intakeBatchId]:undefined} persistenceError={quoteSync.error} persistenceConflict={quoteSync.conflict} onRetryQuote={()=>{if(quoteSync.conflict){quoteSync.loadServer();setInvVersion(version=>version+1);}else quoteSync.retry();}} quoteVersion={current.email?.intakeBatchId?quoteSync.version:undefined} persistencePending={!quoteSync.ready||quoteSync.saving||!!quoteSync.error} key={sourceKey(source)} onDataRefresh={()=>setInvVersion(v=>v+1)}
+          <WorkbenchPage focusTarget={inspectionTarget} onConfigureRules={()=>{setSettingsSection('pricing');setSettingsOpen(true);}} run={current.email?.intakeBatchId?workflowRuns[current.email.intakeBatchId]:undefined} persistenceError={quoteSync.error} persistenceConflict={quoteSync.conflict} onRetryQuote={()=>{if(quoteSync.conflict){quoteSync.loadServer();setInvVersion(version=>version+1);}else quoteSync.retry();}} quoteVersion={current.email?.intakeBatchId?quoteSync.version:undefined} persistencePending={!quoteSync.ready||quoteSync.saving||!!quoteSync.error} key={sourceKey(source)} onDataRefresh={()=>setInvVersion(v=>v+1)}
             onAskAgent={(key) => { setAgentLineKey(key); setAssistantOpen(true); }}
             selectedAgentLine={agentLineKey}
             selectedBases={selectedBases} onSelectBasis={(key,id)=>{
@@ -485,7 +487,13 @@ function Workspace({account,onLogout,loginRequired}:{account:AuthAccount;onLogou
         {view === 'inspect' && (
           <InspectPage tasks={tasks} ds={dsx2} policy={policyFull} priceBook={priceBook} estCost={estCost}
             resolved={resolved} skipped={skipped} addedLines={addedLines} lineEdits={lineEdits}
-            onOpenTask={(s) => openTask(s)} />
+            onBatchAssistant={(text,context)=>{
+              if(!text){const key=newConversation();if(!key)return;clearConversationReferences(activeChat,key);setActiveChat(key);setSource(null);setAgentLineKey(null);setQuickMessage(null);}
+              else setQuickMessage({id:Date.now(),text,context});
+              setMode('workbench');setAssistantOpen(true);setAssistantDocked(true);
+            }}
+            selectedBases={selectedBases} onDataRefresh={()=>setInvVersion(v=>v+1)} onConfigureRules={()=>{setSettingsSection('pricing');setSettingsOpen(true);}}
+            onOpenTask={(s,stage,lineKey) => {openTask(s);if(stage&&lineKey)setInspectionTarget({id:Date.now(),stage,lineKey});}} />
         )}
         {view === 'prices' && <PriceResourcesPage ds={dsx2} onRefresh={() => setInvVersion((v) => v + 1)} />}
         {view === 'inventory' && (

@@ -68,7 +68,7 @@ export function HomePage({
         </div>
       </section>
 
-      <RecordToolbar filters={<FilterTabs label="任务状态筛选" value={statusFilter} onChange={setStatusFilter} items={[{value:'all',label:'全部任务'},{value:'review',label:'待核对'},{value:'ready',label:'待核价'}]} />}><input className="search-input" aria-label="搜索询价" placeholder="搜索询价编号、客户…" value={query} onChange={e=>setQuery(e.target.value)} /><button className="btn" onClick={() => exportComparisonCsv(tasks, taskTime, opCounts, baselineMinutes)}>导出对照验证</button><button className="btn primary inquiry-create" aria-label="新建询价" title="新建询价" onClick={()=>setShowNew(true)}>新建询价</button>{deletedCount>0&&<button className="btn" onClick={onRestore}>恢复已删除（{deletedCount}）</button>}</RecordToolbar>
+      <RecordToolbar filters={<FilterTabs label="任务状态筛选" value={statusFilter} onChange={setStatusFilter} items={[{value:'all',label:'全部任务'},{value:'review',label:'待核对'},{value:'ready',label:'待核价'}]} />}><input className="search-input" aria-label="搜索询价" placeholder="搜索询价编号、客户…" value={query} onChange={e=>setQuery(e.target.value)} /><button className="btn record-export" onClick={() => exportComparisonCsv(tasks, taskTime, opCounts, baselineMinutes)}>导出对照验证</button><button className="btn primary inquiry-create" aria-label="新建询价" title="新建询价" onClick={()=>setShowNew(true)}>新建询价</button>{deletedCount>0&&<button className="btn record-restore" onClick={onRestore}>恢复已删除（{deletedCount}）</button>}</RecordToolbar>
       <div className="panel inquiry-records" role="region" aria-label="询价记录">
 
         <DataTable
@@ -76,17 +76,17 @@ export function HomePage({
           mobileRender={t=><article className="task-record-card">
             <div className="task-record-main">{statusOf(t)}<span>{t.total} 行物料</span></div>
             <button className="task-record-open" aria-label={`打开询价 ${t.title}`} onClick={()=>onPick(t.source)}><b title={t.title}>{t.title}</b></button>
-            <div className="task-record-meta"><span>{t.customer||'客户待补'}</span><span className={t.ownerName?'':'owner-empty'}>{t.ownerName||'待认领'}</span>{t.urgent&&<Badge text="加急" tone="red" />}{account.role==='sub'&&t.intakeBatchId&&!t.ownerId&&<button className="record-open" aria-label={`认领询价 ${t.title}`} onClick={()=>onClaim(t)}>认领</button>}<button className="record-delete" aria-label={`删除询价 ${t.title}`} onClick={()=>onDelete(t.key)}>删除</button></div>
+            <div className="task-record-meta"><span className="task-record-customer" title={t.customer||'客户待补'}>{t.customer||'客户待补'}</span><span title={t.ownerName||'待认领'} className={t.ownerName?'task-record-owner':'task-record-owner owner-empty'}>{t.ownerName||'待认领'}</span>{t.urgent&&<Badge text="加急" tone="red" />}{account.role==='sub'&&t.intakeBatchId&&!t.ownerId&&<button className="record-open" aria-label={`认领询价 ${t.title}`} onClick={()=>onClaim(t)}>认领</button>}<button className="record-delete" aria-label={`删除询价 ${t.title}`} onClick={()=>onDelete(t.key)}>删除</button></div>
           </article>}
           rowKey={(t) => t.key}
           onRowClick={(t) => onPick(t.source)}
           rowClass={() => ''}
           cols={[
-            {title:'状态',w:'180px',render:statusOf},
+            {title:'状态',w:'160px',render:statusOf},
             {title:'询价 / 客户',render:t=><div className="task-identity"><b className="task-name" title={t.title}>{t.title}</b><span>{t.customer||'客户待补'}{t.urgent&&<Badge text="加急" tone="red" />}</span></div>},
-            {title:'归属人',w:'120px',render:t=>t.ownerName?<span>{t.ownerName}</span>:<span className="owner-empty">待认领</span>},
+            {title:'归属人',w:'110px',render:t=>t.ownerName?<span>{t.ownerName}</span>:<span className="owner-empty">待认领</span>},
             {title:'行数',w:'72px',render:t=>t.total},
-            {title:'操作',w:'200px',render:t=><div className="record-actions" onClick={e=>e.stopPropagation()}>{account.role==='sub'&&t.intakeBatchId&&!t.ownerId&&<button className="record-open" aria-label={`认领询价 ${t.title}`} onClick={()=>onClaim(t)}>认领</button>}<button className="record-open" aria-label={`打开询价 ${t.title}`} onClick={()=>onPick(t.source)}>打开</button><button className="record-delete" aria-label={`删除询价 ${t.title}`} onClick={()=>onDelete(t.key)}>删除</button></div>},
+            {title:'操作',w:'180px',render:t=><div className="record-actions" onClick={e=>e.stopPropagation()}>{account.role==='sub'&&t.intakeBatchId&&!t.ownerId&&<button className="record-open" aria-label={`认领询价 ${t.title}`} onClick={()=>onClaim(t)}>认领</button>}<button className="record-open" aria-label={`打开询价 ${t.title}`} onClick={()=>onPick(t.source)}>打开</button><button className="record-delete" aria-label={`删除询价 ${t.title}`} onClick={()=>onDelete(t.key)}>删除</button></div>},
           ]}
 
         />
