@@ -130,4 +130,19 @@ assert.equal(dockPanel.style.left,'20px');assert.equal(dockPanel.style.width,'35
 assert.equal(dockPanel.style.top,'422px');assert.equal(dockPanel.style.height,'410px','expanded phone panel occupies lower half with a bottom inset');
 await act(async()=>root.unmount());phoneShell.remove();
 console.log('PASS: mobile floating state, explicit half-screen expansion and header-aligned gutters');
+
+const navigationShell=document.createElement('div');navigationShell.className='layout layout-reference';
+navigationShell.innerHTML='<aside class="sidebar"><button class="brand">Quanta</button><nav aria-label="主要导航">'+['询价任务','异常巡检','价目与依据','库存与成本','AI 对话'].map(label=>'<button class="nav-item"><span class="nav-label">'+label+'</span></button>').join('')+'</nav><div class="sidebar-foot">账户</div></aside>';
+document.body.append(navigationShell);
+for(const width of [1440,1024,1000,850,768,390,320]){
+ window.happyDOM.setViewport({width,height:900});style.textContent+='\n';
+ const navigation=navigationShell.querySelector('nav');
+ assert.equal(css(navigation).gridAutoFlow,'column');
+ assert.equal(css(navigation).gridTemplateColumns,'none');
+ assert.equal(css(navigation).overflowX,'auto');
+ for(const button of navigation.children){assert.equal(css(button).height,'44px');assert.equal(css(button).textAlign,'center');assert.equal(css(button).whiteSpace,'nowrap');}
+}
+navigationShell.remove();
+console.log('PASS: five equal-height navigation buttons retain one row across desktop, tablet and phone widths');
+
 await window.happyDOM.close();

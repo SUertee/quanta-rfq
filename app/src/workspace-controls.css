@@ -803,7 +803,21 @@ html:has(.layout-reference),body:has(.layout-reference) { height:100%;overflow:h
 .layout-reference .sidebar .brand,.layout-reference .sidebar nav,.layout-reference .sidebar-foot { grid-area:auto; }
 .layout-reference .sidebar .brand { justify-self:start; }
 .layout-reference .sidebar-foot { justify-self:end;padding:0; }
-.layout.layout-reference .sidebar nav { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));justify-self:center;align-items:center;width:min(100%,520px);gap:4px;padding:0; }
+/* finesse · component: workspace-navigation · register=product · tokens: inherited */
+.layout.layout-reference .sidebar nav {
+ display:grid;
+ grid-template-columns:none;
+ grid-auto-flow:column;
+ grid-auto-columns:minmax(92px,1fr);
+ justify-self:center;
+ align-items:center;
+ width:min(100%,640px);
+ min-width:0;
+ gap:4px;
+ padding:0;
+ overflow-x:auto;
+ overscroll-behavior-x:contain;
+}
 .layout.layout-reference .sidebar .nav-item { display:flex;align-items:center;justify-content:center;gap:6px;width:100%;height:44px;min-width:0;padding:0 8px;font-size:15px;line-height:1.4;text-align:center;white-space:nowrap; }
 .layout-reference .sidebar .nav-count { margin:0;font-size:12px; }
 .layout-reference .page-home,.layout-reference .page-inspect,.layout-reference .page-inventory { padding-top:0;gap:0; }
@@ -840,11 +854,11 @@ html:has(.layout-reference),body:has(.layout-reference) { height:100%;overflow:h
 .execution-steps li[data-state=done]>span { color:var(--teal,var(--ink)); }
 .execution-steps strong { display:block;font-weight:500;color:var(--ink); }
 .execution-steps p { margin:3px 0 0;line-height:1.5; }
-@media(max-width:850px) {
+@media(max-width:1000px) {
  .layout.layout-reference .sidebar { grid-template-columns:minmax(0,1fr) auto;grid-template-areas:'brand account' 'nav nav';gap:10px;padding:12px 16px;border-radius:24px; }
  .layout-reference .sidebar .brand { grid-area:brand; }
  .layout-reference .sidebar-foot { grid-area:account; }
- .layout.layout-reference .sidebar nav { grid-area:nav;width:100%;max-width:520px; }
+ .layout.layout-reference .sidebar nav { grid-area:nav;width:100%;max-width:640px; }
  .layout-reference .page-home .home-overview,.layout-reference .page-inspect>.page-heading,.layout-reference .page-inventory>.page-heading { flex-basis:120px;height:120px;padding:12px 0; }
  .layout-reference .home-overview .task-metrics { width:56%; }
  .layout-reference .home-overview .task-metrics>div { padding:6px 10px; }
