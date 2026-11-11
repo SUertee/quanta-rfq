@@ -29,6 +29,8 @@ export interface RawRow {
   needByDate?: string;
   quoteDeadline?: string;
   issues: string[];
+  /** 企业自定义字段（AI 提取/导入映射写入） */
+  customFields?: Record<string, string>;
   /** 经 LLM 归一并通过 schema 校验的行（审计标记，依据链可回溯） */
   llmFixed?: boolean;
   contentId?: string;
@@ -52,8 +54,16 @@ export function detectForm(e: EmailSample): DeliveryForm {
 // 件号定位正则（按 15 号文档：PN-\d{4} / MS\d+ / AS568-\d+ 等，先定位件号再向两侧切）
 const PN_RE = /(PN-\d{4}|AP-\d{4}|MS\d+[A-Z0-9-]*|AS\d+-\d+|[A-Z]{2,}\d[A-Z0-9-]*)/g;
 
+/** 件状词表由企业字段定义给出（默认 FN/NE/OH/SV 仅示范数据取值） */
+export interface ParseOptions {
+  conditionCodes?: string[];
+  requireCondition?: boolean;
+}
+
 /** 脏数据单行切分：按位置特征切，不靠空格 */
-export function parseDirtyLine(line: string, lineNo: number): RawRow {
+export function parseDirtyLine(line: string, lineNo: number, opts: ParseOptions = {}): RawRow {
+  const conditionCodes = opts.conditionCodes ?? ['FN', 'NE', 'OH', 'SV'];
+  const requireCondition = opts.requireCondition ?? true;
   const issues: string[] = [];
   let s = line.trim();
   const row: RawRow = { lineNo, raw: line, issues };
@@ -91,9 +101,11 @@ export function parseDirtyLine(line: string, lineNo: number): RawRow {
     row.mpn = pns[1][0];
     const after2End = pns[2]?.index ?? s.length;
     const after2 = s.slice(pns[1].index! + pns[1][0].length, after2End);
-    const cm = after2.match(/(FN|NE|OH|SV)/);
+    const cm = conditionCodes.length
+      ? after2.match(new RegExp(`(${conditionCodes.map((c) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})`))
+      : null;
     if (cm) row.condition = cm[1];
-    else issues.push('件状缺失');
+    else if (requireCondition) issues.push('件状缺失');
   }
   if (pns[2]) {
     row.manualPn = pns[2][0];
@@ -139,13 +151,13 @@ export function parseCleanBody(body: string): RawRow[] {
   return rows;
 }
 
-export function parseEmailBody(e: EmailSample): { form: DeliveryForm; rows: RawRow[] } {
+export function parseEmailBody(e: EmailSample, opts: ParseOptions = {}): { form: DeliveryForm; rows: RawRow[] } {
   const form = detectForm(e);
   if (form === 'pdf-attach' && e.body.includes('Part Number\t')) return { form, rows: parseCleanBody(e.body) };
   if (form === 'clean-inline') return { form, rows: parseCleanBody(e.body) };
   if (form === 'dirty-inline') {
     const lines = e.body.split(/\r?\n/).filter((l) => /\d{4}-\d{2}-\d{2}/.test(l));
-    return { form, rows: lines.map((l, i) => parseDirtyLine(l, i + 1)) };
+    return { form, rows: lines.map((l, i) => parseDirtyLine(l, i + 1, opts)) };
   }
   return { form, rows: [] };
 }

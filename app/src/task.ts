@@ -4,11 +4,16 @@ import type { EmailSample } from './types';
 import { parseEmailBody, type RawRow } from './engine/parse';
 import { fromAttachment, fromKanban, fromRaw } from './engine/structure';
 import { isYellow, priceAll, type PriceOpts } from './engine/pricing';
+import { condAliasesFor, conditionCodesFor, conditionRequired } from './engine/fieldSchema';
 import type { Source } from './App';
 
 export interface TaskSummary {
   inquiryError?: boolean;
   intakeStatus?: string;
+  intakeBatchId?: string;
+  /** 归属人：NULL/undefined 表示待认领（仅 intake 任务有归属概念） */
+  ownerId?: string | null;
+  ownerName?: string | null;
   key: string;
   title: string;
   customer: string;
@@ -25,22 +30,24 @@ export function linesOf(ds: Dataset, source: Source) {
     const email = ds.emails.find((e) => e.id === source.id)!;
     if(!email) return {email:undefined,lines:[],label:'询价尚未加载，请检查数据服务'};
     const parsedRows=email.parsedRows || source.llmRows;
+    const aliases = condAliasesFor(ds.fieldSchema);
+    const parseOpts = { conditionCodes: conditionCodesFor(ds.fieldSchema, aliases), requireCondition: conditionRequired(ds.fieldSchema) };
     const { form, rows } = parsedRows
       ? { form: 'dirty-inline' as const, rows: parsedRows }
-      : parseEmailBody(email);
+      : parseEmailBody(email, parseOpts);
     if (form === 'xlsx-attach') {
       return {
         email,
-        lines: (ds.attachments[String(email.caseNo)] || []).map((r, i) => fromAttachment(r, email.caseNo as 1 | 2, i + 1, ds.units)),
+        lines: (ds.attachments[String(email.caseNo)] || []).map((r, i) => fromAttachment(r, email.caseNo as 1 | 2, i + 1, ds.units, ds.fieldSchema)),
         label: `${email.subject}（附件清单）`,
       };
     }
-    return { email, lines: rows.map((r) => fromRaw(r, email, ds.units)), label: email.subject };
+    return { email, lines: rows.map((r) => fromRaw(r, email, ds.units, ds.fieldSchema)), label: email.subject };
   }
   const rows = ds.kanban.filter((r) => r.rfqId === source.rfqId);
   return {
     email: undefined as EmailSample | undefined,
-    lines: rows.map((r) => fromKanban(r, ds.units)),
+    lines: rows.map((r) => fromKanban(r, ds.units, ds.fieldSchema)),
     label: `历史询价 ${source.rfqId}`,
   };
 }
@@ -55,6 +62,9 @@ export function buildTasks(ds: Dataset, opts: PriceOpts = {}, taskRows: Record<s
     tasks.push({
       key: `email-${email.id}`,
       intakeStatus:email.intakeStatus,
+      intakeBatchId: email.intakeBatchId,
+      ownerId: email.ownerId ?? null,
+      ownerName: email.ownerName ?? null,
       title: label.replace('（附件清单）', '') || email.file,
       customer: email.from.replace(/<.*>/, '').trim(),
       tag: email.intakeBatchId ? '文件导入' : email.id.startsWith('custom-') ? '手工录入' : '询价邮件',

@@ -19,6 +19,8 @@ const costs=[{partNumber:'PART',currency:'CNY',uom:'EA',stockCondition:'NE',stoc
 try {
  let store=await openAgentAuditStore({filePath});
  const result=await runAgent(value,costs,{modelOverride:new ScriptModel(),audit:{store,actorId:'local-user',inquiryId:'inquiry-1'}});
+ assert.equal(store.listRuns({actorId:'other-account'}).length,0);
+ assert.equal(store.listRuns({actorId:'local-user'}).length,1);
  let run=store.getRun(result.runId);assert.equal(run.status,'completed');assert.equal(run.actorId,'local-user');assert.equal(run.inquiryId,'inquiry-1');assert.equal(run.events.length,6);assert.equal(run.events[0].state,'started');assert.equal(run.events[5].state,'done');assert.equal(run.result.mode,'analysis');assert.ok(run.durationMs>=0);assert.equal(run.version,RFQ_AGENT_DEFINITION.version);assert.match(run.inputFingerprint,/^[a-f0-9]{64}$/);assert.match(run.costSnapshotFingerprint,/^[a-f0-9]{64}$/);assert.match(run.resultFingerprint,/^[a-f0-9]{64}$/);
  const changed=await runAgent(value,[{...costs[0],lastPurchasePrice:200}],{modelOverride:new ScriptModel(),audit:{store}});assert.notEqual(store.getRun(changed.runId).costSnapshotFingerprint,run.costSnapshotFingerprint);assert.notEqual(store.getRun(changed.runId).resultFingerprint,run.resultFingerprint);
  assert.throws(()=>store.finishRun(result.runId,{status:'failed'}));assert.throws(()=>store.appendEvent(result.runId,{tool:'runtime',state:'done'}));

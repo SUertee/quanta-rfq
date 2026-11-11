@@ -11,3 +11,7 @@
 **/*.log
 **/*.tmp
 **/.finesse
+
+app/config/accounts.json
+app/mcp.json
+**/*.bootstrap.json

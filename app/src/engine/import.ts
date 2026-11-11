@@ -1,4 +1,6 @@
+import {accountStorageKey} from './persistence';
 import {appFetch as fetch} from './appUrl';
+import { dynamicAliases, fieldsFor, labelOf, type FieldScope, type FieldSchema } from './fieldSchema';
 // 导入解析：xlsx/csv → 后端自研解析器（前端不依赖 xlsx 库）；空字段保留为空串，不猜不填
 
 /** 映射模板记忆：表头签名 → 映射（同格式再来直接命中，降低下一户接入成本） */
@@ -7,7 +9,7 @@ const signatureOf = (headers: string[]) => headers.map((h) => h.trim().toLowerCa
 
 export function getMappingMemory(headers: string[]): Record<string, string> | null {
   try {
-    const all = JSON.parse(localStorage.getItem(MEM_KEY) ?? '{}');
+    const all = JSON.parse(localStorage.getItem(accountStorageKey(MEM_KEY)) ?? '{}');
     return all[signatureOf(headers)] ?? null;
   } catch {
     return null;
@@ -16,9 +18,9 @@ export function getMappingMemory(headers: string[]): Record<string, string> | nu
 
 export function saveMappingMemory(headers: string[], mapping: Record<string, string>): void {
   try {
-    const all = JSON.parse(localStorage.getItem(MEM_KEY) ?? '{}');
+    const all = JSON.parse(localStorage.getItem(accountStorageKey(MEM_KEY)) ?? '{}');
     all[signatureOf(headers)] = mapping;
-    localStorage.setItem(MEM_KEY, JSON.stringify(all));
+    localStorage.setItem(accountStorageKey(MEM_KEY), JSON.stringify(all));
   } catch { /* 存不下则放弃记忆 */ }
 }
 
@@ -83,16 +85,35 @@ const ALIAS: Record<string, string> = {
   'due date': 'dueDate', '截止报价日期': 'dueDate', '截止日期': 'dueDate', '需求日期': 'dueDate', '交期': 'dueDate',
 };
 
-export function autoMapHeaders(headers: string[], targetFields: readonly string[]): Record<string, string> {
+/** 目标字段来自企业字段定义（含自定义字段），不再写死 */
+export function targetFieldsFor(schema: FieldSchema | undefined, scope: FieldScope): string[] {
+  return fieldsFor(schema, scope, { stage: 'map' }).map((f) => f.key);
+}
+
+export function fieldLabel(schema: FieldSchema | undefined, key: string): string {
+  return labelOf(schema, key) === key ? (FIELD_LABEL[key] ?? key) : labelOf(schema, key);
+}
+
+export function autoMapHeaders(
+  headers: string[], targetFields: readonly string[],
+  schema?: FieldSchema, scope: FieldScope = 'inventory',
+): Record<string, string> {
+  const dynamic = dynamicAliases(schema, scope);
   const map: Record<string, string> = {};
   for (const h of headers) {
     const key = h.trim().toLowerCase();
     if (['件状', 'condition', 'stockcondition'].includes(key)) map[h] = targetFields.includes('condition') ? 'condition' : targetFields.includes('stockCondition') ? 'stockCondition' : '';
     else if (targetFields.includes(h)) map[h] = h;
     else if (ALIAS[key] && targetFields.includes(ALIAS[key])) map[h] = ALIAS[key];
+    else if (dynamic[key] && targetFields.includes(dynamic[key])) map[h] = dynamic[key];
     else map[h] = '';
   }
   return map;
+}
+
+/** 数值字段也由字段定义给出（自定义 number 字段自动按数字解析） */
+export function numericFieldsFor(schema: FieldSchema | undefined, scope: FieldScope): string[] {
+  return fieldsFor(schema, scope, { stage: 'map' }).filter((f) => f.type === 'number').map((f) => f.key);
 }
 
 /** 按映射转换导入行 */

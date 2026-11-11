@@ -9,6 +9,7 @@ import { freightChargeFor } from './pricingPolicy';
 import type { CompanyInfo } from './company';
 import { validUnitPrice } from './quoteValidation';
 import { FLAG_PLAIN } from '../plain';
+import { fieldsFor, labelOf, type FieldSchema } from './fieldSchema';
 
 export interface ExportCtx {
   signature?:QuoteSignature|null;
@@ -20,6 +21,8 @@ export interface ExportCtx {
   /** 暂不报价的行（进客户版附录"待报价清单"，不进报价合计） */
   skipped: Set<string>;
   manualCost: Record<string, { value: number; source: string; basis?: string }>;
+  /** 企业字段定义（导出自定义列） */
+  schema?: FieldSchema;
 }
 
 /** 统一确认出口（工作台与智能体共用）：每行必须是 已定价且无未决标黄 / 已标"暂不报价" 之一 */
@@ -74,8 +77,10 @@ const csvCell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`;
 
 /** 内部版：含成本/依据/匹配级别/标黄处理记录（含暂不报价行） */
 export function exportInternalCsv(priced: PricedLine[], ctx: ExportCtx): void {
+  const custom = fieldsFor(ctx.schema, 'inquiry', { customOnly: true, stage: 'export' });
   const head = ['任务', '件号', '描述', '询价数量', '实报数量', '单位', '确认单价', '金额', '成本底线', '毛利率',
-    '匹配级别', '交期(天)', '件状', '状态', '标黄原因', 'AI估价判定', 'AI估价依据', '人工核对', 'MOQ说明'];
+    '匹配级别', '交期(天)', '件状', '状态', '标黄原因', 'AI估价判定', 'AI估价依据', '人工核对', 'MOQ说明',
+    ...custom.map((f) => f.label)];
   const lines = [head.map(csvCell).join(',')];
   const LEVEL = ['未命中', 'L1件号', 'L2 MPN', 'L3 手册件号'];
   for (const p of priced) {
@@ -95,6 +100,7 @@ export function exportInternalCsv(priced: PricedLine[], ctx: ExportCtx): void {
       est?.basis ? (est.source === 'ai' ? `估价(${est.value})` : `人工(${est.value})`) : '',
       est?.basis ?? '',
       ctx.resolved.has(p.line.key) ? '是' : '否', q.moqNote,
+      ...custom.map((f) => p.line.customFields?.[f.key] ?? ''),
     ].map(csvCell).join(','));
   }
   const total = orderTotalOf(priced.filter((p) => !ctx.skipped.has(p.line.key)), ctx);
@@ -111,6 +117,13 @@ export function exportCustomerHtml(priced: PricedLine[], ctx: ExportCtx): void {
   const c = ctx.company;
   const active = priced.filter((p) => !ctx.skipped.has(p.line.key));
   const pending = priced.filter((p) => ctx.skipped.has(p.line.key));
+  // 客户版只列企业标记为"客户可见"的自定义字段，内部字段永不外泄
+  const visible = fieldsFor(ctx.schema, 'inquiry', { customOnly: true, stage: 'customer' });
+  const condDef = fieldsFor(ctx.schema, 'inquiry').find((f) => f.key === 'condition');
+  const showCondition = condDef?.customerVisible !== false;
+  const conditionHead = showCondition ? `<th>${esc(condDef?.label || '件状')}</th>` : '';
+  const conditionCell = (p: PricedLine) => showCondition ? `<td>${esc(p.line.condition)}</td>` : '';
+  const extraCells = (p: PricedLine) => visible.map((f) => `<td>${esc(p.line.customFields?.[f.key] ?? '')}</td>`).join('');
   const rows = active.map((p, i) => {
     const price = ctx.priceBook[p.line.key];
     const q = quoteQtyOf(p);
@@ -119,7 +132,7 @@ export function exportCustomerHtml(priced: PricedLine[], ctx: ExportCtx): void {
       <td>${q.qty}${q.moqNote ? `<br><small>${esc(q.moqNote)}</small>` : ''}</td><td>${esc(p.line.uom)}</td>
       <td>${price != null ? price.toFixed(2) : '待确认'}</td>
       <td>${price != null ? (price * q.qty).toFixed(2) : '待确认'}</td>
-      <td>${esc(p.line.condition)}</td></tr>`;
+      ${conditionCell(p)}${extraCells(p)}</tr>`;
   }).join('');
   const pendingRows = pending.map((p, i) => `<tr>
       <td>${i + 1}</td><td>${esc(p.line.description)}</td><td>${esc(p.line.partNumber)}</td>
@@ -154,7 +167,7 @@ th{background:#f0f3f9}
   <span>报价日期：${today}</span>
 </div>
 <div class="meta"><span>地址：${esc(c.address || '________')}</span><span>联系人：${esc(c.contact || '________')}</span><span>统一社会信用代码：${esc(c.creditCode || '________')}</span></div>
-<table><thead><tr><th>序号</th><th>名称</th><th>规格型号</th><th>数量</th><th>单位</th><th>单价(元)</th><th>金额(元)</th><th>件状</th></tr></thead>
+<table><thead><tr><th>序号</th><th>名称</th><th>规格型号</th><th>数量</th><th>单位</th><th>单价(元)</th><th>金额(元)</th>${conditionHead}${visible.map((f) => `<th>${esc(f.label)}</th>`).join('')}</tr></thead>
 <tbody>${rows}</tbody></table>
 ${pending.length ? `
 <h3 style="margin-top:22px">待报价清单（不在本次报价范围内）</h3>
@@ -167,9 +180,10 @@ ${pending.length ? `
 </div>
 <div class="foot">
   <span>交货时间：合同约定</span>
-  <span>质保期：新件 ${esc(c.warrantyNew)} 个月 / 翻修件 ${esc(c.warrantyOh)} 个月</span>
+  <span>${esc(c.warrantyLabel || '质保期')}：${esc(c.warrantyNew)} 个月${c.warrantyOh ? `（其他件状 ${esc(c.warrantyOh)} 个月）` : ''}</span>
   <span>报价有效期：${esc(c.validityDays)} 天</span>
 </div>
+${(c.termsTemplate || '').trim() ? `<div class="foot"><strong>附加条款</strong>${esc(c.termsTemplate).split('\n').map((line) => line.trim()).filter(Boolean).map((line) => `<div>${line}</div>`).join('')}</div>` : ''}
 <div class="foot"><span>供方盖章：________</span><span class="quote-signature">授权签字：${ctx.signature?`${signatureSvg(ctx.signature)}<b>${esc(ctx.signature.signer)}</b>`:'________'}</span></div>
 <div class="no-print"><button onclick="window.print()">打印 / 另存为 PDF</button></div>
 </body></html>`;
@@ -193,3 +207,28 @@ export function exportSupplierRfqCsv(priced: PricedLine[], ctx: ExportCtx): void
 
 /** 客户可见价：确认价 → 无则不导出 */
 export const priceOf = (p: PricedLine, ctx: ExportCtx) => ctx.priceBook[p.line.key] ?? referencePrice(p);
+
+/** 对照验证：原流程基准（每单分钟）vs Quanta 实测耗时与操作数，导出 CSV */
+export function exportComparisonCsv(
+  tasks: { key: string; title: string; total: number }[],
+  taskTime: Record<string, number>,
+  opCounts: Record<string, Record<string, number>>,
+  baselineMinutes: number,
+): void {
+  const head = ['任务', '询价行数', 'Quanta耗时(分钟)', '原流程基准(分钟)', '净省(分钟)', '核对次数', '定价次数', '估价次数', '修改次数', '导出次数'];
+  const rows = [head.map(csvCell).join(',')];
+  let totalSaved = 0;
+  for (const t of tasks) {
+    const secs = taskTime[t.key] ?? 0;
+    const mins = Math.round((secs / 60) * 100) / 100;
+    const saved = Math.max(0, Math.round((baselineMinutes - mins) * 100) / 100);
+    const ops = opCounts[t.key] ?? {};
+    totalSaved += saved;
+    rows.push([
+      t.title, t.total, mins, baselineMinutes, saved,
+      ops.resolve ?? 0, ops.price ?? 0, ops.est ?? 0, ops.edit ?? 0, ops.export ?? 0,
+    ].map(csvCell).join(','));
+  }
+  rows.push(['合计', tasks.reduce((s, t) => s + t.total, 0), '', '', Math.round(totalSaved * 100) / 100, '', '', '', '', ''].map(csvCell).join(','));
+  download('原流程vsQuanta_对照验证.csv', '\ufeff' + rows.join('\r\n'), 'text/csv;charset=utf-8');
+}

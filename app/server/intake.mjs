@@ -5,6 +5,7 @@ import { evaluateResource } from "./resource-match.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import { decodeFile, INTAKE_PARSER_VERSION } from "./intake-parser.mjs";
 import { extractStructured, extractSemantic, mergeExtractedRequirements, mergeSemanticLines, extractionFieldLabel, hasUnmappedText, hasGlobalScope, containsPartNumber } from "./intake-extract.mjs";
+import { DEFAULT_SCHEMA, conditionRequired } from '../shared/field-schema.mjs';
 const hash = (b) => createHash("sha256").update(b).digest("hex");
 export function rows(db, sql, args = []) {
   const s = db.prepare(sql);
@@ -133,7 +134,8 @@ export function migrateNormalization(db) {
     if (applied) { db.run("COMMIT"); return; }
     for (const row of rows(db, "SELECT id,inquiry_id,fields,issues,version,content_id,method FROM inquiry_line")) {
       const previous = JSON.parse(row.fields);
-      const fields = normalizeLine({ ...previous, rawFields: previous.rawFields || {}, rawFieldsStatus: previous.rawFields ? "recorded" : "legacy_unknown" }, { contentId: previous.rawFields ? row.content_id : null, method: previous.rawFields ? row.method : "legacy_unknown" });
+      // 数据库迁移发生在服务初始化阶段，此时企业字段定义尚未加载；按默认件状必填迁移，实际规则在业务调用时生效
+      const fields = normalizeLine({ ...previous, rawFields: previous.rawFields || {}, rawFieldsStatus: previous.rawFields ? "recorded" : "legacy_unknown" }, { contentId: previous.rawFields ? row.content_id : null, method: previous.rawFields ? row.method : "legacy_unknown", requireCondition: conditionRequired(DEFAULT_SCHEMA) });
       const changed = ['partNumber','quantity','uom','condition','dueDate'].some(key=>previous[key]!==fields[key]) || row.issues !== JSON.stringify(fields.issues);
       if (changed) {
         db.run("INSERT INTO line_revision VALUES(?,?,?,?,?,?)", [randomUUID(), row.id, row.version, row.fields, "normalization_migration", new Date().toISOString()]);
@@ -185,11 +187,27 @@ export function recoverInterruptedIntakes(db) {
 export function createIntakeService(
   db,
   persist,
-  { modelConfig, ocrConfig, semantic = extractSemantic } = {},
+  { modelConfig, ocrConfig, semantic = extractSemantic, getSchema = () => DEFAULT_SCHEMA } = {},
 ) {
   const one = (sql, args) => rows(db, sql, args)[0];
   const now = () => new Date().toISOString();
-  function list(filters = {}) {
+  // 多账户：列/表存在性在服务工厂创建时确定（index.mjs 在 accounts-v1 迁移后创建服务）
+  const ownerColumn = rows(db, "PRAGMA table_info(inquiry)").some((c) => c.name === "owner_id");
+  const accountTable = rows(db, "SELECT name FROM sqlite_master WHERE type='table' AND name='account'").length > 0;
+  const priceAccountColumn = rows(db, "PRAGMA table_info(price_resource)").some((c) => c.name === "account_id");
+  const inventoryAccountColumn = rows(db, "PRAGMA table_info(inventory)").some((c) => c.name === "account_id");
+  const ownerJoin = ownerColumn && accountTable;
+  const ownerOf = (id) => (ownerColumn ? one("SELECT owner_id FROM inquiry WHERE id=?", [id])?.owner_id ?? null : null);
+  const schemaFor = (inquiryId) => getSchema({ accountId: ownerOf(inquiryId) });
+  /** 写操作归属校验：子账户只能操作自己的询价；master 可改任意账户。 */
+  function assertWrite(ctx, id) {
+    if (!ownerColumn || !ctx || ctx.role === "master") return;
+    const row = one("SELECT owner_id FROM inquiry WHERE id=?", [id]);
+    if (!row) throw Object.assign(new Error("询价不存在"), { status: 404 });
+    if (row.owner_id !== ctx.accountId)
+      throw Object.assign(new Error("无权操作他人询价"), { status: 403 });
+  }
+  function list(filters = {}, ctx) {
     const clauses = [],
       args = [];
     for (const [key, column] of [
@@ -204,15 +222,23 @@ export function createIntakeService(
         );
         args.push(filters[key]);
       }
+    if (ownerColumn && ctx && ctx.role !== "master") {
+      clauses.push("(b.owner_id=? OR b.owner_id IS NULL)");
+      args.push(ctx.accountId);
+    }
     return rows(
       db,
-      `SELECT b.*, (SELECT count(*) FROM file f WHERE f.inquiry_id=b.id) file_count,(SELECT count(*) FROM inquiry_line l WHERE l.inquiry_id=b.id) line_count FROM inquiry b ${clauses.length ? "WHERE " + clauses.join(" AND ") : ""} ORDER BY created_at DESC`,
+      `SELECT b.*, ${ownerJoin ? "a.display_name owner_name," : ""} (SELECT count(*) FROM file f WHERE f.inquiry_id=b.id) file_count,(SELECT count(*) FROM inquiry_line l WHERE l.inquiry_id=b.id) line_count FROM inquiry b ${ownerJoin ? "LEFT JOIN account a ON a.id=b.owner_id" : ""} ${clauses.length ? "WHERE " + clauses.join(" AND ") : ""} ORDER BY created_at DESC`,
       args,
     ).map((b) => ({ ...b, issues: JSON.parse(b.issues) }));
   }
-  function detail(id) {
-    const batch = one("SELECT * FROM inquiry WHERE id=?", [id]);
+  function detail(id, ctx) {
+    const batch = one(
+      `SELECT b.*${ownerJoin ? ",a.display_name owner_name" : ""} FROM inquiry b ${ownerJoin ? "LEFT JOIN account a ON a.id=b.owner_id" : ""} WHERE b.id=?`,
+      [id],
+    );
     if (!batch) return null;
+    if (ownerColumn && ctx && ctx.role !== "master" && batch.owner_id && batch.owner_id !== ctx.accountId) return null;
     return {
       ...batch,
       issues: JSON.parse(batch.issues),
@@ -243,9 +269,9 @@ export function createIntakeService(
         issues: JSON.parse(l.issues),
         method: l.method,
         version: l.version,
-        evidence: rows(db, "SELECT * FROM evidence WHERE line_id=?", [
+        evidence: (ownerColumn && !batch.owner_id ? [] : rows(db, "SELECT * FROM evidence WHERE line_id=?", [
           l.id,
-        ]).map((e) => {
+        ])).map((e) => {
           const snapshot = JSON.parse(e.snapshot);
           return { ...e, snapshot, current_match: evaluateResource(JSON.parse(l.fields), snapshot, { source: e.source, sourceKey: e.source_key }) };
         }),
@@ -262,7 +288,13 @@ export function createIntakeService(
     );
     db.run("DELETE FROM evidence WHERE line_id=?", [lineId]);
     if (!partNumber) return;
-    const stocks = rows(db, "SELECT * FROM inventory WHERE normalized_part_number=?", [partNumber]);
+    // 基础数据按账号隔离：依据只匹配询价归属账户的库存与价格
+    const lineOwner = ownerColumn
+      ? one("SELECT i.owner_id FROM inquiry_line l JOIN inquiry i ON i.id=l.inquiry_id WHERE l.id=?", [lineId])?.owner_id ?? null
+      : null;
+    const scope = (hasColumn) => (hasColumn && ownerColumn ? { clause: " AND account_id=?", args: [lineOwner] } : { clause: "", args: [] });
+    const stockScope = scope(inventoryAccountColumn);
+    const stocks = rows(db, `SELECT * FROM inventory WHERE normalized_part_number=?${stockScope.clause}`, [partNumber, ...stockScope.args]);
     for (const stock of stocks)
       db.run("INSERT INTO evidence VALUES(?,?,?,?,?,?)", [
         randomUUID(),
@@ -272,7 +304,8 @@ export function createIntakeService(
         JSON.stringify({ ...stock, match: evaluateResource(fields, stock, { source: "inventory", sourceKey: stock.partNumber }) }),
         now(),
       ]);
-    for (const price of rows(db, "SELECT * FROM price_resource WHERE normalized_part_number=?", [partNumber]))
+    const priceScope = scope(priceAccountColumn);
+    for (const price of rows(db, `SELECT * FROM price_resource WHERE normalized_part_number=?${priceScope.clause}`, [partNumber, ...priceScope.args]))
       db.run("INSERT INTO evidence VALUES(?,?,?,?,?,?)", [
         randomUUID(),
         lineId,
@@ -330,7 +363,7 @@ export function createIntakeService(
       throw Object.assign(new Error('材料仍在处理中，请稍后核对'), {status: 409});
     }
   }
-  async function create(input, onProgress = () => {}) {
+  async function create(input, onProgress = () => {}, ctx) {
     const source = input.source || "manual_upload";
     if (!["manual_upload", "paste", "chat"].includes(source))
       throw Object.assign(new Error("无效source"), { status: 400 });
@@ -380,9 +413,11 @@ export function createIntakeService(
         files: files.map((f) => f.documentType === "customer_inquiry" ? [f.name, hash(f.bytes)] : [f.name, hash(f.bytes), f.documentType]),
       }),
     );
-    const old = one("SELECT * FROM inquiry WHERE request_id=?", [
-      input.requestId,
-    ]);
+    const ownerId = ownerColumn ? ctx?.accountId ?? null : null;
+    const old = one(
+      ownerColumn ? "SELECT * FROM inquiry WHERE request_id=? AND owner_id IS ?" : "SELECT * FROM inquiry WHERE request_id=?",
+      ownerColumn ? [input.requestId, ownerId] : [input.requestId],
+    );
     if (old) {
       if (old.payload_hash !== digest)
         throw Object.assign(new Error("requestId已用于其他内容"), {
@@ -394,18 +429,14 @@ export function createIntakeService(
       at = now();
     db.run("BEGIN");
     try {
-      db.run("INSERT INTO inquiry(id,request_id,payload_hash,source,operator,title,status,created_at,updated_at,issues) VALUES(?,?,?,?,?,?,?,?,?,?)", [
-        id,
-        input.requestId,
-        digest,
-        source,
-        operator,
-        title,
-        "processing",
-        at,
-        at,
-        "[]",
-      ]);
+      db.run(
+        ownerColumn
+          ? "INSERT INTO inquiry(id,request_id,payload_hash,source,operator,title,status,created_at,updated_at,issues,owner_id) VALUES(?,?,?,?,?,?,?,?,?,?,?)"
+          : "INSERT INTO inquiry(id,request_id,payload_hash,source,operator,title,status,created_at,updated_at,issues) VALUES(?,?,?,?,?,?,?,?,?,?)",
+        ownerColumn
+          ? [id, input.requestId, digest, source, operator, title, "processing", at, at, "[]", ownerId]
+          : [id, input.requestId, digest, source, operator, title, "processing", at, at, "[]"],
+      );
       for(const file of files) file.id=storeOriginal(file,id,null,source,at);
       db.run('COMMIT');
       persist();
@@ -506,15 +537,16 @@ export function createIntakeService(
         issues.push(message);
       }
       onProgress(2, detail(id));
-      const result = extractStructured(chunks);
+      const schema = schemaFor(id);
+      const result = extractStructured(chunks, schema);
       let extra = { lines: [], issues: [] };
       try {
-        extra = await semantic(result.unresolved, modelConfig, {knownLines:result.lines});
+        extra = await semantic(result.unresolved, modelConfig, {knownLines:result.lines, schema});
       } catch (e) {
         extra.issues = [e.message];
       }
       issues.push(...extra.issues);
-      const semanticResult = mergeSemanticLines(result.lines,extra.lines);
+      const semanticResult = mergeSemanticLines(result.lines,extra.lines,schema);
       issues.push(...semanticResult.issues);
       const requirements=[...result.requirements,...(extra.requirements || [])].filter(requirement=>{
         if (requirement.scope!=='all') return true;
@@ -523,7 +555,7 @@ export function createIntakeService(
         if (!valid) issues.push('共同要求适用范围需确认，请核对原文');
         return valid;
       });
-      const merged=mergeExtractedRequirements(semanticResult.lines,requirements,chunks);
+      const merged=mergeExtractedRequirements(semanticResult.lines,requirements,chunks,schema);
       const pending=result.unresolved.filter(chunk=>{
         if(requirements.some(requirement=>requirement.contentId===chunk.id&&!merged.appliedRequirements.has(requirement)))return true;
         const values=[...semanticResult.lines.filter(line=>line.contentId===chunk.id).flatMap(line=>Object.values(line.rawFields || {})),...requirements.filter(requirement=>requirement.contentId===chunk.id&&merged.appliedRequirements.has(requirement)).flatMap(requirement=>[requirement.value,...(requirement.scope==='part'?[requirement.partNumber]:[])])];
@@ -592,8 +624,8 @@ export function createIntakeService(
     persist();
     return detail(id);
   }
-  function recovery(id) {
-    const batch = detail(id);
+  function recovery(id, ctx) {
+    const batch = detail(id, ctx);
     if (!batch) throw Object.assign(new Error('询价不存在'), {status: 404});
     const originals = rows(db, 'SELECT * FROM file WHERE inquiry_id=? AND parent_id IS NULL AND source=? ORDER BY rowid', [id, batch.source]);
     const digest = hash(JSON.stringify({
@@ -607,7 +639,8 @@ export function createIntakeService(
       : !complete ? '已保存原件不完整，请补充原始上传材料' : '';
     return {fingerprint: hash(JSON.stringify(batch)), canRecover: !reason, reason};
   }
-  async function recover(id, input, {background = false} = {}) {
+  async function recover(id, input, {background = false} = {}, ctx) {
+    assertWrite(ctx, id);
     if (!input || typeof input.requestId !== 'string' || input.requestId.length < 8
       || input.requestId.length > 120 || typeof input.fingerprint !== 'string'
       || typeof input.operator !== 'string' || !input.operator.trim() || input.operator.length > 100) {
@@ -678,8 +711,9 @@ export function createIntakeService(
     }
     return work;
   }
-  function refresh(id) {
+  function refresh(id, ctx) {
     assertNotProcessing(id);
+    assertWrite(ctx, id);
     if (!one("SELECT id FROM inquiry WHERE id=?", [id])) return null;
     db.run("BEGIN");
     try {
@@ -714,13 +748,15 @@ export function createIntakeService(
       });
     }
     const others=inquiry.lines.filter(existing=>existing.id!==lineId);
-    return mergeExtractedRequirements([...others,line],requirements,chunks).lines.at(-1);
+    return mergeExtractedRequirements([...others,line],requirements,chunks,schemaFor(batchId)).lines.at(-1);
   }
   function addLine(
     batchId,
     { partNumber, quantity, uom, description = "", operator = "本机用户" },
+    ctx,
   ) {
     assertNotProcessing(batchId);
+    assertWrite(ctx, batchId);
     if (!one("SELECT id FROM inquiry WHERE id=?", [batchId]))
       throw Object.assign(new Error("询价不存在"), { status: 404 });
     if (
@@ -749,10 +785,10 @@ export function createIntakeService(
       uom: uom.trim(),
       description,
       condition: null,
-      issues: ["缺件状"],
+      issues: [],
       contentId: cid,
       method: "manual",
-    }));
+    }, { requireCondition: conditionRequired(schemaFor(batchId)) }));
     const bytes = Buffer.from(JSON.stringify({ operator, ...fields }));
     db.run("BEGIN");
     try {
@@ -820,8 +856,10 @@ export function createIntakeService(
     batchId,
     lineId,
     { version, patch, operator = "本机用户", confirmFields = [], confirmationReason = "" },
+    ctx,
   ) {
     assertNotProcessing(batchId);
+    assertWrite(ctx, batchId);
     const old = one("SELECT * FROM inquiry_line WHERE id=? AND inquiry_id=?", [
       lineId,
       batchId,
@@ -866,7 +904,7 @@ export function createIntakeService(
     }
     if(!Array.isArray(confirmFields)||confirmFields.length>allowed.length||new Set(confirmFields).size!==confirmFields.length||confirmFields.some(key=>!allowed.includes(key)||!fieldConflictIssues(fields,key).length))throw Object.assign(new Error('确认字段不存在待处理的提取冲突'),{status:400});
     if(confirmFields.length&&(typeof confirmationReason!=='string'||!confirmationReason.trim()||confirmationReason.length>1000))throw Object.assign(new Error('请填写确认取值的依据'),{status:400});
-    const effective=normalizeLine({...fields,...patch});
+    const effective=normalizeLine({...fields,...patch},{requireCondition:conditionRequired(schemaFor(batchId))});
     patch=Object.fromEntries(Object.entries(patch).filter(([key])=>String(effective[key] ?? '')!==String(fields[key] ?? '')).map(([key])=>[key,effective[key]]));
     if (!Object.keys(patch).length&&!confirmFields.length) return detail(batchId);
     const beforeFields=structuredClone(fields);
@@ -881,7 +919,7 @@ export function createIntakeService(
       fieldSources[key]={contentId:null,originalContentId:old.content_id,method:'manual',operator:String(operator).slice(0,100),value:fields[key],previousSources:[...previousSources,...(sources||[{...direct,value:beforeFields[key]}]),...rejectedSources],
         ...(confirmFields.includes(key)?{confirmation:{value:fields[key],reason:confirmationReason.trim(),operator:String(operator).slice(0,100),at:now(),version:old.version,issues:fieldConflictIssues(beforeFields,key)}}:{})};
     }
-    const normalized=normalizeLine({...fields,fieldSources});
+    const normalized=normalizeLine({...fields,fieldSources},{requireCondition:conditionRequired(schemaFor(batchId))});
     Object.assign(fields, normalized);
     if ('partNumber' in patch) {
       for(const [key,origin] of Object.entries(fields.fieldSources || {})) {
@@ -936,13 +974,40 @@ export function createIntakeService(
     refresh,
     updateLine,
     addLine,
+    setOwner(id, ownerId, {claim=false}={}) {
+      assertNotProcessing(id);
+      db.run('BEGIN');
+      try {
+        db.run('UPDATE inquiry SET owner_id=?,updated_at=? WHERE id=?'+(claim?' AND owner_id IS NULL':''),[ownerId,now(),id]);
+        if(!db.getRowsModified())throw Object.assign(new Error('该询价已被认领'),{status:409});
+        for(const line of rows(db,'SELECT id,fields FROM inquiry_line WHERE inquiry_id=?',[id])) {
+          matchEvidence(line.id,JSON.parse(line.fields).partNumber);
+        }
+        db.run('COMMIT');
+      } catch(error) {db.run('ROLLBACK');throw error;}
+      updateStatus(id);
+      persist();
+      return detail(id);
+    },
+    ownerOf(id) {
+      if (!ownerColumn) return undefined;
+      return one("SELECT owner_id FROM inquiry WHERE id=?", [id])?.owner_id;
+    },
     rawFile(id) {
       return one("SELECT raw,mime_type,name FROM file WHERE id=?", [id]);
     },
-    prices() {
-      return rows(db, "SELECT * FROM price_resource ORDER BY id").map((p) =>
-        JSON.parse(p.data),
-      );
+    prices(ctx) {
+      const join = priceAccountColumn && accountTable;
+      const scoped = priceAccountColumn && ctx && ctx.role !== "master";
+      const sql =
+        `SELECT p.*${join ? ",a.display_name account_name" : ""} FROM price_resource p${join ? " LEFT JOIN account a ON a.id=p.account_id" : ""}` +
+        (scoped ? " WHERE p.account_id=?" : "") +
+        " ORDER BY p.id";
+      return rows(db, sql, scoped ? [ctx.accountId] : []).map((p) => ({
+        ...JSON.parse(p.data),
+        ...(priceAccountColumn ? { account_id: p.account_id } : {}),
+        ...(join ? { account_name: p.account_name } : {}),
+      }));
     },
   };
 }

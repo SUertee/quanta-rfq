@@ -6,9 +6,10 @@ import {
   type SupplierImport,
   type SupplierValues,
 } from "../engine/supplierImport";
-import { appUrl } from "../engine/appUrl";
+import { downloadAppFile } from "../engine/appUrl";
+import { fieldsFor, loadFieldSchema, type FieldSchema } from "../engine/fieldSchema";
 const fields: {
-  key: Exclude<keyof SupplierValues, "authorized" | "taxBasis">;
+  key: Exclude<keyof SupplierValues, "authorized" | "taxBasis" | "extra">;
   label: string;
   numeric?: boolean;
 }[] = [
@@ -44,8 +45,20 @@ export function SupplierImportDialog({
   onClose: () => void;
   onImported: () => Promise<void>;
 }) {
+  const [schema, setSchema] = useState<FieldSchema | null>(null);
   const [imports, setImports] = useState<SupplierImport[]>([]),
     [current, setCurrent] = useState<SupplierImport | null>(null);
+  useEffect(() => { void loadFieldSchema().then(setSchema).catch(() => undefined); }, []);
+  const customDefs = fieldsFor(schema ?? undefined, 'supplier', { customOnly: true });
+  const updateExtra = (key: string, value: unknown) =>
+    setCurrent((old) => (old
+      ? {
+          ...old,
+          rows: old.rows.map((row) => row.id === selected?.id
+            ? { ...row, values: { ...row.values, extra: { ...(row.values.extra ?? {}), [key]: value } } }
+            : row),
+        }
+      : old));
   const [refreshNeeded, setRefreshNeeded] = useState(false);
   const [activeRow, setActiveRow] = useState(""),
     [error, setError] = useState(""),
@@ -280,13 +293,9 @@ export function SupplierImportDialog({
         )}
         {current && (
           <div className="supplier-import-actions">
-            <a
-              className="btn"
-              href={appUrl(`/api/files/${current.fileId}/raw`)}
-              download
-            >
+            <button className="btn" onClick={()=>void downloadAppFile(`/api/files/${encodeURIComponent(current.fileId)}/raw`,current.fileName||'供应商报价').catch(error=>setError(error.message))}>
               下载原件
-            </a>
+            </button>
             {current.status !== "confirmed" && (
               <button
                 className="btn"
@@ -421,6 +430,30 @@ export function SupplierImportDialog({
                     </label>
                   ))}
                 </div>
+                {customDefs.length > 0 && (
+                  <div className="supplier-field-grid">
+                    <h4>企业自定义字段</h4>
+                    {customDefs.map((def) => {
+                      const value = String(selected.values.extra?.[def.key] ?? '');
+                      return (
+                        <label key={def.key} title={def.label}>
+                          <span>{def.label}{def.required ? ' *' : ''}</span>
+                          {def.type === 'enum' && def.options?.length ? (
+                            <select aria-label={def.label} value={value} disabled={busy || current.status === 'confirmed'}
+                              onChange={(e) => updateExtra(def.key, e.target.value)}>
+                              <option value="">—</option>
+                              {def.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                            </select>
+                          ) : (
+                            <input aria-label={def.label} type={def.type === 'number' ? 'number' : def.type === 'date' ? 'date' : 'text'}
+                              value={value} disabled={busy || current.status === 'confirmed'}
+                              onChange={(e) => updateExtra(def.key, def.type === 'number' ? (e.target.value === '' ? null : Number(e.target.value)) : e.target.value)} />
+                          )}
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
                 <fieldset disabled={busy || current.status === "confirmed"}>
                   <legend>计税口径</legend>
                   {[

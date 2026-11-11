@@ -28,6 +28,7 @@ import { FLAG_PLAIN } from '../plain';
 import { Badge, FilterTabs } from '../components/ui';
 import { validInquiryLine, validUnitPrice } from '../engine/quoteValidation';
 import { getCompany } from '../engine/company';
+import { certificatesFor, condAliasesFor, conditionRequired, fieldsFor, validateCustomFields, validateValue } from '../engine/fieldSchema';
 import {
   exportCustomerHtml, exportInternalCsv, exportSupplierRfqCsv, quoteGate, quoteQtyOf,
   type ExportCtx,
@@ -332,7 +333,7 @@ export function WorkbenchPage({
     fetch('/api/review', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ task: orderId, pn, action, detail, operator: getCompany().operator }),
+      body: JSON.stringify({ task: orderId, inquiryId: email?.intakeBatchId, pn, action, detail, operator: getCompany().operator }),
     }).catch(() => { /* 后端未启动，忽略 */ });
   };
 
@@ -385,7 +386,7 @@ export function WorkbenchPage({
 
   const exportCtx: ExportCtx = {
     taskLabel: label, priceBook, policy, company: getCompany(), resolved, skipped,
-    manualCost: estCost,
+    manualCost: estCost, schema: ds.fieldSchema,
   };
   const unsignedReceiptContent=JSON.stringify({schemaVersion:2,draftVersion:quoteVersion,policy,company:getCompany(),manualCost:estCost,lines:priced.map(p=>({
     key:p.line.key,pn:p.line.partNumber,desc:p.line.description,requestedQty:p.line.quantity,qty:quoteQtyOf(p).qty,
@@ -445,7 +446,7 @@ export function WorkbenchPage({
     let ok = 0, fail = 0;
     for (const t of targets) {
       try {
-        const fixed = await llmNormalizeLine(t.raw);
+        const fixed = await llmNormalizeLine(t.raw, ds.fieldSchema);
         if (fixed) {
           const i = next.findIndex((r) => r.lineNo === t.lineNo);
           next[i] = { ...next[i], ...fixed, issues: [], llmFixed: true };
@@ -464,7 +465,7 @@ export function WorkbenchPage({
     if (!email?.body) return;
     setLlmBusy(true);
     try {
-      const rows = await llmExtractLines(email.body, policy.industryKw);
+      const rows = await llmExtractLines(email.body, policy.industryKw, ds.fieldSchema);
       if (!live.current) return;
       if (rows?.length) {
         onApplyLlmRows(rows);
@@ -492,7 +493,10 @@ export function WorkbenchPage({
   const visibleRows = priced.filter(p=>(rowFilter==='all'||(rowFilter==='review'?isYellow(p)&&!resolved.has(p.line.key):!validUnitPrice(confirmOf(p))))&&`${p.line.partNumber} ${p.line.description}`.toLowerCase().includes(lineSearch.toLowerCase()));
 
   const [checkFilter,setCheckFilter]=useState<'pending'|'all'>('pending');
-  const extractionGaps=lines.filter(l=>!l.partNumber||!(l.quantity>0)||!l.uom||!l.condition||l.issues.length).length+(intakeRecord?.issues.length||0);
+  // 企业自定义字段按定义校验；缺必填/格式错计入待补全，导出门禁自动生效
+  const needCondition=conditionRequired(ds.fieldSchema);
+  const customFieldIssues=lines.reduce((sum,l)=>sum+validateCustomFields(ds.fieldSchema,'inquiry',l.customFields).length,0);
+  const extractionGaps=lines.filter(l=>!l.partNumber||!(l.quantity>0)||!l.uom||(needCondition&&!l.condition)||l.issues.length).length+customFieldIssues+(intakeRecord?.issues.length||0);
   const stageExportable=!persistencePending&&exportable&&extractionGaps===0&&activePriced.length>0&&activePriced.every(p=>resolved.has(p.line.key));
   const stageItems=inquiryStages({materialCount:intakeRecord?.files.length ?? (email?1+email.attachments.length:lines.length?1:0),lineCount:lines.length,extractionGaps,matchedLines:intakeRecord?intakeRecord.lines.filter(l=>(l as typeof l&{evidence?:unknown[]}).evidence?.length).length:priced.filter(p=>p.cost||p.candidates.length).length,reviewedLines:activePriced.filter(p=>resolved.has(p.line.key)).length,activeLines:activePriced.length,pricedLines:activePriced.filter(p=>validUnitPrice(confirmOf(p))).length,exportAllowed:stageExportable,exported});
   const reviewBasis=JSON.stringify([lines,policy,priced.map(p=>({cost:p.cost,candidates:p.candidates.map(c=>c.row)}))]);
@@ -621,6 +625,33 @@ export function WorkbenchPage({
                         ) : (
                           <div className="toolbar" style={{ marginBottom: 8 }}>
                             <button className="btn" onClick={() => startEdit(p)}>修改本行（手工）</button>
+                          </div>
+                        )}
+                        {fieldsFor(ds.fieldSchema, 'inquiry', { customOnly: true }).length > 0 && (
+                          <div className="check-box">
+                            <b>企业自定义字段</b>
+                            <div className="edit-grid">
+                              {fieldsFor(ds.fieldSchema, 'inquiry', { customOnly: true }).map((def) => {
+                                const value = String(p.line.customFields?.[def.key] ?? '');
+                                const problems = validateValue(def, value);
+                                return (
+                                  <label key={def.key}>
+                                    {def.label}{def.required ? ' *' : ''}
+                                    {def.type === 'enum' && def.options?.length ? (
+                                      <select value={value} onChange={(e) => onEditLine(p.line.key, { customFields: { ...(p.line.customFields ?? {}), [def.key]: e.target.value } })}>
+                                        <option value="">—</option>
+                                        {def.options.map((o) => <option key={o} value={o}>{o}</option>)}
+                                      </select>
+                                    ) : (
+                                      <input type={def.type === 'date' ? 'date' : def.type === 'number' ? 'number' : 'text'}
+                                        value={value}
+                                        onChange={(e) => onEditLine(p.line.key, { customFields: { ...(p.line.customFields ?? {}), [def.key]: e.target.value } })} />
+                                    )}
+                                    {problems.length > 0 && <span className="margin-low">{problems.join('；')}</span>}
+                                  </label>
+                                );
+                              })}
+                            </div>
                           </div>
                         )}
                         {reasons.length > 0 && (
@@ -753,7 +784,7 @@ export function WorkbenchPage({
       </section>
       <section hidden={shown<3} aria-busy={busyStage===3} className="workflow-section" data-current={stage===3} id="inquiry-stage-3" tabIndex={-1} data-inquiry-stage="3" aria-labelledby="inquiry-stage-title-3">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-3" draggable data-module-reference title="拖到右侧输入框提问">{stageItems[2].label}</h2></header>
-      {email?.intakeBatchId&&<IntakeRecord batchId={email.intakeBatchId} revisionKey={JSON.stringify([run?.stage,email.intakeStatus,email.parsedRows?.map(l=>l.version)])} view="evidence" operator={getCompany().operator||currentUserId||'本机用户'} selectedBases={selectedBases} selectionDisabled={persistencePending} onSelectBasis={onSelectBasis} rules={{condFnNe:policy.condFnNe,certMutual:policy.certMutual,freightDays:policy.freightDays,fxRates:{...(policy.fxUsd?{USD:policy.fxUsd}:{}),...(policy.fxEur?{EUR:policy.fxEur}:{}),...(policy.fxRates||{})},unitConversions:ds.units}} onLoaded={acceptIntakeRecord} onEvidenceRefresh={onDataRefresh} />}
+      {email?.intakeBatchId&&<IntakeRecord batchId={email.intakeBatchId} revisionKey={JSON.stringify([run?.stage,email.intakeStatus,email.parsedRows?.map(l=>l.version)])} view="evidence" operator={getCompany().operator||currentUserId||'本机用户'} selectedBases={selectedBases} selectionDisabled={persistencePending} onSelectBasis={onSelectBasis} rules={{condFnNe:policy.condFnNe,certMutual:policy.certMutual,freightDays:policy.freightDays,fxRates:{...(policy.fxUsd?{USD:policy.fxUsd}:{}),...(policy.fxEur?{EUR:policy.fxEur}:{}),...(policy.fxRates||{})},unitConversions:ds.units,certificates:certificatesFor(ds.fieldSchema),condAliases:condAliasesFor(ds.fieldSchema)}} onLoaded={acceptIntakeRecord} onEvidenceRefresh={onDataRefresh} />}
       {!email?.intakeBatchId&&<section className="panel"><div className="panel-title">库存与供应商依据</div><div className="table-wrap"><table><thead><tr><th>件号</th><th>库存</th><th>内部成本</th><th>供应商参考</th></tr></thead><tbody>{priced.map(p=><tr key={p.line.key}><td><b>{p.line.partNumber}</b></td><td>{p.cost?`${p.cost.stockQty} ${p.cost.uom}`:'未匹配'}</td><td>{p.cost?fmtMoney(p.cost.lastPurchasePrice||p.cost.avgCost):'缺依据'}</td><td>{p.candidates.length?<div className="candidate-evidence-list">{p.candidates.map((c,i)=><div className="candidate-evidence" key={i}><b>{c.row.supplierName}</b><span>{c.row.unitPrice} {c.row.currency}</span><span>{c.row.condition} · MOQ {c.row.moq} · {c.row.validUntil||'有效期缺失'}</span></div>)}</div>:'未匹配'}</td></tr>)}</tbody></table></div></section>}
 
       </section>
@@ -836,7 +867,7 @@ export function WorkbenchPage({
         <div className="panel-title">
           报价单预览 · {activePriced.length} 项物料
           <button className="btn" onClick={fillAll}>按规则填入建议价</button>
-          <FilterTabs label="报价版式" value={tab} onChange={setTab} items={[{value:'quote',label:'航空 Quote 表'},{value:'cn',label:'中文报价单'}]} />
+          <FilterTabs label="报价版式" value={tab} onChange={setTab} items={[{value:'quote',label:'标准 Quote 表'},{value:'cn',label:'中文报价单'}]} />
         </div>
 
         {tab === 'quote' && (
@@ -918,10 +949,13 @@ export function WorkbenchPage({
             </div>
             <div className="doc-foot">
               <span>交货时间：合同约定</span>
-              <span>质保期：新件 {getCompany().warrantyNew} 个月 / 翻修件 {getCompany().warrantyOh} 个月</span>
+              <span>{getCompany().warrantyLabel || '质保期'}：{getCompany().warrantyNew} 个月{getCompany().warrantyOh ? `（其他件状 ${getCompany().warrantyOh} 个月）` : ''}</span>
               <span>报价有效期：{getCompany().validityDays} 天</span>
               <span>供方盖章 / 信用代码：{getCompany().creditCode || '________'}</span>
             </div>
+            {(getCompany().termsTemplate || '').trim() && (
+              <div className="doc-foot"><strong>附加条款</strong>{getCompany().termsTemplate!.split('\n').map((line) => line.trim()).filter(Boolean).map((line, i) => <div key={i}>{line}</div>)}</div>
+            )}
           </div>
         )}
 

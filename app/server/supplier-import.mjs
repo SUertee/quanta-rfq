@@ -3,6 +3,8 @@ import { extractSupplierSemantic } from "./supplier-extract.mjs";
 import { randomUUID, createHash } from "node:crypto";
 import { z } from "zod";
 import { decodeFile, INTAKE_PARSER_VERSION } from "./intake-parser.mjs";
+import { DEFAULT_SCHEMA, customFieldDefs, validateValue } from '../shared/field-schema.mjs';
+import { extendAliases } from './field-schema-store.mjs';
 import {
   normalizePartNumber,
   normalizeUnit,
@@ -36,8 +38,10 @@ const headerKey = (value) =>
     .trim()
     .toLowerCase()
     .replace(/[\s_]/g, "");
-const fieldFor = (value) =>
-  Object.keys(aliases).find((key) => aliases[key].includes(headerKey(value)));
+const fieldFor = (value, schema = DEFAULT_SCHEMA) => {
+  const dynamic = extendAliases(aliases, schema, 'supplier');
+  return Object.keys(dynamic).find((key) => dynamic[key].map(headerKey).includes(headerKey(value)));
+};
 const text = z.string().max(4000);
 const editableSchema = z
   .object({
@@ -56,6 +60,8 @@ const editableSchema = z
     taxBasis: text,
     remark: text,
     authorized: z.boolean(),
+    // 企业自定义字段（由 field_schema 定义，值随报价行一起保存）
+    extra: z.record(z.string(), z.unknown()).optional(),
   })
   .strict();
 function normalizeResource(row) {
@@ -76,10 +82,11 @@ function normalizeResource(row) {
 }
 
 /** Parse each sheet independently and retain original row values. A purchase quantity is never inferred as MOQ. */
-export function extractSupplierRows(chunks) {
+export function extractSupplierRows(chunks, schema = DEFAULT_SCHEMA) {
   const output = [],
     issues = [];
   const headers = new Map();
+  const customKeys = customFieldDefs(schema, 'supplier').map((d) => d.key);
   for (const chunk of chunks) {
     if (!chunk.cells?.length) {
       if (chunk.text.trim())
@@ -87,7 +94,7 @@ export function extractSupplierRows(chunks) {
       continue;
     }
     const group = String(chunk.locator.sheet || "table");
-    const columns = chunk.cells.map(fieldFor);
+    const columns = chunk.cells.map((cell) => fieldFor(cell, schema));
     if (columns.includes("partNumber") && columns.includes("unitPrice")) {
       const mapped = columns.filter(Boolean);
       if (new Set(mapped).size !== mapped.length) {
@@ -120,6 +127,12 @@ export function extractSupplierRows(chunks) {
         `${group} 第 ${chunk.locator.row || "?"} 行存在未映射列，请使用完整字段表头`,
       );
     const lead = fields.leadDays;
+    const extra = {};
+    for (const key of customKeys) {
+      extra[key] = fields[key] || "";
+      const def = customFieldDefs(schema, 'supplier').find((d) => d.key === key);
+      if (def) for (const problem of validateValue(def, extra[key])) issues.push(`${group} 第 ${chunk.locator.row || "?"} 行 ${problem}`);
+    }
     output.push({
       id: randomUUID(),
       contentId: chunk.id,
@@ -140,6 +153,7 @@ export function extractSupplierRows(chunks) {
         taxBasis: fields.taxBasis || "",
         remark: fields.remark || "",
         authorized: false,
+        ...(customKeys.length ? { extra } : {}),
       }),
     });
   }
@@ -157,6 +171,7 @@ export function createSupplierImportStore(
     ocrConfig,
     semantic = extractSupplierSemantic,
     ocr = readOcr,
+    getSchema = () => DEFAULT_SCHEMA,
   } = {},
 ) {
   db.run(
@@ -165,6 +180,9 @@ export function createSupplierImportStore(
   db.run(
     "CREATE INDEX IF NOT EXISTS resource_import_inquiry ON resource_import(inquiry_id)",
   );
+  // 多账户：确认入库的价格资源归属询价所有者账号
+  const priceAccountColumn = rows(db, "PRAGMA table_info(price_resource)").some((c) => c.name === "account_id");
+  const ownerOf = (inquiryId) => getInquiry(inquiryId)?.owner_id ?? null;
   db.run(
     "UPDATE file SET status='failed',error='供应商报价处理因重启中断' WHERE id IN (SELECT file_id FROM resource_import WHERE status='processing')",
   );
@@ -390,11 +408,12 @@ export function createSupplierImportStore(
         throw error;
       }
       let extracted;
+      const schema = getSchema({ accountId: ownerOf(inquiryId) });
       if (decoded.kind === "spreadsheet")
-        extracted = extractSupplierRows(chunks);
+        extracted = extractSupplierRows(chunks, schema);
       else {
         try {
-          extracted = await semantic(chunks, modelConfig);
+          extracted = await semantic(chunks, modelConfig, { schema });
         } catch {
           extracted = {
             rows: [],
@@ -580,15 +599,27 @@ export function createSupplierImportStore(
           },
         };
         db.run(
-          "INSERT INTO price_resource(id,part_number,data,source,updated_at,normalized_part_number) VALUES(?,?,?,?,?,?)",
-          [
-            resourceId,
-            value.partNumber,
-            JSON.stringify(resource),
-            "supplier_upload",
-            time,
-            value.partNumber,
-          ],
+          priceAccountColumn
+            ? "INSERT INTO price_resource(id,part_number,data,source,updated_at,normalized_part_number,account_id) VALUES(?,?,?,?,?,?,?)"
+            : "INSERT INTO price_resource(id,part_number,data,source,updated_at,normalized_part_number) VALUES(?,?,?,?,?,?)",
+          priceAccountColumn
+            ? [
+                resourceId,
+                value.partNumber,
+                JSON.stringify(resource),
+                "supplier_upload",
+                time,
+                value.partNumber,
+                ownerOf(inquiryId),
+              ]
+            : [
+                resourceId,
+                value.partNumber,
+                JSON.stringify(resource),
+                "supplier_upload",
+                time,
+                value.partNumber,
+              ],
         );
       }
       db.run(

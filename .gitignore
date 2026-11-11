@@ -30,3 +30,8 @@ docs/verification/
 
 # Private deployment credentials and build archives
 .deployment/
+
+# Private account and MCP runtime configuration
+app/config/accounts.json
+app/mcp.json
+**/*.bootstrap.json

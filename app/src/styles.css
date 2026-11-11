@@ -1353,3 +1353,11 @@ tr.clickable:hover td { background:var(--hal-hover); }
 .signature-preview{display:block;width:210px;height:60px;color:#102440}
 .quote-signature-actions{display:flex;gap:10px;flex-wrap:wrap}
 @media(max-width:600px){.signature-dialog-body{padding:16px}.signature-dialog-actions{padding:0 16px 16px;gap:8px}.quote-signature-row{align-items:flex-start;flex-direction:column;gap:12px}.signature-pad{height:180px}.signature-preview{width:180px}}
+
+/* 登录页 */
+.login-page { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
+.login-card { width: 380px; max-width: 100%; display: grid; gap: 20px; padding: 32px; border: 1px solid var(--line); border-radius: 16px; background: var(--panel); box-shadow: 0 24px 80px -24px rgba(11,29,58,.25); }
+.login-card h1 { margin: 0; font-size: 22px; font-weight: 600; }
+.login-card .app-dialog-actions { margin-top: 0; }
+.login-note { margin: 0; color: var(--ink-2); font-size: 14px; line-height: 1.6; }
+.owner-empty { color: var(--ink-2); opacity: .75; }

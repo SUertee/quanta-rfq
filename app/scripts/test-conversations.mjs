@@ -29,3 +29,18 @@ assert.equal(inquiryConversation('email:old','email-old'),'email-old');
 updateConversation('chat:legacy-linked',{taskKey:'email:old',lastOpenedAt:'2026-11-09T00:00:00Z'});
 assert.equal(inquiryConversation('email:old'),'chat:legacy-linked');
 console.log('PASS: legacy colon task links and row-specific conversations resolve to one inquiry');
+
+storage.set('quanta-auth',JSON.stringify({token:'test-a',account:{id:'account-a'}}));
+const accountChat=newConversation();
+updateConversation(accountChat,{taskKey:'private-inquiry-a'});
+assert.ok(conversationMeta()[accountChat]);
+storage.set('quanta-auth',JSON.stringify({token:'test-b',account:{id:'account-b'}}));
+assert.deepEqual(conversationMeta(),{},'another account must not see existing browser chat records');
+const otherChat=newConversation();
+assert.ok(conversationMeta()[otherChat]);
+storage.set('quanta-auth',JSON.stringify({token:'test-a',account:{id:'account-a'}}));
+assert.equal(conversationMeta()[accountChat].taskKey,'private-inquiry-a');
+assert.equal(conversationMeta()[otherChat],undefined);
+storage.delete('quanta-auth');
+assert.equal(conversationMeta()[accountChat],undefined,'anonymous history must remain separate');
+console.log('PASS: account switching isolates and restores chat history, including anonymous legacy records');

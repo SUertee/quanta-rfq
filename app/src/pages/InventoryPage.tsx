@@ -3,7 +3,8 @@ import { useRef, useState } from 'react';
 import type { Dataset } from '../data';
 import type { CostRow } from '../types';
 import { fmtMoney } from '../engine/amount';
-import { applyMapping, INV_FIELDS, readSheetFile, type ImportSheet } from '../engine/import';
+import { applyMapping, numericFieldsFor, readSheetFile, type ImportSheet } from '../engine/import';
+import { splitCustomKeys, fieldsFor } from '../engine/fieldSchema';
 import { Badge, FilterTabs, RecordToolbar, RecordPagination } from '../components/ui';
 import { MappingDialog } from '../components/MappingDialog';
 
@@ -41,14 +42,18 @@ export function InventoryPage({
   const [stockFilter,setStockFilter]=useState<'all'|'zero'>('all');
   const [page,setPage]=useState(1);
   const [err, setErr] = useState('');
-  const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<CostRow | null>(null);
   const [saving, setSaving] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
   const [newRow, setNewRow] = useState({ partNumber: '', description: '', stockQty: '', warehouse: '' });
   const [sheet, setSheet] = useState<ImportSheet | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
-  const customFields = ds.customFields;
+  // 自定义列：企业字段定义 ∪ 历史数据里出现过的 extra 键（含导入写入的新字段）
+  const customFields = [...new Set([
+    ...fieldsFor(ds.fieldSchema, 'inventory', { customOnly: true }).map((f) => f.key),
+    ...ds.customFields,
+  ])];
   const changed = Object.keys(overrides).length;
 
   const rows = ds.cost.filter((c) => {
@@ -61,13 +66,13 @@ export function InventoryPage({
   const run = async (fn: () => Promise<unknown>) => {
     try { setErr(''); await fn(); onRefresh(); return true; } catch (e) { setErr(e instanceof Error ? e.message : String(e)); return false; }
   };
-  const put = (pn: string, patch: Record<string, unknown>) =>
-    run(() => api('PUT', `/api/inventory/${encodeURIComponent(pn)}`, { patch }));
-  const del = (pn: string) => setDeleteTarget(pn);
+  const put = (row: CostRow, patch: Record<string, unknown>) =>
+    run(() => api('PUT', `/api/inventory/${encodeURIComponent(row.partNumber)}`, { patch, accountId: row.account_id }));
+  const del = (row: CostRow) => setDeleteTarget(row);
   const confirmDelete = async () => {
     if (!deleteTarget || saving) return;
     setSaving(true);
-    const ok = await run(() => api('DELETE', `/api/inventory/${encodeURIComponent(deleteTarget)}`));
+    const ok = await run(() => api('DELETE', `/api/inventory/${encodeURIComponent(deleteTarget.partNumber)}?accountId=${encodeURIComponent(deleteTarget.account_id||'')}`));
     setSaving(false);
     if (ok) setDeleteTarget(null);
   };
@@ -100,7 +105,11 @@ export function InventoryPage({
   };
   const doImport = async (mapping: Record<string, string>) => {
     if (!sheet || saving) return;
-    const rows = applyMapping(sheet.rows, mapping, ['stockQty', 'stdCost', 'avgCost', 'lastPurchasePrice'])
+    const rows = applyMapping(sheet.rows, mapping, numericFieldsFor(ds.fieldSchema, 'inventory'))
+      .map((r) => {
+        const { core, custom } = splitCustomKeys(ds.fieldSchema, 'inventory', r);
+        return Object.keys(custom).length ? { ...core, extra: custom } : core;
+      })
       .filter((r) => r.partNumber);
     if (rows.some(row => [...NUMERIC].some(field => field in row && (!Number.isFinite(Number(row[field])) || Number(row[field]) < 0)))) { setErr('导入包含无效或负数的库存/成本，请修正文件后重新导入。'); return; }
     if (!rows.length) { setErr('映射后没有含 partNumber 的有效行，请检查件号列映射'); return; }
@@ -128,7 +137,7 @@ export function InventoryPage({
           const v = e.target.value.trim();
           if (v === String(raw ?? '')) return;
           if (NUMERIC.has(field) && (!Number.isFinite(Number(v)) || Number(v) < 0)) { setErr('库存和成本不能为负数，请重新填写。'); e.target.value = String(raw ?? ''); return; }
-          if (backend) put(c.partNumber, { [field]: NUMERIC.has(field) ? Number(v) || 0 : v });
+          if (backend) put(c, { [field]: NUMERIC.has(field) ? Number(v) || 0 : v });
           else onChange(c.partNumber, v === '' || Number(v) === c.stockQty ? null : Math.max(0, Math.floor(Number(v))));
         }}
         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
@@ -145,7 +154,7 @@ export function InventoryPage({
         defaultValue={String(raw ?? '')}
         onBlur={(e) => {
           const v = e.target.value.trim();
-          if (v !== String(raw ?? '')) put(c.partNumber, { [field]: v });
+          if (v !== String(raw ?? '')) put(c, { [field]: v });
         }}
         onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
       />
@@ -167,7 +176,7 @@ export function InventoryPage({
           {!backend && changed > 0 && <button className="btn" onClick={onReset}>全部还原</button>}
 </RecordToolbar>
       <div className="panel">
-        {deleteTarget && <div className="check-box" role="alert"><p>确认删除物料 {deleteTarget}？删除后不能撤销。</p><div className="toolbar"><button className="btn" disabled={saving} onClick={() => setDeleteTarget(null)}>取消删除</button><button className="btn" disabled={saving} onClick={confirmDelete}>确认删除物料</button></div></div>}
+        {deleteTarget && <div className="check-box" role="alert"><p>确认删除物料 {deleteTarget.partNumber}？删除后不能撤销。</p><div className="toolbar"><button className="btn" disabled={saving} onClick={() => setDeleteTarget(null)}>取消删除</button><button className="btn" disabled={saving} onClick={confirmDelete}>确认删除物料</button></div></div>}
         {err && <div className="hint limitation">{err}</div>}
 
         {addOpen && backend && (
@@ -195,11 +204,11 @@ export function InventoryPage({
             </thead>
             <tbody>
               {rows.slice((Math.min(page,Math.max(1,Math.ceil(rows.length/20)))-1)*20,Math.min(page,Math.max(1,Math.ceil(rows.length/20)))*20).map((c) => (
-                <tr key={c.partNumber}>
-                  <td><b>{c.partNumber}</b></td>
+                <tr key={`${c.account_id||''}:${c.partNumber}`}>
+                  <td><b>{c.partNumber}</b>{c.account_name&&<div>{c.account_name}</div>}</td>
                   {EDITABLE.map((f) => <td key={f} data-field={f}>{cell(c, f)}</td>)}
                   {customFields.map((f) => <td key={f}>{customCell(c, f)}</td>)}
-                  {backend && <td><button className="btn" onClick={() => del(c.partNumber)}>删除</button></td>}
+                  {backend && <td><button className="btn" onClick={() => del(c)}>删除</button></td>}
                 </tr>
               ))}
               {!rows.length && <tr><td colSpan={14} className="empty-cell">无匹配物料</td></tr>}
@@ -213,7 +222,8 @@ export function InventoryPage({
         <MappingDialog error={err} busy={saving}
           title="库存导入字段映射"
           sheet={sheet}
-          targetFields={INV_FIELDS}
+          schema={ds.fieldSchema}
+          scope="inventory"
           onConfirm={doImport}
           onClose={() => setSheet(null)}
         />

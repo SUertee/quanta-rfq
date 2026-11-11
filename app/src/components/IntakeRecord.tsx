@@ -4,7 +4,7 @@ import {fieldConflictIssues} from '../../shared/field-review.mjs';
 import {SupplierImportDialog} from './SupplierImportDialog';
 import {evaluateQuoteLine,type RulePolicy} from '../../shared/rfq-rules.mjs';
 import {citeReference,dragReference,type ChatReference} from '../engine/chatReferences';
-import {appFetch as fetch,appUrl} from '../engine/appUrl';
+import {appFetch as fetch,appUrl,downloadAppFile} from '../engine/appUrl';
 import { useEffect, useRef, useState } from "react";
 import type { IntakeBatch } from "../engine/intake";
 type Pane = "files" | "issues" | "evidence";
@@ -137,6 +137,20 @@ export function IntakeRecord({
   }, [batchId, revisionKey,readEpoch]);
   const previewFile = record?.files.find(file => file.id === previewFileId);
   const previewContents = record?.contents.filter(content => content.file_id === previewFileId) || [];
+  const [previewImageUrl,setPreviewImageUrl]=useState<string|null>(null);
+  const previewIsImage=previewFile&&['png','jpg','jpeg','webp'].includes(previewFile.file_type);
+  useEffect(()=>{
+    const controller=new AbortController();let objectUrl:string|null=null;
+    setPreviewImageUrl(null);
+    if(previewIsImage&&previewFileId){
+      void fetch(`/api/files/${encodeURIComponent(previewFileId)}/preview`,{signal:controller.signal})
+        .then(async response=>{if(!response.ok)throw new Error('图片预览失败，请重试');return response.blob();})
+        .then(blob=>{if(!controller.signal.aborted){objectUrl=URL.createObjectURL(blob);setPreviewImageUrl(objectUrl);}})
+        .catch(error=>{if(!controller.signal.aborted)setError(error.message);});
+    }
+    return()=>{controller.abort();if(objectUrl)URL.revokeObjectURL(objectUrl);};
+  },[previewFileId,previewIsImage]);
+
   const lines = record?.lines || [];
   const issueCount =
     (record?.issues.length || 0) + lines.filter((l) => l.issues?.length).length;
@@ -275,14 +289,14 @@ export function IntakeRecord({
                   <header>
                     <strong>{previewFile.name}</strong>
                     <div>
-                      <a className="btn" href={appUrl(`/api/files/${encodeURIComponent(previewFile.id)}/raw`)} download>下载</a>
+                      <button className="btn" onClick={()=>void downloadAppFile(`/api/files/${encodeURIComponent(previewFile.id)}/raw`,previewFile.name).catch(error=>setError(error.message))}>下载</button>
                       <button className="btn" type="button" onClick={() => setPreviewFileId(null)}>关闭</button>
                     </div>
                   </header>
                   <div className="intake-inline-preview-body">
                     {previewFile.file_type==='eml'&&<dl className="mail-envelope">{[['发件人',previewFile.metadata?.from],['收件人',previewFile.metadata?.to],['日期',previewFile.metadata?.date]].filter(([,value])=>value).map(([label,value])=><div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>}
                     {['png', 'jpg', 'jpeg', 'webp'].includes(previewFile.file_type) ? (
-                      <img src={appUrl(`/api/files/${encodeURIComponent(previewFile.id)}/preview`)} alt={previewFile.name} />
+                      previewImageUrl?<img src={previewImageUrl} alt={previewFile.name} />:<div role="status">正在载入图片…</div>
                     ) : previewFile.file_type === 'pdf' ? (
                       <PdfPreview url={appUrl(`/api/files/${encodeURIComponent(previewFile.id)}/preview`)} name={previewFile.name} />
                     ) : previewContents.some(content => content.cells?.length) ? (

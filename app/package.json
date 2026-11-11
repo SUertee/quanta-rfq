@@ -8,6 +8,7 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview",
     "server": "node server/index.mjs",
+    "mcp": "node server/mcp.mjs",
     "convert:data": "node scripts/convert-data.mjs",
     "test:agent": "node scripts/test-agent-mvp.mjs",
     "test:merge": "node scripts/test-merged-workbench.mjs",

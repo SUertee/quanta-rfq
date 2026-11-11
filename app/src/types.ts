@@ -7,6 +7,8 @@ export interface KanbanRow {
 }
 
 export interface CostRow {
+  account_id?: string;
+  account_name?: string;
   partNumber: string; description: string; productScope: string; uom: string;
   stockQty: number; warehouse: string; stockCondition: string;
   stdCost: number; avgCost: number; lastPurchasePrice: number; currency: string;
@@ -22,6 +24,8 @@ export interface PriceRow {
   inStock: string; certType: string; quoteDate: string; validUntil: string;
   statusLabel: string; remark: string;
   uom?:string;validFrom?:string;taxBasis?:string;authorized?:boolean;
+  /** 企业自定义字段（供应商维度） */
+  extra?: Record<string, unknown>;
 }
 
 export interface EmailSample {
@@ -30,6 +34,9 @@ export interface EmailSample {
   intakeUpdatedAt?:string;
   intakeIssues?: string[];
   parsedRows?: import('./engine/parse').RawRow[];
+  /** 归属人（总/子账户）：NULL 表示待认领 */
+  ownerId?: string | null;
+  ownerName?: string | null;
   id: string; caseNo: number; file: string; subject: string;
   from: string; to: string; date: string; body: string; attachments: string[];
 }
@@ -67,6 +74,8 @@ export interface InquiryLine {
   manualFixedMark?: boolean;
   selectedBasisId?:string|null;
   resourceEvidence?:import('../shared/rfq-rules.mjs').RuleEvidence[];
+  /** 企业自定义字段值（由 fieldSchema 定义，元数据驱动） */
+  customFields?: Record<string, unknown>;
 }
 
 export type FlagCode =

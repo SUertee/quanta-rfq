@@ -6,7 +6,7 @@ export function normalizeUnit(value) {
   const unit = String(value ?? '').normalize('NFKC').trim().toUpperCase();
   return ({ EACH: 'EA', PCS: 'EA', PIECE: 'EA', PIECES: 'EA' })[unit] || unit;
 }
-export function normalizeLine(value, { contentId = value.contentId, method = value.method || 'unknown', locator = value.locator } = {}) {
+export function normalizeLine(value, { contentId = value.contentId, method = value.method || 'unknown', locator = value.locator, requireCondition = true } = {}) {
   const fields = { ...value };
   const rawFields = value.rawFields || Object.fromEntries(Object.entries(value).filter(([key]) => !['issues', 'raw', 'locator', 'contentId', 'method', 'normalizationVersion', 'fieldSources'].includes(key)));
   fields.partNumber = normalizePartNumber(value.partNumber) || null;
@@ -18,7 +18,7 @@ export function normalizeLine(value, { contentId = value.contentId, method = val
   if (fields.quantity === null) issues.push('缺少有效数量');
   if (fields.uom === 'EA' && fields.quantity !== null && !Number.isInteger(fields.quantity)) issues.push('按件计量的数量不是整数，需确认');
   if (!fields.uom) issues.push('缺单位');
-  if (!fields.condition) issues.push('缺件状');
+  if (requireCondition && !fields.condition) issues.push('缺件状');
   if (fields.dueDate && !validDate(fields.dueDate)) issues.push('日期格式不明确，需人工确认');
   if (fields.dueDate && validDate(fields.dueDate)) issues.push('截止日期用途不明确，请确认到货日期或报价截止日期');
   for (const [key,label] of [['needByDate','到货日期'],['quoteDeadline','报价截止日期']]) {

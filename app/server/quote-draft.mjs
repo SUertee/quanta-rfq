@@ -55,7 +55,7 @@ export function createQuoteDraftStore(db,persist,getInquiry,getUnitConversions=(
     const invalidBases=new Set();
     for(const line of body.lines.filter(line=>line.selectedBasisId)){
       const source=inquiry.lines.find(source=>`intake-${id}-${source.lineNo}`===line.key);
-      const result=evaluateQuoteLine({...source,selectedBasisId:line.selectedBasisId},source.evidence||[],{...body.policy,fxRates:{...(body.policy.fxUsd?{USD:body.policy.fxUsd}:{}),...(body.policy.fxEur?{EUR:body.policy.fxEur}:{}),...body.policy.fxRates},unitConversions:getUnitConversions()});
+      const result=evaluateQuoteLine({...source,selectedBasisId:line.selectedBasisId},source.evidence||[],{...body.policy,fxRates:{...(body.policy.fxUsd?{USD:body.policy.fxUsd}:{}),...(body.policy.fxEur?{EUR:body.policy.fxEur}:{}),...body.policy.fxRates},unitConversions:getUnitConversions(id)});
       if(!result.selected){
         if(oldLines.get(line.key)?.selectedBasisId!==line.selectedBasisId)fail(409,'所选依据已变化或条件不满足，请刷新并重新选择');
         invalidBases.add(line.key);

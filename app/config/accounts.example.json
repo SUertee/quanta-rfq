@@ -1,0 +1,33 @@
+{
+  "_说明": "这是示例文件（不会被读取）。实际生效的是同目录 accounts.json。复制下面的子账户示例过去改即可。",
+  "master": {
+    "username": "admin",
+    "displayName": "总账户",
+    "emailBindings": [
+      { "email": "boss@example.com", "purpose": "接收客户询价" }
+    ]
+  },
+  "subAccounts": [
+    {
+      "username": "xiaowang",
+      "displayName": "小王",
+      "password": "Sub12345",
+      "emailBindings": [
+        { "email": "xiaowang@example.com", "purpose": "接收客户询价" }
+      ]
+    },
+    {
+      "username": "xiaoli",
+      "displayName": "小李",
+      "password": "Sub12345",
+      "disabled": false,
+      "emailBindings": []
+    },
+    {
+      "_备注": "强制重置密码示例：重启后 xiaozhao 的密码被改为新值，且下次登录必须改密",
+      "username": "xiaozhao",
+      "password": "NewPass2026",
+      "resetPassword": true
+    }
+  ]
+}

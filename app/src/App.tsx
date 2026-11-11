@@ -1,9 +1,13 @@
 import type {WorkflowRun,InquiryStage} from './engine/workflow';
 import {useInquiryQuote} from './engine/useInquiryQuote';
 import {appFetch as fetch,appUrl} from './engine/appUrl';
+import {getAuth,setAuth,clearAuth,AUTH_EXPIRED_EVENT,type AuthAccount,type AuthState} from './auth';
 import {conversationMeta,newConversation,updateConversation,inquiryConversation,clearConversationReferences,normalizeConversationTask} from './engine/conversations';
 import {PlatformChat,ConversationList} from './components/AssistantConversations';
 import {AccountMenu} from './components/AccountMenu';
+import {AccountAdminDialog} from './components/AccountAdminDialog';
+import {EmailBindingsDialog} from './components/EmailBindingsDialog';
+import {ChangePasswordDialog} from './components/ChangePasswordDialog';
 import {Modal} from './components/Modal';
 import {FloatingAssistant} from './components/FloatingAssistant';
 import {batchEmail,type IntakeBatch} from './engine/intake';
@@ -13,14 +17,17 @@ import type { RawRow } from './engine/parse';
 import type { EmailSample, EstCost, InquiryLine } from './types';
 import { isYellow, priceAll } from './engine/pricing';
 import { DEFAULT_POLICY, type PricingPolicy } from './engine/pricingPolicy';
-import { buildTasks, linesOf } from './task';
+import { certificatesFor, condAliasesFor } from './engine/fieldSchema';
+import { buildTasks, linesOf, type TaskSummary } from './task';
 import { HomePage } from './pages/HomePage';
 import { WorkbenchPage } from './pages/WorkbenchPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { InventoryPage } from './pages/InventoryPage';
 import { InspectPage } from './pages/InspectPage';
+import { PriceResourcesPage } from './pages/PriceResourcesPage';
 import { EvalPage } from './pages/EvalPage';
 import { AgentPage } from './pages/AgentPage';
+import { LoginPage } from './pages/LoginPage';
 import { normalizeUom, splitPn } from './engine/structure';
 import { useStoredState } from './engine/persistence';
 
@@ -30,12 +37,48 @@ export type Source =
 
 const sourceKey = (s: Source) => s.kind === 'email' ? `email:${s.id}` : `kanban:${s.rfqId}`;
 
-type View = 'home' | 'workbench' | 'inspect' | 'inventory' | 'settings' | 'eval';
+type View = 'home' | 'workbench' | 'inspect' | 'prices' | 'inventory' | 'settings' | 'eval';
 
+/** 鉴权门：无有效会话渲染登录页；mustChangePwd 时强制先改密 */
 export default function App() {
-  const [userId, setUserId] = useStoredState<string>('user-id', '');
-  const [assignees, setAssignees] = useStoredState<Record<string, string>>('task-assignees', {});
-  const [manualTasks, setManualTasks] = useStoredState<string[]>('manual-tasks', []);
+  const [auth, setAuthState] = useState<AuthState | null>(() => getAuth());
+  const [checking, setChecking] = useState(() => !!getAuth()?.token);
+  useEffect(() => {
+    const expired = () => setAuthState(null);
+    window.addEventListener(AUTH_EXPIRED_EVENT, expired);
+    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, expired);
+  }, []);
+  useEffect(() => {
+    const current = getAuth();
+    if (!current?.token) { setChecking(false); return; }
+    let cancelled = false;
+    fetch('/api/auth/me').then(async (r) => {
+      if (!r.ok) throw new Error('会话校验失败');
+      const me = (await r.json()) as AuthAccount;
+      if (cancelled) return;
+      const next: AuthState = { token: current.token, account: { ...current.account, ...me } };
+      setAuth(next);
+      setAuthState(next);
+    }).catch(() => {
+      if (cancelled) return;
+      clearAuth();
+      setAuthState(null);
+    }).finally(() => { if (!cancelled) setChecking(false); });
+    return () => { cancelled = true; };
+  }, []);
+  if (checking) return <div className="boot">正在载入…</div>;
+  if (!auth) return <LoginPage onLogin={(next) => setAuthState(next)} />;
+  if (auth.account.mustChangePwd) return <LoginPage initialAuth={auth} onLogin={(next) => setAuthState(next)} />;
+  return <Workspace key={auth.account.id} account={auth.account} onLogout={() => setAuthState(null)} />;
+}
+
+function Workspace({account,onLogout}:{account:AuthAccount;onLogout:()=>void}) {
+  const userId = account.id;
+  const userName = account.displayName || account.username;
+  /** 本机持久化 key 加账户命名空间，防止切账户串数据 */
+  const ns = (key: string) => `${account.id}:${key}`;
+  const [assignees, setAssignees] = useStoredState<Record<string, string>>(ns('task-assignees'), {});
+  const [manualTasks, setManualTasks] = useStoredState<string[]>(ns('manual-tasks'), []);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection,setSettingsSection]=useState<'pricing'|'services'>('pricing');
   const [importRequested, setImportRequested] = useState(new URLSearchParams(location.search).get('new') === '1');
@@ -49,7 +92,9 @@ export default function App() {
   useEffect(()=>{const cite=()=>setAssistantOpen(true);window.addEventListener('quanta-reference',cite);return()=>window.removeEventListener('quanta-reference',cite);},[]);
   const [agentLineKey, setAgentLineKey] = useState<string | null>(null);
   const [profileOpen, setProfileOpen] = useState(false);
-  const [userName, setUserName] = useState(() => localStorage.getItem('quanta-user-name') || '林');
+  const [adminOpen, setAdminOpen] = useState(false);
+  const [bindingsOpen, setBindingsOpen] = useState(false);
+  const [pwdOpen, setPwdOpen] = useState(false);
   const [mode, setMode] = useState<'workbench' | 'agent'>('workbench');
   const [ds, setDs] = useState<Dataset | null>(null);
   const [err, setErr] = useState('');
@@ -68,27 +113,27 @@ export default function App() {
       }
     }
   }, []);
-  const [policy, setPolicy] = useStoredState<PricingPolicy>('policy', DEFAULT_POLICY);
-  const [priceBook, setPriceBook] = useStoredState<Record<string, number>>('prices', {});
-  const [selectedBases,setSelectedBases]=useStoredState<Record<string,string>>('selected-bases',{});
-  const [manualPrices, setManualPrices] = useStoredState<Set<string>>('manual-prices', new Set());
-  const [skipped, setSkipped] = useStoredState<Set<string>>('skipped-lines', new Set());
-  const [taskTime, setTaskTime] = useStoredState<Record<string, number>>('task-time', {});
-  const [opCounts, setOpCounts] = useStoredState<Record<string, Record<string, number>>>('op-counts', {});
+  const [policy, setPolicy] = useStoredState<PricingPolicy>(ns('policy'), DEFAULT_POLICY);
+  const [priceBook, setPriceBook] = useStoredState<Record<string, number>>(ns('prices'), {});
+  const [selectedBases,setSelectedBases]=useStoredState<Record<string,string>>(ns('selected-bases'),{});
+  const [manualPrices, setManualPrices] = useStoredState<Set<string>>(ns('manual-prices'), new Set());
+  const [skipped, setSkipped] = useStoredState<Set<string>>(ns('skipped-lines'), new Set());
+  const [taskTime, setTaskTime] = useStoredState<Record<string, number>>(ns('task-time'), {});
+  const [opCounts, setOpCounts] = useStoredState<Record<string, Record<string, number>>>(ns('op-counts'), {});
 
   const addTime = (key: string, sec: number) =>
     setTaskTime((old) => ({ ...old, [key]: (old[key] ?? 0) + sec }));
   const bumpOp = (key: string, op: string) =>
     setOpCounts((old) => ({ ...old, [key]: { ...(old[key] ?? {}), [op]: ((old[key] ?? {})[op] ?? 0) + 1 } }));
-  const [resolved, setResolved] = useStoredState<Set<string>>('resolved', new Set());
-  const [deletedTasks, setDeletedTasks] = useStoredState<string[]>('deleted-tasks', []);
-  const [extraEmails, setExtraEmails] = useStoredState<EmailSample[]>('inquiries', []);
-  const [stockOverride, setStockOverride] = useStoredState<Record<string, number>>('stock', {});
-  const [estCost, setEstCost] = useStoredState<Record<string, EstCost>>('costs', {});
-  const [lineEdits, setLineEdits] = useStoredState<Record<string, Partial<InquiryLine>>>('line-edits', {});
-  const [addedLines, setAddedLines] = useStoredState<Record<string, InquiryLine[]>>('added-lines', {});
+  const [resolved, setResolved] = useStoredState<Set<string>>(ns('resolved'), new Set());
+  const [deletedTasks, setDeletedTasks] = useStoredState<string[]>(ns('deleted-tasks'), []);
+  const [extraEmails, setExtraEmails] = useStoredState<EmailSample[]>(ns('inquiries'), []);
+  const [stockOverride, setStockOverride] = useStoredState<Record<string, number>>(ns('stock'), {});
+  const [estCost, setEstCost] = useStoredState<Record<string, EstCost>>(ns('costs'), {});
+  const [lineEdits, setLineEdits] = useStoredState<Record<string, Partial<InquiryLine>>>(ns('line-edits'), {});
+  const [addedLines, setAddedLines] = useStoredState<Record<string, InquiryLine[]>>(ns('added-lines'), {});
   const [invVersion, setInvVersion] = useState(0);
-  const [taskRows, setTaskRows] = useStoredState<Record<string, RawRow[]>>('parsed-rows', {});
+  const [taskRows, setTaskRows] = useStoredState<Record<string, RawRow[]>>(ns('parsed-rows'), {});
   const [saveError, setSaveError] = useState(false);
   useEffect(() => { const fail = () => setSaveError(true); window.addEventListener('quanta-save-failed', fail); return () => window.removeEventListener('quanta-save-failed', fail); }, []);
 
@@ -130,8 +175,10 @@ export default function App() {
       condFnNe: policyFull.condFnNe,
       certMutual: policyFull.certMutual,
       fxOverride: Object.keys(fx).length ? fx : undefined,
+      certificates: certificatesFor(dsx2?.fieldSchema),
+      condAliases: condAliasesFor(dsx2?.fieldSchema),
     };
-  }, [policyFull]);
+  }, [policyFull, dsx2]);
   const tasks = useMemo(() => dsx2 ? buildTasks(dsx2, priceOpts, taskRows).filter(t => !deletedTasks.includes(t.key)).map((t) => {
     const taskSource = t.source.kind === 'email' && taskRows[t.source.id] ? { ...t.source, llmRows: taskRows[t.source.id] } : t.source;
     const lines = [...linesOf(dsx2, taskSource).lines, ...(addedLines[sourceKey(taskSource)] ?? [])].map((line) => ({ ...line, ...lineEdits[line.key],selectedBasisId:selectedBases[line.key] }));
@@ -274,6 +321,28 @@ export default function App() {
     openTask({kind: 'email', id: `intake-${id}`}, conversationKey);
   };
 
+  const logout = () => {
+    void fetch('/api/auth/logout', {method: 'POST'}).catch(() => {});
+    clearAuth();
+    onLogout();
+  };
+
+  const claimInquiry = async (task: TaskSummary) => {
+    if (!task.intakeBatchId) return;
+    try {
+      const r = await fetch(`/api/inquiries/${encodeURIComponent(task.intakeBatchId)}/claim`, {method: 'POST'});
+      if (r.status === 409) window.alert('该询价已被他人认领');
+      else if (!r.ok) {
+        const body = await r.json().catch(() => ({})) as {error?: string};
+        window.alert(body.error || '认领失败，请重试');
+      }
+    } catch (e) {
+      window.alert('认领失败：' + String(e));
+    } finally {
+      setInvVersion(v => v + 1);
+    }
+  };
+
   return (
     <div className={`layout layout-reference mode-${mode} view-${view} ${assistantDocked && assistantOpen && mode==='workbench' ? 'assistant-docked' : ''}`}>
       <aside className="sidebar">
@@ -287,6 +356,9 @@ export default function App() {
           <button className={`nav-item ${mode === 'workbench' && view === 'inspect' ? 'active' : ''}`} onClick={() => { setMode('workbench'); setView('inspect'); setAssistantOpen(false); setAssistantDocked(false); }}>
             <span className="nav-label">异常巡检</span>
           </button>
+          <button className={`nav-item ${mode === 'workbench' && view === 'prices' ? 'active' : ''}`} onClick={() => { setMode('workbench'); setView('prices'); setAssistantOpen(false); setAssistantDocked(false); }}>
+            <span className="nav-label">价目与依据</span>
+          </button>
           <button className={`nav-item ${mode === 'workbench' && view === 'inventory' ? 'active' : ''}`} onClick={() => { setMode('workbench'); setView('inventory'); setAssistantOpen(false); setAssistantDocked(false); }}>
             <span className="nav-label">库存与成本</span>
           </button>
@@ -294,7 +366,7 @@ export default function App() {
           <button className={`nav-item ${mode==='agent'?'active':''}`} onClick={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}}><span className="nav-label">AI 对话</span></button>
         </nav>
         <div className="sidebar-foot">
-          <AccountMenu onExit={()=>location.assign(appUrl('quanta.html'))} name={userName} onProfile={()=>setProfileOpen(true)} onBusiness={()=>{setSettingsSection('pricing');setSettingsOpen(true);}} onModels={()=>{setSettingsSection('services');setSettingsOpen(true);}} />
+          <AccountMenu account={account} onExit={logout} onProfile={()=>setProfileOpen(true)} onBusiness={()=>{setSettingsSection('pricing');setSettingsOpen(true);}} onModels={()=>{setSettingsSection('services');setSettingsOpen(true);}} onAccountAdmin={()=>setAdminOpen(true)} onEmailBindings={()=>setBindingsOpen(true)} onChangePassword={()=>setPwdOpen(true)} />
         </div>
       </aside>
       <main className={`content ${mode === 'workbench' && view === 'workbench' && assistantOpen ? 'with-copilot' : ''}`}>
@@ -333,11 +405,14 @@ export default function App() {
         </FloatingAssistant>
         {dsx2.intakeLoadError && <div role="alert" className="hint">{dsx2.intakeLoadError}</div>}
         {profileOpen && <Modal title="个人信息" className="profile-dialog" onClose={()=>setProfileOpen(false)}>
-          <div className="dialog-fields"><label>用户 ID<input autoFocus aria-label="用户 ID" placeholder="输入用户 ID" value={userId} onChange={e=>setUserId(e.target.value)} /></label><label>显示名称<input aria-label="显示名称" value={userName} onChange={e=>{setUserName(e.target.value);localStorage.setItem('quanta-user-name',e.target.value);}} /></label></div>
+          <div className="dialog-fields"><label>用户名<input aria-label="用户名" value={account.username} readOnly disabled /></label><label>显示名称<input aria-label="显示名称" value={account.displayName} readOnly disabled /></label><label>角色<input aria-label="角色" value={account.role==='master'?'总账户':'子账户'} readOnly disabled /></label></div>
           <footer className="app-dialog-actions"><button className="btn primary" onClick={()=>setProfileOpen(false)}>完成</button></footer>
         </Modal>}
+        {adminOpen && account.role==='master' && <AccountAdminDialog onClose={()=>setAdminOpen(false)} />}
+        {bindingsOpen && <EmailBindingsDialog account={account} onClose={()=>setBindingsOpen(false)} />}
+        {pwdOpen && <ChangePasswordDialog onClose={()=>setPwdOpen(false)} />}
         {mode === 'workbench' && <>
-        {view === 'home' && <HomePage operator={userId||userName} openImport={importRequested} onImportHandled={() => setImportRequested(false)} industryKw={policyFull.industryKw} onDelete={key => {
+        {view === 'home' && <HomePage account={account} onClaim={(t)=>void claimInquiry(t)} operator={userName} openImport={importRequested} onImportHandled={() => setImportRequested(false)} industryKw={policyFull.industryKw} onDelete={key => {
             setDeletedTasks(old => [...old, key]);
             // 仅当删除的是当前打开的任务时才清空工作台来源
             setSource(old => {
@@ -352,7 +427,7 @@ export default function App() {
               const ready=email.intakeStatus==='evidence_ready';
               setWorkflowRuns(old=>({...old,[email.intakeBatchId!]:{stage:ready?4:2,revealed:ready?4:3,state:ready?'queued':'attention'}}));
             }
-          }} taskTime={taskTime} />}
+          }} taskTime={taskTime} opCounts={opCounts} baselineMinutes={policyFull.baselineMinutes ?? 12} />}
         {view === 'workbench' && source && !quoteSync.ready && <section className="inquiry-loading" role={quoteSync.error?'alert':'status'} aria-label={quoteSync.error?'询价加载失败':'正在载入询价'}>
           {quoteSync.error?<><strong>询价加载失败</strong><button className="btn" onClick={quoteSync.retry}>重新加载</button></>:<span className="inquiry-loading-spinner" aria-hidden="true" />}
         </section>}
@@ -398,6 +473,7 @@ export default function App() {
             resolved={resolved} skipped={skipped} addedLines={addedLines} lineEdits={lineEdits}
             onOpenTask={(s) => openTask(s)} />
         )}
+        {view === 'prices' && <PriceResourcesPage ds={dsx2} onRefresh={() => setInvVersion((v) => v + 1)} />}
         {view === 'inventory' && (
           <InventoryPage ds={dsx2} overrides={stockOverride}
             onChange={(pn, qty) => setStockOverride((o) => {

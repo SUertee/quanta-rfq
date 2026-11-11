@@ -1,3 +1,4 @@
+import {accountStorageKey} from './persistence';
 import {useEffect,useState} from 'react';
 import {validateSignature,type QuoteSignature} from '../../shared/signature.mjs';
 
@@ -6,7 +7,7 @@ export function useQuoteSignature(taskKey:string,content:string) {
   const [basis,setBasis]=useState<{content:string;hash:string;storageKey:string}|null>(null);
   const [saved,setSaved]=useState<QuoteSignature|null>(null);
   const [error,setError]=useState('');
-  const storageKey=`rfq-quote-signature:${taskKey}`;
+  const storageKey=accountStorageKey(`rfq-quote-signature:${taskKey}`);
   useEffect(()=>{
     let active=true;
     setError('');

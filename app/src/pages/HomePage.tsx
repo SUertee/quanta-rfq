@@ -5,12 +5,16 @@ import type { TaskSummary } from '../task';
 import type { Source } from '../App';
 import type { EmailSample } from '../types';
 import type { RawRow } from '../engine/parse';
+import type { AuthAccount } from '../auth';
 import {createIntake,batchEmail,type IntakeBatch} from '../engine/intake';
+import { exportComparisonCsv } from '../engine/export';
 
 /** 首页 = 任务列表 + 新建任务入口（粘贴询价内容 / 上传 .eml / 上传订单 xlsx） */
 export function HomePage({
-  tasks, onPick, onNewTask, onIntakeProgress, onIntakeError, onDelete, onRestore, deletedCount, industryKw, operator, openImport = false, onImportHandled,
+  tasks, onPick, onNewTask, onIntakeProgress, onIntakeError, onDelete, onRestore, deletedCount, industryKw, operator, openImport = false, onImportHandled, taskTime, opCounts = {}, baselineMinutes = 12, account, onClaim,
 }: {
+  account: AuthAccount;
+  onClaim: (task: TaskSummary) => void;
   operator?: string;
   onIntakeError?: (batchId:string,message:string)=>void;
   onIntakeProgress?: (stage:1|2|3,batch:IntakeBatch)=>void;
@@ -21,6 +25,8 @@ export function HomePage({
   onNewTask: (email: EmailSample, rows?: RawRow[], options?:{open:boolean}) => void;
   industryKw: string;
   taskTime: Record<string, number>;
+  opCounts?: Record<string, Record<string, number>>;
+  baselineMinutes?: number;
 }) {
   const [query,setQuery]=useState('');
   const [statusFilter,setStatusFilter]=useState<'all'|'review'|'ready'>('all');
@@ -62,7 +68,7 @@ export function HomePage({
         </div>
       </section>
 
-      <RecordToolbar filters={<FilterTabs label="任务状态筛选" value={statusFilter} onChange={setStatusFilter} items={[{value:'all',label:'全部任务'},{value:'review',label:'待核对'},{value:'ready',label:'待核价'}]} />}><input className="search-input" aria-label="搜索询价" placeholder="搜索询价编号、客户…" value={query} onChange={e=>setQuery(e.target.value)} /><button className="btn primary inquiry-create" aria-label="新建询价" title="新建询价" onClick={()=>setShowNew(true)}>新建询价</button>{deletedCount>0&&<button className="btn" onClick={onRestore}>恢复已删除（{deletedCount}）</button>}</RecordToolbar>
+      <RecordToolbar filters={<FilterTabs label="任务状态筛选" value={statusFilter} onChange={setStatusFilter} items={[{value:'all',label:'全部任务'},{value:'review',label:'待核对'},{value:'ready',label:'待核价'}]} />}><input className="search-input" aria-label="搜索询价" placeholder="搜索询价编号、客户…" value={query} onChange={e=>setQuery(e.target.value)} /><button className="btn" onClick={() => exportComparisonCsv(tasks, taskTime, opCounts, baselineMinutes)}>导出对照验证</button><button className="btn primary inquiry-create" aria-label="新建询价" title="新建询价" onClick={()=>setShowNew(true)}>新建询价</button>{deletedCount>0&&<button className="btn" onClick={onRestore}>恢复已删除（{deletedCount}）</button>}</RecordToolbar>
       <div className="panel inquiry-records" role="region" aria-label="询价记录">
 
         <DataTable
@@ -70,7 +76,7 @@ export function HomePage({
           mobileRender={t=><article className="task-record-card">
             <div className="task-record-main">{statusOf(t)}<span>{t.total} 行物料</span></div>
             <button className="task-record-open" aria-label={`打开询价 ${t.title}`} onClick={()=>onPick(t.source)}><b title={t.title}>{t.title}</b></button>
-            <div className="task-record-meta"><span>{t.customer||'客户待补'}</span>{t.urgent&&<Badge text="加急" tone="red" />}<button className="record-delete" aria-label={`删除询价 ${t.title}`} onClick={()=>onDelete(t.key)}>删除</button></div>
+            <div className="task-record-meta"><span>{t.customer||'客户待补'}</span><span className={t.ownerName?'':'owner-empty'}>{t.ownerName||'待认领'}</span>{t.urgent&&<Badge text="加急" tone="red" />}{account.role==='sub'&&t.intakeBatchId&&!t.ownerId&&<button className="record-open" aria-label={`认领询价 ${t.title}`} onClick={()=>onClaim(t)}>认领</button>}<button className="record-delete" aria-label={`删除询价 ${t.title}`} onClick={()=>onDelete(t.key)}>删除</button></div>
           </article>}
           rowKey={(t) => t.key}
           onRowClick={(t) => onPick(t.source)}
@@ -78,8 +84,9 @@ export function HomePage({
           cols={[
             {title:'状态',w:'180px',render:statusOf},
             {title:'询价 / 客户',render:t=><div className="task-identity"><b className="task-name" title={t.title}>{t.title}</b><span>{t.customer||'客户待补'}{t.urgent&&<Badge text="加急" tone="red" />}</span></div>},
+            {title:'归属人',w:'120px',render:t=>t.ownerName?<span>{t.ownerName}</span>:<span className="owner-empty">待认领</span>},
             {title:'行数',w:'72px',render:t=>t.total},
-            {title:'操作',w:'140px',render:t=><div className="record-actions" onClick={e=>e.stopPropagation()}><button className="record-open" aria-label={`打开询价 ${t.title}`} onClick={()=>onPick(t.source)}>打开</button><button className="record-delete" aria-label={`删除询价 ${t.title}`} onClick={()=>onDelete(t.key)}>删除</button></div>},
+            {title:'操作',w:'200px',render:t=><div className="record-actions" onClick={e=>e.stopPropagation()}>{account.role==='sub'&&t.intakeBatchId&&!t.ownerId&&<button className="record-open" aria-label={`认领询价 ${t.title}`} onClick={()=>onClaim(t)}>认领</button>}<button className="record-open" aria-label={`打开询价 ${t.title}`} onClick={()=>onPick(t.source)}>打开</button><button className="record-delete" aria-label={`删除询价 ${t.title}`} onClick={()=>onDelete(t.key)}>删除</button></div>},
           ]}
 
         />

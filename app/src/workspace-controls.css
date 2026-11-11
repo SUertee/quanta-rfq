@@ -1255,3 +1255,17 @@ tr:hover .material-reference-name>.reference-cite,.material-reference-name:focus
 .module-border-left,.module-border-right { width:12px;top:12px;bottom:12px; }
 .module-border-left { left:0; }
 .module-border-right { right:0; }
+
+/* 账户菜单身份行 */
+.account-menu-identity { display:flex;align-items:center;justify-content:space-between;gap:8px;padding:8px 12px 10px;margin-bottom:4px;border-bottom:1px solid var(--line); }
+.account-menu-identity b { font-size:15px; }
+.account-menu-identity span { flex-shrink:0;font-size:12px;color:var(--ink-2); }
+/* 邮箱绑定 / 账户管理 */
+.binding-list { list-style:none;margin:0 0 16px;padding:0;display:grid;gap:8px; }
+.binding-list li { display:flex;align-items:center;gap:12px; }
+.binding-email { font-weight:600; }
+.binding-purpose { flex:1;color:var(--ink-2); }
+.binding-add { margin-top:8px; }
+.account-admin-table { margin-bottom:16px; }
+.account-admin-subhead { margin:8px 0 0;font-size:16px; }
+.account-reset-row { margin:12px 0; }

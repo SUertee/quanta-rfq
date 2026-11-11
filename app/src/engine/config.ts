@@ -1,3 +1,4 @@
+import {accountStorageKey} from './persistence';
 // AI 运行配置：模型服务 + 联网搜索。设置页可改，存 localStorage 即时生效；不上传任何服务器。
 export interface AiConfig {
   llm: { baseUrl: string; apiKey: string; model: string };
@@ -30,7 +31,7 @@ const defaults = (): AiConfig => ({
 export function getAiConfig(): AiConfig {
   const d = defaults();
   try {
-    const raw = localStorage.getItem(LS_KEY);
+    const raw = localStorage.getItem(accountStorageKey(LS_KEY));
     if (!raw) return d;
     const saved = JSON.parse(raw) as Partial<AiConfig>;
     return {
@@ -44,9 +45,9 @@ export function getAiConfig(): AiConfig {
 }
 
 export function saveAiConfig(cfg: AiConfig): void {
-  localStorage.setItem(LS_KEY, JSON.stringify(cfg));
+  localStorage.setItem(accountStorageKey(LS_KEY), JSON.stringify(cfg));
 }
 
 export function resetAiConfig(): void {
-  localStorage.removeItem(LS_KEY);
+  localStorage.removeItem(accountStorageKey(LS_KEY));
 }

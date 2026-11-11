@@ -13,7 +13,7 @@ export const FLAG_META:Record<FlagCode,{label:string;yellow:boolean}>={
 const checkFlags:Record<string,FlagCode>={part_number:'NO_MATCH',unit:'UNIT_UNMAPPED',condition:'COND_MISMATCH',quantity:'STOCK_SHORTAGE',moq:'MOQ_SHORTAGE',valid_until:'EXPIRED',valid_from:'EXPIRED',certificate:'CERT_MISMATCH',delivery:'LATE_DELIVERY',price:'NO_MATCH',requested_quantity:'PARSE_ISSUE',quantity_precision:'PARSE_ISSUE'};
 const flagsFor=(checks:ResourceCheck[]):FlagCode[]=>[...new Set(checks.filter(check=>check.state!=='pass').map(check=>check.code==='condition'&&check.state==='unknown'?'COND_EMPTY':checkFlags[check.code]||'RESOURCE_REVIEW'))];
 export const isYellow=(line:PricedLine)=>line.flags.some(flag=>FLAG_META[flag].yellow);
-export interface PriceOpts {freightDays?:number;condFnNe?:boolean;certMutual?:boolean;fxOverride?:Record<string,number>;asOf?:string;}
+export interface PriceOpts {freightDays?:number;condFnNe?:boolean;certMutual?:boolean;fxOverride?:Record<string,number>;asOf?:string;certificates?:{name:string;pattern:string}[];condAliases?:[string,string][];}
 
 export function priceLine(line:InquiryLine,ds:Dataset,opts:PriceOpts={}):PricedLine {
   const resources:RuleEvidence[]=line.resourceEvidence??matchResources(line.partNumber,ds.cost||[...ds.costIdx.values()],ds.prices||[...ds.priceIdx.values()].flat());

@@ -53,7 +53,8 @@ export function FloatingAssistant({open,expanded,docked=false,onOpen,onCollapse,
  const workspace=typeof document==='undefined'?null:document.querySelector('.layout-reference .sidebar')?.getBoundingClientRect();
  const workspaceWidth=workspace?.width||Math.min(innerWidth-40,1680);
  const mobile=innerWidth<=860;
- const dockWidth=mobile?workspaceWidth:workspaceWidth*.4;
+ // 窄屏且无工作区测量时，按视口留 12px 边距（innerWidth-24）；宽屏仍按 40% 工作区
+ const dockWidth=mobile?(workspace?workspaceWidth:innerWidth-24):workspaceWidth*.4;
  const panelWidth=docked?dockWidth:Math.min(380,innerWidth-24);
  const panelHeight=docked?(mobile?Math.round(innerHeight*.5)-12:Math.max(180,innerHeight-dockTop-16)):Math.min(520,innerHeight-24);
  const panelLeft=docked?(mobile?workspace?.left??12:(workspace?.right||(innerWidth+workspaceWidth)/2)-panelWidth):Math.max(12,Math.min(point.x+76-panelWidth,innerWidth-panelWidth-12));

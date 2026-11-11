@@ -6,6 +6,7 @@ import type { RawRow } from './parse';
 import type { EstCost, InquiryLine } from '../types';
 import { getAiConfig } from './config';
 import { searchConfigured, webSearch } from './search';
+import { allowedUnitsFor, fieldsFor, schemaPrompt, validateValue, type FieldSchema } from './fieldSchema';
 
 const cfg = () => getAiConfig().llm;
 
@@ -79,7 +80,9 @@ const PRIOS = ['NOR', 'USR', 'WSP'];
 
 /** schema 校验 + 防幻觉：关键标识符必须在原文中真实出现（实测 LLM 会幻觉出原文没有的 NOR 优先级）。
  *  关键字段（件号/数量）不出现 → 整行弃用；可选字段不出现 → 丢弃该字段保留其余。 */
-export function validateLlmRow(j: Record<string, unknown>, raw = ''): Partial<RawRow> | null {
+export function validateLlmRow(
+  j: Record<string, unknown>, raw = '', schema?: FieldSchema,
+): Partial<RawRow> | null {
   const s = (k: string) => (typeof j[k] === 'string' ? (j[k] as string).trim() : '');
   const inRaw = (v: string) => !raw || !v || raw.includes(v);
   const partNumber = s('partNumber');
@@ -87,7 +90,8 @@ export function validateLlmRow(j: Record<string, unknown>, raw = ''): Partial<Ra
   const quantity = Number(j.quantity);
   if (!Number.isFinite(quantity) || quantity <= 0 || !inRaw(String(j.quantity))) return null;
   const uom = s('uom');
-  if (uom && !UOMS.includes(uom)) return null;
+  const uoms = allowedUnitsFor(schema);
+  if (uom && !uoms.some((x) => x.toUpperCase() === uom.toUpperCase())) return null;
   const condition = s('condition');
   // 件状词表（FN/NE/OH/SV）是航空演示数据的取值；通用场景不拒收，仅做短词形态校验
   if (condition && !/^[A-Z]{1,6}$/.test(condition)) return null;
@@ -109,22 +113,36 @@ export function validateLlmRow(j: Record<string, unknown>, raw = ''): Partial<Ra
 }
 
 /** LLM 语义归一：兜底提取正则切分异常的行。返回 null = 校验未过，保持标黄。 */
-export async function llmNormalizeLine(raw: string): Promise<Partial<RawRow> | null> {
+export async function llmNormalizeLine(raw: string, schema?: FieldSchema): Promise<Partial<RawRow> | null> {
+  const fields = schema ? schemaPrompt(schema, 'inquiry') : 'partNumber(件号), description(描述), quantity(数量,数字), uom(单位), priority(优先级), requirement(产品要求), mpn, condition(件状), manualPn, productScope, dueDate';
   const system = `你是询价单结构化助手（行业无关）。输入是一行"字段连写无分隔"的询价文本，提取字段并只输出一个 JSON 对象，不要任何解释。
-字段定义：partNumber(件号，如 PN-0001/AP-2001/MS21042L3), description(英中文描述), quantity(数量，数字), uom(单位，限 EA/IN/FT/Each), priority(优先级 NOR/USR/WSP，无则空串), requirement(产品要求话术，无则空串), mpn(询价MPN，通常是第二个件号), condition(件状 FN/NE/OH/SV，无则空串), manualPn(手册件号，通常是第三件号), productScope(产品范围), dueDate(截止期，格式 YYYY-MM-DD HH:mm，无则空串)。`;
-  const text = await chat([{ role: 'system', content: system }, { role: 'user', content: raw }], 800);
+本企业字段清单：${fields}。无法确定的字段留空字符串，不要编造。`;
+  const text = await chat([{ role: 'system', content: system }, { role: 'user', content: raw }], 1200);
   const j = extractJson(text);
-  return j ? validateLlmRow(j, raw) : null;
+  if (!j) return null;
+  const core = validateLlmRow(j, raw, schema);
+  if (!core) return null;
+  const customFields: Record<string, string> = {};
+  const issues: string[] = [];
+  for (const def of fieldsFor(schema, 'inquiry', { customOnly: true, stage: 'ai' })) {
+    const value = typeof j[def.key] === 'string' ? (j[def.key] as string).trim() : typeof j[def.key] === 'number' ? String(j[def.key]) : '';
+    customFields[def.key] = value;
+    issues.push(...validateValue(def, value));
+  }
+  if (!Object.keys(customFields).length) return core;
+  return { ...core, customFields, issues: [...(core.issues ?? []), ...issues] };
 }
 
 /** 纯语料进订单：任意文字（邮件/聊天/扫描件识别文本）→ 结构化订单行。
  *  校验：件号或描述至少一个；缺件号/缺数量进 issues 保持人工核对（不丢行）。
  *  注意 max_tokens 必须给足（推理模型 token 给太少会空回复，实测 2000 会截断，4000 稳定）。 */
-export async function llmExtractLines(text: string, industryKw = ''): Promise<RawRow[] | null> {
+export async function llmExtractLines(text: string, industryKw = '', schema?: FieldSchema): Promise<RawRow[] | null> {
   const kw = industryKw.trim();
+  const fields = schema ? schemaPrompt(schema, 'inquiry') : 'partNumber(件号),description(描述),quantity(数量,数字),uom(单位),condition(件状或空),mpn,manualPn,productScope,dueDate,requirement,priority';
   const system = `你是${kw || '采购'}订单识别助手。用户给一段询价/订单文字（可能来自邮件、聊天记录或扫描件识别文本），提取其中所有物料行，只输出一个 JSON 对象：
-{"lines":[{"partNumber":"件号","description":"描述","quantity":0,"uom":"EA/IN/FT/Each或空","condition":"件状或空","mpn":"","manualPn":"","productScope":"","dueDate":"YYYY-MM-DD或空","requirement":"","priority":""}]}
-要求：看不清或原文没有的字段留空字符串，不要编造；数量为数字（没有给 0）；只输出 JSON，不要解释。`;
+{"lines":[{每一行都包含以下字段}]}
+本企业字段清单：${fields}
+要求：每行都输出清单里的全部字段；看不清或原文没有的留空字符串，不要编造；数量为数字（没有给 0）；只输出 JSON，不要解释。`;
   const out = await chat([{ role: 'system', content: system }, { role: 'user', content: text.slice(0, 12000) }], 4000);
   const j = extractJson(out);
   if (!j || !Array.isArray(j.lines)) return null;
@@ -140,7 +158,15 @@ export async function llmExtractLines(text: string, industryKw = ''): Promise<Ra
     const issues: string[] = [];
     if (!pn) issues.push('缺件号');
     if (!Number.isFinite(qty) || qty <= 0) issues.push('缺数量');
+    // 企业自定义字段：AI 提取后按字段定义校验，不合格进 issues 保持人工核对
+    const customFields: Record<string, string> = {};
+    for (const def of fieldsFor(schema, 'inquiry', { customOnly: true, stage: 'ai' })) {
+      const value = s(def.key);
+      customFields[def.key] = value;
+      issues.push(...validateValue(def, value));
+    }
     rows.push({
+      ...(Object.keys(customFields).length ? { customFields } : {}),
       lineNo: rows.length + 1,
       raw: JSON.stringify(o),
       partNumber: pn || undefined,

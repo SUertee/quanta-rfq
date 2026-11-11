@@ -1,0 +1,19 @@
+{
+  "_说明": "Personal Agent 的 MCP 接入示例：复制进 IDE/客户端的 MCP 配置，先启动 Quanta 后端（npm run server 或 启动后端.bat）。",
+  "mcpServers": {
+    "quanta-rfq": {
+      "command": "node",
+      "args": ["server/mcp.mjs"],
+      "cwd": "d:/project/zidongbaojia/app",
+      "env": {
+        "QUANTA_MCP_API_BASE": "http://127.0.0.1:3004",
+        "QUANTA_MCP_TOKEN": "填入账户令牌（POST /api/auth/login 返回的 token）；缺失或失效时 tools/call 一律返回未授权"
+      }
+    }
+  },
+  "_http备选": {
+    "manifest": "GET http://127.0.0.1:3004/api/mcp/manifest",
+    "call": "POST http://127.0.0.1:3004/api/mcp/tools/call  {\"name\":\"quanta_list_fields\",\"arguments\":{}}"
+  },
+  "_边界": "只读工具直接返回数据；quanta_propose_price / quanta_propose_field / quanta_request_export 只返回 requiresHumanConfirmation，必须由人在工作台确认，Agent 不定价、不导出、不发送。"
+}

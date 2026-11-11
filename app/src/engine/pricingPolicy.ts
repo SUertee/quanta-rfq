@@ -44,6 +44,8 @@ export interface PricingPolicy {
   minFreightCny: number;
   /** 满额免运费门槛（行项目合计 ≥ 该值则运费 0，0=不启用） */
   freeFreightOverCny: number;
+  /** 原流程每单人工分钟数（对照验证用，默认 12） */
+  baselineMinutes?: number;
 }
 
 export const DEFAULT_POLICY: PricingPolicy = {
@@ -54,7 +56,7 @@ export const DEFAULT_POLICY: PricingPolicy = {
   freightChargeCny: 0,
   freightCostCny: 0,
   freightDays: 3,
-  industryKw: '航空备件',
+  industryKw: '',
   condFnNe: true,
   certMutual: false,
   freightAlloc: 'order',

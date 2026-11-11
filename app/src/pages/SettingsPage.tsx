@@ -6,10 +6,16 @@ import type { PricingPolicy } from '../engine/pricingPolicy';
 import { getAiConfig, saveAiConfig, type AiConfig } from '../engine/config';
 import { getCompany, saveCompany, type CompanyInfo } from '../engine/company';
 import { listChatModels, llmPing } from '../engine/llm';
+import {
+  DEFAULT_CERTIFICATES, DEFAULT_SCHEMA, INDUSTRY_TEMPLATES, applyTemplate, fieldsFor,
+  loadFieldSchema, saveFieldSchema,
+  type FieldDef, type FieldSchema, type FieldScope, type FieldType,
+} from '../engine/fieldSchema';
 
 const SETTING_SECTIONS = [
   {id:'services',label:'模型配置'},
   {id:'pricing',label:'报价策略'},
+  {id:'fields',label:'字段与规则'},
   {id:'rules',label:'业务规则'},
   {id:'units',label:'单位换算'},
   {id:'freight',label:'运费核算'},
@@ -49,6 +55,41 @@ export function SettingsPage({
   const [newFx, setNewFx] = useState({ ccy: '', rate: '' });
   const [fxBusy, setFxBusy] = useState(false);
   const [fxNote, setFxNote] = useState('');
+  const [fieldSchema, setFieldSchema] = useState<FieldSchema>(DEFAULT_SCHEMA);
+  const [template, setTemplate] = useState('通用');
+  const [fieldNote, setFieldNote] = useState('');
+  const [newField, setNewField] = useState({ key: '', label: '', type: 'text' as FieldType, scope: 'inquiry' as FieldScope, options: '', required: false });
+
+  useEffect(() => { loadFieldSchema().then((s) => { setFieldSchema(s); setTemplate(s.industry || '通用'); }); }, []);
+
+  const condDef = fieldSchema.fields.find((f) => f.scope === 'inquiry' && f.key === 'condition');
+  const uomDef = fieldSchema.fields.find((f) => f.scope === 'inquiry' && f.key === 'uom');
+  const customFields = fieldsFor(fieldSchema, 'inquiry', { customOnly: true })
+    .concat(fieldsFor(fieldSchema, 'inventory', { customOnly: true }))
+    .concat(fieldsFor(fieldSchema, 'supplier', { customOnly: true }));
+  const patchField = (def: FieldDef, patch: Partial<FieldDef>) =>
+    setFieldSchema((s) => ({ ...s, fields: s.fields.map((f) => (f.key === def.key && f.scope === def.scope ? { ...f, ...patch } : f)) }));
+  const deleteField = (def: FieldDef) =>
+    setFieldSchema((s) => ({ ...s, fields: s.fields.filter((f) => !(f.key === def.key && f.scope === def.scope)) }));
+  const addField = () => {
+    const key = newField.key.trim();
+    const label = newField.label.trim() || key;
+    if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(key)) { setFieldNote('字段键限英文字母/数字/下划线，且以字母开头'); return; }
+    if (fieldSchema.fields.some((f) => f.key === key && f.scope === newField.scope)) { setFieldNote('该对象下已存在同名字段键'); return; }
+    const def: FieldDef = {
+      key, label, scope: newField.scope, type: newField.type, required: newField.required,
+      options: newField.options ? newField.options.split(/[,，]/).map((s) => s.trim()).filter(Boolean) : undefined,
+      mapTarget: true, aiExtract: true, exportVisible: true, customerVisible: false,
+    };
+    setFieldSchema((s) => ({ ...s, fields: [...s.fields, def] }));
+    setNewField({ key: '', label: '', type: 'text', scope: 'inquiry', options: '', required: false });
+    setFieldNote(`已添加字段「${label}」，保存后全链路生效`);
+  };
+  const saveFields = async () => {
+    const res = await saveFieldSchema(fieldSchema);
+    setFieldNote(res.local ? '已保存到本机（后端未启动，启动后自动同步一次）' : '已保存到后端数据库，所有页面即时生效');
+    onRefresh();
+  };
 
   const addFx = () => {
     const ccy = newFx.ccy.trim().toUpperCase();
@@ -259,6 +300,108 @@ export function SettingsPage({
       </div>
 
       </section>
+      <section id="settings-panel-fields" role="tabpanel" aria-labelledby="settings-tab-fields" hidden={activeSection!=='fields'} tabIndex={0}>
+      <div className="panel">
+        <div className="panel-title">字段与规则 <Badge text="企业自定义" tone="blue" />
+          <button className="btn primary" onClick={saveFields}>保存字段定义</button>
+        </div>
+        <div className="hint">
+          企业在这里定义自己的字段：定义后自动进入 <b>导入映射下拉 → AI 提取 → 工作台编辑/校验 → 内部 CSV 与客户版报价单</b>。
+          内置字段不可删除；自定义字段的"客户可见"开关决定是否出现在给客户的报价单上。
+        </div>
+        <div className="policy-row">
+          <label>行业模板
+            <select className="cell-input" value={template} onChange={(e) => setTemplate(e.target.value)}>
+              {Object.entries(INDUSTRY_TEMPLATES).map(([k, t]) => <option key={k} value={k}>{t.label}</option>)}
+            </select>
+          </label>
+          <button className="btn" onClick={() => { setFieldSchema((s) => applyTemplate(s, template)); setFieldNote(`已套用「${template}」模板，可继续增删改后保存`); }}>套用模板（合并，不清空已有字段）</button>
+          {fieldNote && <span className="hint" style={{ margin: 0 }}>{fieldNote}</span>}
+        </div>
+        <div className="table-wrap">
+          <table className="sub-table">
+            <thead><tr><th>字段键</th><th>显示名</th><th>对象</th><th>类型</th><th>允许值/范围</th><th>必填</th><th>AI提取</th><th>内部导出</th><th>客户可见</th><th>操作</th></tr></thead>
+            <tbody>
+              {customFields.map((f) => (
+                <tr key={`${f.scope}-${f.key}`}>
+                  <td><code>{f.key}</code></td>
+                  <td><input className="cell-input" value={f.label} onChange={(e) => patchField(f, { label: e.target.value })} /></td>
+                  <td>{f.scope === 'inquiry' ? '询价行' : f.scope === 'inventory' ? '库存' : '供应商'}</td>
+                  <td>
+                    <select className="cell-input" value={f.type} onChange={(e) => patchField(f, { type: e.target.value as FieldType })}>
+                      {[['text', '文本'], ['number', '数字'], ['date', '日期'], ['enum', '枚举'], ['bool', '是/否']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+                    </select>
+                  </td>
+                  <td><input className="cell-input" placeholder="枚举用逗号分隔" value={(f.options ?? []).join(',')}
+                    onChange={(e) => patchField(f, { options: e.target.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean) })} /></td>
+                  {(['required', 'aiExtract', 'exportVisible', 'customerVisible'] as const).map((flag) => (
+                    <td key={flag}><input type="checkbox" checked={!!f[flag]} onChange={(e) => patchField(f, { [flag]: e.target.checked })} /></td>
+                  ))}
+                  <td><button className="btn" onClick={() => deleteField(f)}>删除</button></td>
+                </tr>
+              ))}
+              {!customFields.length && <tr><td colSpan={10} className="empty-cell">暂无自定义字段，可直接新增或套用行业模板</td></tr>}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div className="panel">
+        <div className="panel-title">新增字段</div>
+        <div className="policy-row">
+          <input className="cell-input" placeholder="字段键（英文，如 shelfLifeDays）" value={newField.key} onChange={(e) => setNewField({ ...newField, key: e.target.value })} style={{ width: 180 }} />
+          <input className="cell-input" placeholder="显示名（如 保质期天数）" value={newField.label} onChange={(e) => setNewField({ ...newField, label: e.target.value })} style={{ width: 160 }} />
+          <select className="cell-input" value={newField.type} onChange={(e) => setNewField({ ...newField, type: e.target.value as FieldType })} style={{ width: 100 }}>
+            {[['text', '文本'], ['number', '数字'], ['date', '日期'], ['enum', '枚举'], ['bool', '是/否']].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+          <select className="cell-input" value={newField.scope} onChange={(e) => setNewField({ ...newField, scope: e.target.value as FieldScope })} style={{ width: 100 }}>
+            <option value="inquiry">询价行</option><option value="inventory">库存</option><option value="supplier">供应商</option>
+          </select>
+          <input className="cell-input" placeholder="枚举值（逗号分隔）" value={newField.options} onChange={(e) => setNewField({ ...newField, options: e.target.value })} style={{ width: 160 }} />
+          <label className="switch-label"><input type="checkbox" checked={newField.required} onChange={(e) => setNewField({ ...newField, required: e.target.checked })} />必填</label>
+          <button className="btn" onClick={addField}>+ 添加字段</button>
+        </div>
+      </div>
+      <div className="panel">
+        <div className="panel-title">内置规则 <Badge text="行业无关" tone="blue" />
+          <button className="btn primary" onClick={saveFields}>保存规则</button>
+        </div>
+        <div className="hint">件状是否必填、单位词表、件状词表与互认矩阵、证书类型词表——全部由企业自己定；默认词表只为兼容示范案例数据，可整体替换。</div>
+        <div className="policy-row">
+          <label className="switch-label">
+            <input type="checkbox" checked={!!condDef?.required} onChange={(e) => condDef && patchField(condDef, { required: e.target.checked })} />
+            件状必填（关闭后无件状也能报价）
+          </label>
+          <label className="switch-label">
+            <input type="checkbox" checked={!!condDef?.customerVisible} onChange={(e) => condDef && patchField(condDef, { customerVisible: e.target.checked })} />
+            客户版显示件状列
+          </label>
+          <label>单位词表
+            <input className="cell-input" style={{ width: 240 }} placeholder="EA,IN,FT,Each,kg,L,箱,托"
+              value={(uomDef?.options ?? []).join(',')} onChange={(e) => uomDef && patchField(uomDef, { options: e.target.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean) })} />
+          </label>
+          <label>件状词表
+            <input className="cell-input" style={{ width: 200 }} placeholder="FN,NE,OH,SV,AR,NS"
+              value={(condDef?.options ?? []).join(',')} onChange={(e) => condDef && patchField(condDef, { options: e.target.value.split(/[,，]/).map((s) => s.trim().toUpperCase()).filter(Boolean) })} />
+          </label>
+          <label>件状互认（A=B 逗号分隔）
+            <input className="cell-input" style={{ width: 160 }} placeholder="FN=NE, NS=NE"
+              value={(condDef?.aliases ?? []).map((p) => p.join('=')).join(',')}
+              onChange={(e) => condDef && patchField(condDef, {
+                aliases: e.target.value.split(/[,，]/).map((s) => s.trim()).filter(Boolean)
+                  .map((s) => s.split('=').map((x) => x.trim().toUpperCase())).filter((p) => p.length === 2) as [string, string][],
+              })} />
+          </label>
+        </div>
+        <div className="panel-title" style={{ marginTop: 10 }}>证书规则（每行 名称=正则，匹配询价要求与供应商证书）</div>
+        <textarea key={JSON.stringify(fieldSchema.certificates ?? null)} className="new-task-text" rows={4}
+          defaultValue={(fieldSchema.certificates ?? DEFAULT_CERTIFICATES).map((c) => `${c.name}=${c.pattern}`).join('\n')}
+          onBlur={(e) => setFieldSchema((s) => ({ ...s, certificates: e.target.value.split('\n').map((line) => line.trim()).filter(Boolean).map((line) => {
+            const i = line.indexOf('=');
+            return i > 0 ? { name: line.slice(0, i).trim(), pattern: line.slice(i + 1).trim() } : null;
+          }).filter((x): x is { name: string; pattern: string } => !!x) }))} />
+        <div className="hint">留空即恢复默认 FAA/EASA/CoC；食品可写 SC 许可证、HACCP、检疫证，工业可写 CE/ISO 等。正则无效时该行自动忽略，不误判。</div>
+      </div>
+      </section>
       <section id="settings-panel-pricing" role="tabpanel" aria-labelledby="settings-tab-pricing" hidden={activeSection!=='pricing'} tabIndex={0}>
       <div className="panel">
         <div className="panel-title">报价定价策略 <Badge text="默认值待确认" tone="amber" /></div>
@@ -270,6 +413,9 @@ export function SettingsPage({
           <label>行业/品类关键词
             <input className="policy-input wide" type="text" value={policy.industryKw}
               onChange={(e) => setPolicy({ ...policy, industryKw: e.target.value })} />
+          </label>
+          <label>原流程每单分钟
+            {num(policy.baselineMinutes ?? 12, (n) => setPolicy({ ...policy, baselineMinutes: n }), 1)} 分钟（对照验证用）
           </label>
         </div>
 
@@ -418,10 +564,13 @@ export function SettingsPage({
             <input className="cell-input" value={company.address}
               onChange={(e) => setCompany({ ...company, address: e.target.value })} />
           </label>
-          <label>质保-新件(月)
+          <label>条款名称
+            <input className="policy-input wide" placeholder="质保期 / 保质期 / 保修期" value={company.warrantyLabel ?? ''} onChange={(e) => setCompany({ ...company, warrantyLabel: e.target.value })} />
+          </label>
+          <label>主要件状(月)
             <input className="policy-input" value={company.warrantyNew} onChange={(e) => setCompany({ ...company, warrantyNew: e.target.value })} />
           </label>
-          <label>质保-OH(月)
+          <label>其他件状(月)
             <input className="policy-input" value={company.warrantyOh} onChange={(e) => setCompany({ ...company, warrantyOh: e.target.value })} />
           </label>
           <label>报价有效期(天)
@@ -429,6 +578,8 @@ export function SettingsPage({
           </label>
         </div>
 
+      <div className="panel-title" style={{ marginTop: 10 }}>附加条款模板（每行一条，追加到客户版报价单末尾）</div>
+        <textarea key={company.termsTemplate ?? ''} className="new-task-text" rows={3} placeholder="例如：\n本报价含税含运，分批交货。\n件状与批次按客户到货验收单确认。" value={company.termsTemplate ?? ''} onChange={(e) => setCompany({ ...company, termsTemplate: e.target.value })} />
       </div>
 
       </section>

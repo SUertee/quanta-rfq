@@ -23,6 +23,7 @@ import type { Source } from '../App';
 import type { EstCost, InquiryLine } from '../types';
 import type { PricingPolicy } from '../engine/pricingPolicy';
 import { isYellow, priceAll } from '../engine/pricing';
+import { certificatesFor, condAliasesFor } from '../engine/fieldSchema';
 import {ExecutionSteps} from '../components/ExecutionSteps';
 import {MessageRail} from '../components/MessageRail';
 
@@ -95,7 +96,7 @@ export function AgentPage({ onWorkflowProgress, onInquiryCreated, operator='本�
     const allLines = [...base.lines, ...(addedLines[key] ?? [])].map(l => ({ ...l, ...lineEdits[l.key],selectedBasisId:selectedBases[l.key] }));
     return { ...base, lines: selectedLineKey ? allLines.filter(l => l.key === selectedLineKey && !skipped.has(l.key)) : allLines.filter(l => !skipped.has(l.key)) };
   }, [ds, task, lineEdits, addedLines, embedded, selectedLineKey, skipped,selectedBases]);
-  const priced = useMemo(() => current ? priceAll(current.lines, ds, { freightDays: policy.freightDays, condFnNe: policy.condFnNe, certMutual: policy.certMutual, fxOverride: { ...(policy.fxUsd ? { USD: policy.fxUsd } : {}), ...(policy.fxEur ? { EUR: policy.fxEur } : {}),...(policy.fxRates||{}) } }) : [], [current, ds, policy]);
+  const priced = useMemo(() => current ? priceAll(current.lines, ds, { freightDays: policy.freightDays, condFnNe: policy.condFnNe, certMutual: policy.certMutual, fxOverride: { ...(policy.fxUsd ? { USD: policy.fxUsd } : {}), ...(policy.fxEur ? { EUR: policy.fxEur } : {}),...(policy.fxRates||{}) }, certificates: certificatesFor(ds.fieldSchema), condAliases: condAliasesFor(ds.fieldSchema) }) : [], [current, ds, policy]);
   const pending = priced.filter(p => isYellow(p) && !resolved.has(p.line.key)).length;
   const basis = JSON.stringify({ lines: current?.lines, policy, inventory: ds.cost, supplierPrices: ds.prices });
   const latestBasis = useRef(basis); latestBasis.current = basis;
@@ -175,7 +176,7 @@ export function AgentPage({ onWorkflowProgress, onInquiryCreated, operator='本�
       const reportsWorkflow=(!!preset&&quickMessage?.workflow&&(!quickMessage.inquiryId||quickMessage.inquiryId===current.email?.intakeBatchId))||(!explainReference&&/(生成|计算).{0,12}(报价|草稿)/.test(instruction));
       if(reportsWorkflow){workflowStage.current=4;onWorkflowProgress?.(4,'running');}
       // Legacy field named margin stores markup rate (cost-based), matching Settings.
-      const response = await fetch('/api/agent/run', {method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({instruction,history,references:activeReferences,context:automatic?undefined:attachmentContext,inquiryId:current.email?.intakeBatchId,draftVersion:quoteVersion,lines:current.lines.map(l => ({key:l.key,partNumber:l.partNumber || '',description:l.description,quantity:l.quantity,uom:l.uom,condition:l.condition,urgency:l.urgency,requirement:l.requirement,dueDate:l.dueDate,needByDate:l.needByDate||'',quoteDeadline:l.quoteDeadline||'',issues:l.issues})),policy:{condFnNe:policy.condFnNe,certMutual:policy.certMutual,freightDays:policy.freightDays,fxRates:{...(policy.fxUsd?{USD:policy.fxUsd}:{}),...(policy.fxEur?{EUR:policy.fxEur}:{}),...(policy.fxRates||{})},markupRate:policy.margin,aogPremium:policy.aogPremium,bulkDiscount:policy.bulkDiscount,bulkQty:policy.bulkQty}})});
+      const response = await fetch('/api/agent/run', {method:'POST',headers:{'Content-Type':'application/json','Accept':'application/x-ndjson'},signal:controller.signal,body:JSON.stringify({instruction,history,references:activeReferences,context:automatic?undefined:attachmentContext,inquiryId:current.email?.intakeBatchId,draftVersion:quoteVersion,lines:current.lines.map(l => ({key:l.key,partNumber:l.partNumber || '',description:l.description,quantity:l.quantity,uom:l.uom,condition:l.condition,urgency:l.urgency,requirement:l.requirement,dueDate:l.dueDate,needByDate:l.needByDate||'',quoteDeadline:l.quoteDeadline||'',customFields:l.customFields,issues:l.issues})),policy:{condFnNe:policy.condFnNe,certMutual:policy.certMutual,freightDays:policy.freightDays,fxRates:{...(policy.fxUsd?{USD:policy.fxUsd}:{}),...(policy.fxEur?{EUR:policy.fxEur}:{}),...(policy.fxRates||{})},markupRate:policy.margin,aogPremium:policy.aogPremium,bulkDiscount:policy.bulkDiscount,bulkQty:policy.bulkQty}})});
       const data = await readAgentStream<AgentResult>(response,(tool,state)=>{
         if(id!==generation.current)return;
         if(workflowStage.current){

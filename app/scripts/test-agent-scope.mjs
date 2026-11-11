@@ -11,3 +11,10 @@ const scoped=resolveAgentScope({lines:[{key:'intake-qa-2',selectedBasisId:'forge
 assert.equal(scoped.lines[0].selectedBasisId,'saved-resource');assert.equal(scoped.policy.markupRate,.25);
 assert.equal(resolveAgentScope({lines:[{key:'intake-qa-1',selectedBasisId:'forged'}]},inquiry).lines[0].selectedBasisId,undefined);
 console.log('PASS: Agent selected source and pricing policy come from saved inquiry');
+
+inquiry.lines[0].customFields={traceability:'LOT-A',shelfLifeDays:90};
+const custom=resolveAgentScope({lines:[{key:'intake-qa-1',customFields:{traceability:'forged'}}]},inquiry);
+assert.deepEqual(custom.lines[0].customFields,{traceability:'LOT-A',shelfLifeDays:90});
+const {validateAgentInput}=await import('../server/agent.mjs');
+assert.deepEqual(validateAgentInput({...custom,instruction:'核对自定义字段'}).lines[0].customFields,inquiry.lines[0].customFields);
+console.log('PASS: schema-defined fields reach the agent from server-owned inquiry lines');

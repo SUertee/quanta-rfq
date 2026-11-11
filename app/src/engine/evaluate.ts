@@ -7,12 +7,15 @@ import type { FlagCode, InquiryLine } from '../types';
 import { parseEmailBody } from './parse';
 import { fromRaw } from './structure';
 import { isYellow, priceAll } from './pricing';
+import { fieldsFor, type FieldSchema } from './fieldSchema';
 
 /** 人工标注的期望结构化结果；flags = 该行期望的标黄（可选，用于标黄召回） */
 export interface GroundTruthLine {
   partNumber: string; description: string; quantity: number; uom: string;
   condition: string; mpn: string; manualPn: string; productScope: string; dueDate: string;
   flags?: FlagCode[];
+  /** 企业自定义字段（评测按真值文件里实际出现的键动态纳入） */
+  [key: string]: unknown;
 }
 
 /** 评测集文件格式：`public/data/eval/ground-truth-<caseId>.json` */
@@ -30,7 +33,7 @@ export const EVAL_FIELDS = [
 export type EvalField = (typeof EVAL_FIELDS)[number];
 
 export interface FieldAcc {
-  field: EvalField;
+  field: string;
   correct: number;
   total: number;
   acc: number;
@@ -65,19 +68,33 @@ export async function loadGroundTruth(caseId: string): Promise<GroundTruthFile |
 
 const norm = (v: unknown) => String(v ?? '').trim();
 
-export function evaluate(actual: InquiryLine[], gt: GroundTruthFile, actualYellow?: boolean[]): EvalReport {
+/** A7：评测字段 = 内置 9 列 + 企业自定义字段，且只评真值文件里实际出现的键 */
+export function evalFieldsFor(gt: GroundTruthFile, schema?: FieldSchema): string[] {
+  const present = new Set(Object.keys(gt.lines[0] ?? {}).filter((k) => k !== 'flags'));
+  const custom = schema ? fieldsFor(schema, 'inquiry', { customOnly: true, stage: 'ai' }).map((f) => f.key) : [];
+  return [...new Set([...EVAL_FIELDS, ...custom])].filter((f) => present.has(f));
+}
+
+const valueOf = (line: InquiryLine | GroundTruthLine, field: string): unknown =>
+  field in line ? (line as Record<string, unknown>)[field] : (line as InquiryLine).customFields?.[field];
+
+export function evaluate(
+  actual: InquiryLine[], gt: GroundTruthFile,
+  actualYellow?: boolean[], schema?: FieldSchema,
+): EvalReport {
   const total = gt.lines.length;
-  const fieldAcc = EVAL_FIELDS.map((field) => {
+  const fields = evalFieldsFor(gt, schema);
+  const fieldAcc = fields.map((field) => {
     let correct = 0;
     gt.lines.forEach((exp, i) => {
-      if (i < actual.length && norm(actual[i][field as keyof InquiryLine]) === norm(exp[field])) correct++;
+      if (i < actual.length && norm(valueOf(actual[i], field)) === norm(valueOf(exp, field))) correct++;
     });
     return { field, correct, total, acc: total ? correct / total : 0 };
   });
   const sumCorrect = fieldAcc.reduce((s, f) => s + f.correct, 0);
   const exactRows = gt.lines.filter((exp, i) => {
     if (i >= actual.length) return false;
-    return EVAL_FIELDS.every((f) => norm(actual[i][f as keyof InquiryLine]) === norm(exp[f]));
+    return fields.every((f) => norm(valueOf(actual[i], f)) === norm(valueOf(exp, f)));
   }).length;
 
   const report: EvalReport = {
@@ -85,7 +102,7 @@ export function evaluate(actual: InquiryLine[], gt: GroundTruthFile, actualYello
     inputKind: gt.inputKind,
     total,
     fieldAcc,
-    fieldAccOverall: total ? sumCorrect / (total * EVAL_FIELDS.length) : 0,
+    fieldAccOverall: total && fields.length ? sumCorrect / (total * fields.length) : 0,
     humanEditRate: total ? 1 - exactRows / total : 0,
   };
 
@@ -104,10 +121,10 @@ export async function runCaseEvaluation(ds: Dataset, gt: GroundTruthFile): Promi
   const email = ds.emails.find((e) => e.id === gt.emailId);
   if (!email) return null;
   const { rows } = parseEmailBody(email);
-  const lines = rows.map((r) => fromRaw(r, email));
+  const lines = rows.map((r) => fromRaw(r, email, ds.units, ds.fieldSchema));
   const priced = priceAll(lines, ds);
   const matched = priced.filter((p) => p.matchLevel > 0).length;
-  const report = evaluate(lines, gt, priced.map(isYellow));
+  const report = evaluate(lines, gt, priced.map(isYellow), ds.fieldSchema);
   report.matchRate = lines.length ? matched / lines.length : 0;
   return report;
 }

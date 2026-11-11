@@ -4,6 +4,7 @@ import type { EstCost, InquiryLine, PricedLine } from '../types';
 import type { TaskSummary } from '../task';
 import { linesOf } from '../task';
 import { isYellow, priceAll } from '../engine/pricing';
+import { certificatesFor, condAliasesFor } from '../engine/fieldSchema';
 import { suggestPrice, type PricingPolicy } from '../engine/pricingPolicy';
 import { FLAG_PLAIN } from '../plain';
 import { Badge, DataTable, RecordToolbar } from '../components/ui';
@@ -58,6 +59,8 @@ export function InspectPage({
       freightDays: policy.freightDays,
       condFnNe: policy.condFnNe,
       certMutual: policy.certMutual,
+      certificates: certificatesFor(ds.fieldSchema),
+      condAliases: condAliasesFor(ds.fieldSchema),
       fxOverride: { ...(policy.fxUsd ? { USD: policy.fxUsd } : {}), ...(policy.fxEur ? { EUR: policy.fxEur } : {}), ...(policy.fxRates ?? {}) },
     };
     const out: IssueRow[] = [];

@@ -1,4 +1,7 @@
 import {normalizePartNumber,normalizeUnit,validDate} from './normalization.mjs';
+import {DEFAULT_CERTIFICATES} from './field-schema.mjs';
+
+const safeTest=(pattern,text)=>{try{return new RegExp(pattern,'i').test(text);}catch{return false;}};
 
 export const RFQ_RULE_VERSION='5';
 export const businessToday=(now=Date.now())=>new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Shanghai',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(now));
@@ -25,7 +28,7 @@ export function matchResources(partNumber,costs=[],prices=[]) {
 }
 
 /** Evaluate each source independently. Unknown conditions remain visible and block automatic use. */
-export function evaluateResource(line,resource,{source,sourceKey,asOf=businessToday(),condFnNe=false,certMutual=false,freightDays=0,fxRates={},unitConversions={}}={}) {
+export function evaluateResource(line,resource,{source,sourceKey,asOf=businessToday(),condFnNe=false,certMutual=false,freightDays=0,fxRates={},unitConversions={},certificates=[],condAliases}={}) {
   const checks=[];
   const check=(code,state,message)=>checks.push({code,state,message});
   const compare=(code,wanted,supplied,label,compatible=false)=>{
@@ -39,7 +42,8 @@ export function evaluateResource(line,resource,{source,sourceKey,asOf=businessTo
   compare('unit',uom,resourceUnit,'单位',converted);
   const requestedCondition=String(line.condition||'').trim().toUpperCase();
   const suppliedCondition=String(resource.stockCondition||resource.condition||'').trim().toUpperCase();
-  const interchangeable=condFnNe&&['FN','NE'].includes(requestedCondition)&&['FN','NE'].includes(suppliedCondition);
+  const pairs=condAliases??(condFnNe?[['FN','NE']]:[]);
+  const interchangeable=pairs.some(pair=>Array.isArray(pair)&&pair.length===2&&pair.includes(requestedCondition)&&pair.includes(suppliedCondition));
   compare('condition',requestedCondition,suppliedCondition,'件状',interchangeable);
   const validQuantity=positive(line.quantity);
   if(!validQuantity)check('requested_quantity','unknown','询价数量缺失或无效');
@@ -68,15 +72,20 @@ export function evaluateResource(line,resource,{source,sourceKey,asOf=businessTo
     check('authorization',resource.authorized===true?'pass':'unknown',resource.authorized===true?'来源授权已确认':'来源授权待确认');
   }
   const requirement=String(line.requirement||'').trim();
-  const needFaa=/FAA|8130/i.test(requirement),needEasa=/EASA|Form\s*1/i.test(requirement)&&!/FAA\s*Form\s*1/i.test(requirement),needCoc=/\bCoC\b|合格证/i.test(requirement);
-  if(needFaa||needEasa||needCoc){
+  // A3：证书类型与要求词表来自企业 schema.certificates，默认 FAA/EASA/CoC 仅兼容示范案例
+  const certDefs=certificates.length?certificates:DEFAULT_CERTIFICATES;
+  const needed=certDefs.filter(def=>safeTest(def.pattern,requirement));
+  const genericCertAsk=!needed.length&&/证书|certificate|合格证|认证|许可|适航|SC|HACCP|ISO|CE|Form\s*1|8130/i.test(requirement);
+  if(needed.length||genericCertAsk){
     const cert=String(resource.certType||'');
-    const faa=/FAA|8130/i.test(cert),easa=/EASA/i.test(cert),coc=/\bCoC\b|合格证/i.test(cert);
-    const equivalent=certMutual&&/或等效|等价|equivalent/i.test(requirement)&&(faa||easa);
-    const ok=(!needFaa||faa||equivalent)&&(!needEasa||easa||equivalent)&&(!needCoc||coc);
-    check('certificate',!cert?'unknown':ok?'pass':'conflict',!cert?'证书信息缺失，需确认':ok?'证书类型满足要求':'证书类型不满足要求');
+    if(!cert)check('certificate','unknown','证书信息缺失，需确认');
+    else if(needed.length){
+      const equivalent=certMutual&&/或等效|等价|equivalent/i.test(requirement)&&certDefs.some(def=>/FAA|EASA|8130|Form\s*1/i.test(def.pattern)&&safeTest(def.pattern,cert));
+      const ok=needed.every(def=>safeTest(def.pattern,cert))||equivalent;
+      check('certificate',ok?'pass':'conflict',ok?'证书类型满足要求':'证书类型不满足要求');
+    }else check('certificate','unknown','证书类型与要求需人工确认');
   }
-  if(requirement&&(!(needFaa||needEasa||needCoc)||/追溯|寿命|批次|适航|序列|质保|trace|life|serial|warranty/i.test(requirement)))check('requirements','unknown','附加要求需逐项人工确认');
+  if(requirement&&((!needed.length&&!genericCertAsk)||/追溯|寿命|批次|适航|序列|质保|trace|life|serial|warranty/i.test(requirement)))check('requirements','unknown','附加要求需逐项人工确认');
   const needBy=line.needByDate;
   if(needBy){
     const lead=source==='inventory'?0:resource.leadDays;

@@ -14,6 +14,8 @@ export interface SupplierValues {
   taxBasis: string;
   remark: string;
   authorized: boolean;
+  /** 企业自定义字段（field_schema.supplier 定义，随报价行落 price_resource） */
+  extra?: Record<string, unknown>;
 }
 export interface SupplierImport {
   id: string;

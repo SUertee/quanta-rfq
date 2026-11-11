@@ -1,19 +1,24 @@
 import { useState } from 'react';
-import { autoMapHeaders, FIELD_LABEL, getMappingMemory, saveMappingMemory, type ImportSheet } from '../engine/import';
+import { autoMapHeaders, fieldLabel, getMappingMemory, saveMappingMemory, targetFieldsFor, type ImportSheet } from '../engine/import';
 import { llmConfigured, llmMapColumns } from '../engine/llm';
+import type { FieldSchema, FieldScope } from '../engine/fieldSchema';
 
-/** 通用字段映射面板：任意 xlsx 表头 → 目标字段/忽略/自定义键；AI 可识别不完美匹配的表头 */
+/** 通用字段映射面板：任意 xlsx 表头 → 企业定义的目标字段/忽略/自定义键；AI 可识别不完美匹配的表头 */
 export function MappingDialog({
-  title, sheet, targetFields, onConfirm, onClose, error, busy = false,
+  title, sheet, targetFields, onConfirm, onClose, error, busy = false, schema, scope = 'inventory',
 }: {
   error?: string; busy?: boolean;
   title: string;
   sheet: ImportSheet;
-  targetFields: readonly string[];
+  targetFields?: readonly string[];
+  schema?: FieldSchema;
+  scope?: FieldScope;
   onConfirm: (mapping: Record<string, string>) => void;
   onClose: () => void;
 }) {
-  const [mapping, setMapping] = useState<Record<string, string>>(() => getMappingMemory(sheet.headers) ?? autoMapHeaders(sheet.headers, targetFields));
+  const fields = schema ? targetFieldsFor(schema, scope) : [...(targetFields ?? [])];
+  const label = (key: string) => (schema ? fieldLabel(schema, key) : (key));
+  const [mapping, setMapping] = useState<Record<string, string>>(() => getMappingMemory(sheet.headers) ?? autoMapHeaders(sheet.headers, fields, schema, scope));
   const [note, setNote] = useState(getMappingMemory(sheet.headers) ? '已按上次同格式文件的映射自动填好（映射记忆），可直接确认或微调。' : '');
   const [mapBusy, setMapBusy] = useState(false);
 
@@ -21,7 +26,7 @@ export function MappingDialog({
     setMapBusy(true);
     try {
       const unmapped = sheet.headers.filter((h) => !mapping[h]);
-      const ai = await llmMapColumns(unmapped.length ? unmapped : sheet.headers, targetFields);
+      const ai = await llmMapColumns(unmapped.length ? unmapped : sheet.headers, fields);
       if (ai) { setMapping((m) => ({ ...m, ...ai })); setNote('AI 映射完成，请核对后导入。'); } else setNote('AI 未返回有效映射，请手动选择字段。');
     } catch (e) { setNote(`AI 映射失败：${e instanceof Error ? e.message : String(e)}。可手动选择字段。`); }
     setMapBusy(false);
@@ -56,7 +61,7 @@ export function MappingDialog({
                   <td>
                     <select aria-label={`${h} 映射到`} disabled={mapBusy} value={mapping[h] ?? ''} onChange={(e) => setMapping({ ...mapping, [h]: e.target.value })}>
                       <option value="">— 忽略 —</option>
-                      {targetFields.map((f) => <option key={f} value={f}>{FIELD_LABEL[f]||f}</option>)}
+                      {fields.map((f) => <option key={f} value={f}>{label(f)}</option>)}
                       {mapping[h]?.startsWith('custom:') && <option value={mapping[h]}>{mapping[h]}（AI 自定义）</option>}
                     </select>
                   </td>

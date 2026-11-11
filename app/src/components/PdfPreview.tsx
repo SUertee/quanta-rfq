@@ -1,3 +1,5 @@
+import {getAuth} from '../auth';
+import {appUrl} from '../engine/appUrl';
 import { useEffect, useRef, useState } from "react";
 
 /** Render within the page so preview works in browsers without a native PDF viewer. */
@@ -35,7 +37,8 @@ export function PdfPreview({ url, name }: { url: string; name: string }) {
       ]);
       if (!live) return;
       pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
-      const loading = pdfjs.getDocument({ url, useSystemFonts: true });
+      const token=url.startsWith(appUrl('/api/files/'))?getAuth()?.token:undefined;
+      const loading = pdfjs.getDocument({ url, httpHeaders:token?{Authorization:`Bearer ${token}`}:undefined, useSystemFonts: true });
       dispose = () => {
         void loading.destroy().catch(() => {});
       };

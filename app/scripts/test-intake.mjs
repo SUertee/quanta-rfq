@@ -1,3 +1,4 @@
+process.env.RFQ_BOOTSTRAP_PASSWORD = 'admin123'; // Isolated test database only.
 import {extractStructured} from '../server/intake-extract.mjs';
 import assert from "node:assert/strict";
 import initSqlJs from "sql.js";
@@ -181,9 +182,18 @@ let child;
 try {
   child = await start();
   const base = `http://127.0.0.1:${port}`;
-  const r = await fetch(base + "/api/inquiries", {
+  // 多账户：默认种子 admin/admin123
+  const login = await fetch(base + "/api/auth/login", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ username: "admin", password: "admin123" }),
+  });
+  assert.equal(login.status, 200);
+  const { token } = await login.json();
+  const auth = { "Content-Type": "application/json", Authorization: `Bearer ${token}` };
+  const r = await fetch(base + "/api/inquiries", {
+    method: "POST",
+    headers: auth,
     body: JSON.stringify({
       requestId: "http-test-01",
       operator: "HTTP tester",
@@ -195,17 +205,18 @@ try {
   assert.equal(data.lines.length, 2);
   const raw = await fetch(
     base + "/api/files/" + data.files[0].id + "/raw",
+    { headers: auth },
   );
   assert.equal(await raw.text(), csv);
   assert.ok(
-    (await (await fetch(base + "/api/price-resources")).json()).prices.length >
+    (await (await fetch(base + "/api/price-resources", { headers: auth })).json()).prices.length >
       0,
   );
   child.kill();
   await once(child, "exit");
   child = await start();
   assert.equal(
-    (await (await fetch(base + "/api/inquiries/" + data.id)).json()).lines
+    (await (await fetch(base + "/api/inquiries/" + data.id, { headers: auth })).json()).lines
       .length,
     2,
   );

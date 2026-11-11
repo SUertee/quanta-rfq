@@ -1,3 +1,4 @@
+import {accountStorageKey} from './persistence';
 import {canonicalJson} from '../../shared/quote-state.mjs';
 import {useEffect,useRef,useState} from 'react';
 import {appFetch} from './appUrl';
@@ -8,7 +9,7 @@ export interface QuoteDraftState {policy:PricingPolicy;lines:{key:string;price:n
 interface Reply {version:number;sourceFingerprint:string;state:QuoteDraftState|null;stale:boolean;}
 interface Pending {requestId:string;version:number;sourceFingerprint:string;state:QuoteDraftState;}
 interface Slot {id:string;sourceRevision:string;version:number;sourceFingerprint:string;last:string;pending:QuoteDraftState|null;pendingId:string;flight:Promise<void>|null;timer:ReturnType<typeof setTimeout>|null;error:string;conflict:boolean;}
-const journalKey=(id:string)=>`rfq-quote-pending:${id}`;
+const journalKey=(id:string)=>accountStorageKey(`rfq-quote-pending:${id}`);
 const messageOf=(error:unknown)=>error instanceof Error?error.message:'报价保存失败，请重试';
 
 /** Serial writes, optimistic concurrency and a local journal preserve unfinished edits. */

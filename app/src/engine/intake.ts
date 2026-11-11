@@ -11,6 +11,10 @@ export interface IntakeBatch {
   updated_at?: string;
   status: string;
   issues: string[];
+  /** 归属人：服务端字段名以实际为准（owner_name 或 ownerName），NULL = 待认领 */
+  owner_id?: string | null;
+  owner_name?: string | null;
+  ownerName?: string | null;
   files: {
     id: string;
     name: string;
@@ -51,6 +55,8 @@ export function batchEmail(b: IntakeBatch): EmailSample {
     intakeStatus: b.status,
     intakeUpdatedAt:b.updated_at,
     intakeIssues: b.issues,
+    ownerId: b.owner_id ?? null,
+    ownerName: b.owner_name ?? b.ownerName ?? null,
     file: b.files.map((f) => f.name).join(", "),
     subject: mail?.subject || b.title,
     from: mail?.from || "客户待补",
