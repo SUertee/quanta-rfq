@@ -6,10 +6,13 @@ import {tmpdir} from 'node:os';import {join} from 'node:path';import net from 'n
 const free=()=>new Promise(resolve=>{const server=net.createServer();server.listen(0,'127.0.0.1',()=>{const port=server.address().port;server.close(()=>resolve(port));});});
 const base=process.env.TEST_BASE_PATH||'/';
 const web=await free(),api=await free(),dir=await mkdtemp(join(tmpdir(),'rfq-production-')),origin=`http://127.0.0.1:${web}`;
-const child=spawn(process.execPath,['server/web.mjs'],{env:{...process.env,RFQ_BASE_PATH:base,RFQ_WEB_PORT:String(web),RFQ_PORT:String(api),RFQ_DB_PATH:join(dir,'test.sqlite'),RFQ_ALLOWED_ORIGINS:origin},stdio:'ignore'});
+const child=spawn(process.execPath,['server/web.mjs'],{env:{...process.env,RFQ_BASE_PATH:base,RFQ_WEB_PORT:String(web),RFQ_PORT:String(api),RFQ_DB_PATH:join(dir,'test.sqlite'),RFQ_ALLOWED_ORIGINS:origin,RFQ_REQUIRE_LOGIN:'0'},stdio:'ignore'});
 try{
  let healthy=false;for(let i=0;i<80;i++){try{healthy=(await fetch(origin+'/healthz')).ok;}catch{}if(healthy)break;await new Promise(r=>setTimeout(r,100));}assert.ok(healthy,'production server boot');
  const anonymous=await fetch(origin+base);assert.equal(anonymous.status,200);assert.equal(anonymous.headers.get('www-authenticate'),null);assert.equal((await fetch(origin+base+'api/agents')).status,401);
+ const automatic=await (await fetch(origin+base+'api/auth/session')).json();
+ assert.equal(automatic.loginRequired,false);assert.ok(automatic.token);assert.equal(automatic.account.role,'master');
+ assert.equal((await fetch(origin+base+'api/agents',{headers:{authorization:'Bearer '+automatic.token}})).status,200);
  const login=await fetch(origin+base+'api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'admin',password:'admin123'})});assert.equal(login.status,200);const{token}=await login.json();assert.ok(token);
  const headers={authorization:'Bearer '+token};
  const aircraft=await fetch(origin+base+'images/aviation-takeoff.jpg');assert.equal(aircraft.status,200);assert.equal(aircraft.headers.get('content-type'),'image/jpeg');const aircraftBytes=new Uint8Array(await aircraft.arrayBuffer());assert.equal(aircraftBytes[0],0xff);assert.equal(aircraftBytes[1],0xd8);

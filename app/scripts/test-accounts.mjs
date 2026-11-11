@@ -18,7 +18,7 @@ const base = `http://127.0.0.1:${port}`;
 
 async function start(extraEnv = {}) {
   const child = spawn(process.execPath, [fileURLToPath(new URL('../server/index.mjs', import.meta.url))], {
-    env: { ...process.env, RFQ_DB_PATH: dbPath, RFQ_PORT: String(port), RFQ_INTAKE_MODEL: 'off', RFQ_LLM_BASE_URL:'http://disabled.invalid', RFQ_LLM_API_KEY:'offline-test', VITE_LLM_MODEL:'offline-test', QUANTA_MCP_API_BASE: base, ...extraEnv },
+    env: { ...process.env, RFQ_DB_PATH: dbPath, RFQ_PORT: String(port), RFQ_INTAKE_MODEL: 'off', RFQ_REQUIRE_LOGIN:'1', RFQ_LLM_BASE_URL:'http://disabled.invalid', RFQ_LLM_API_KEY:'offline-test', VITE_LLM_MODEL:'offline-test', QUANTA_MCP_API_BASE: base, ...extraEnv },
     stdio: ['ignore', 'pipe', 'pipe'],
   });
   let log = '';
@@ -45,6 +45,7 @@ let child;
 try {
   // —— 首次启动：种子 admin ——
   child = await start();
+  assert.deepEqual(await (await get('/api/auth/session')).json(),{loginRequired:true});
   assert.equal((await get('/api/inquiries')).status, 401, '无令牌访问业务接口必须 401');
   assert.equal((await login('admin', 'wrong-pass')).status, 401, '密码错误必须 401');
   const adminLogin = await login('admin', 'admin123');

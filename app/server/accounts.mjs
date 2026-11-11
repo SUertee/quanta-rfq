@@ -68,6 +68,12 @@ export function createAccountStore(db, persist, { dbPath } = {}) {
     masterId() {
       return rows(db, "SELECT id FROM account WHERE role='master' ORDER BY created_at LIMIT 1")[0]?.id || null;
     },
+    workspaceSession(token) {
+      const current=token?store.authenticate(token):null;
+      const account=accountById(current?.accountId||store.masterId());
+      if(!account||account.disabled)throw new Error('工作台账户不可用');
+      return {account:publicAccount(account),token:current?token:issueToken(account.id)};
+    },
     verifyLogin(username, password) {
       const account = rows(db, 'SELECT * FROM account WHERE username=?', [String(username || '')])[0];
       if (!account || account.disabled || !verifyPassword(password, account.pass_hash)) return null;

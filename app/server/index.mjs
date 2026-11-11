@@ -34,6 +34,7 @@ const DB_PATH = process.env.RFQ_DB_PATH || fileURLToPath(new URL('./inventory.sq
 if(existsSync(DB_PATH) && !existsSync(DB_PATH+'.pre-intake.bak')) copyFileSync(DB_PATH,DB_PATH+'.pre-intake.bak');
 const SEED_PATH = fileURLToPath(new URL('../public/data/cost.json', import.meta.url));
 const PORT = Number(process.env.RFQ_PORT || 3004);
+const requireLogin = ['1','true'].includes(process.env.RFQ_REQUIRE_LOGIN||'');
 const allowedOrigins=new Set(['http://127.0.0.1:5176','http://localhost:5176',...(process.env.RFQ_ALLOWED_ORIGINS||'').split(',').map(v=>v.trim()).filter(Boolean)]);
 
 const CORE = [
@@ -250,7 +251,7 @@ http.createServer(async (req, res) => {
   const url = new URL(req.url, 'http://x');
   // 鉴权：除登录/健康检查/静态资源（非 /api 路径）外，一律要求 Bearer 令牌
   const isApi = url.pathname === '/api' || url.pathname.startsWith('/api/');
-  const isPublicApi = url.pathname === '/api/health' || (url.pathname === '/api/auth/login' && req.method === 'POST');
+  const isPublicApi = url.pathname === '/api/health' || (url.pathname === '/api/auth/session' && req.method === 'GET') || (url.pathname === '/api/auth/login' && req.method === 'POST');
   let ctx = null;
   if (isApi && !isPublicApi) {
     const bearer = /^Bearer\s+(.+)$/i.exec(String(req.headers.authorization || ''))?.[1]?.trim();
@@ -280,6 +281,11 @@ http.createServer(async (req, res) => {
   const pnMatch = url.pathname.match(/^\/api\/inventory\/([^/]+)$/);
   try {
     // —— 鉴权与账户管理 ——
+    if(url.pathname==='/api/auth/session'&&req.method==='GET'){
+      if(requireLogin){res.end(JSON.stringify({loginRequired:true}));return;}
+      const token=/^Bearer\s+(.+)$/i.exec(String(req.headers.authorization||''))?.[1]?.trim();
+      res.end(JSON.stringify({loginRequired:false,...accounts.workspaceSession(token)}));return;
+    }
     if(url.pathname==='/api/auth/login'&&req.method==='POST'){
       const {username,password}=await readBody(req,50000);
       const result=accounts.verifyLogin(username,password);

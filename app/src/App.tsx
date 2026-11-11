@@ -39,40 +39,54 @@ const sourceKey = (s: Source) => s.kind === 'email' ? `email:${s.id}` : `kanban:
 
 type View = 'home' | 'workbench' | 'inspect' | 'prices' | 'inventory' | 'settings' | 'eval';
 
-/** 鉴权门：无有效会话渲染登录页；mustChangePwd 时强制先改密 */
+/** The server selects direct workspace access or explicit account login. */
 export default function App() {
-  const [auth, setAuthState] = useState<AuthState | null>(() => getAuth());
-  const [checking, setChecking] = useState(() => !!getAuth()?.token);
-  useEffect(() => {
-    const expired = () => setAuthState(null);
-    window.addEventListener(AUTH_EXPIRED_EVENT, expired);
-    return () => window.removeEventListener(AUTH_EXPIRED_EVENT, expired);
-  }, []);
-  useEffect(() => {
-    const current = getAuth();
-    if (!current?.token) { setChecking(false); return; }
-    let cancelled = false;
-    fetch('/api/auth/me').then(async (r) => {
-      if (!r.ok) throw new Error('会话校验失败');
-      const me = (await r.json()) as AuthAccount;
-      if (cancelled) return;
-      const next: AuthState = { token: current.token, account: { ...current.account, ...me } };
-      setAuth(next);
+  const [auth,setAuthState]=useState<AuthState|null>(()=>getAuth());
+  const [checking,setChecking]=useState(true);
+  const [loginRequired,setLoginRequired]=useState(false);
+  const [sessionEpoch,setSessionEpoch]=useState(0);
+  const [sessionError,setSessionError]=useState('');
+  const reloadSession=()=>{setChecking(true);setSessionEpoch(value=>value+1);};
+  useEffect(()=>{
+    const expired=()=>{setAuthState(null);reloadSession();};
+    window.addEventListener(AUTH_EXPIRED_EVENT,expired);
+    return()=>window.removeEventListener(AUTH_EXPIRED_EVENT,expired);
+  },[]);
+  useEffect(()=>{
+    let cancelled=false;
+    setSessionError('');
+    void (async()=>{
+      const response=await fetch('/api/auth/session');
+      if(!response.ok)throw new Error('工作台暂时无法连接，请重试');
+      const session=await response.json() as {loginRequired:boolean;token?:string;account?:AuthAccount};
+      if(cancelled)return;
+      setLoginRequired(session.loginRequired);
+      let next:AuthState|null=null;
+      if(!session.loginRequired&&session.token&&session.account){
+        next={token:session.token,account:session.account};
+      }else{
+        const current=getAuth();
+        if(current?.token){
+          const me=await fetch('/api/auth/me');
+          if(cancelled)return;
+          if(me.ok)next={token:current.token,account:await me.json() as AuthAccount};
+        }
+      }
+      if(cancelled)return;
+      if(next)setAuth(next);else clearAuth();
       setAuthState(next);
-    }).catch(() => {
-      if (cancelled) return;
-      clearAuth();
-      setAuthState(null);
-    }).finally(() => { if (!cancelled) setChecking(false); });
-    return () => { cancelled = true; };
-  }, []);
-  if (checking) return <div className="boot">正在载入…</div>;
-  if (!auth) return <LoginPage onLogin={(next) => setAuthState(next)} />;
-  if (auth.account.mustChangePwd) return <LoginPage initialAuth={auth} onLogin={(next) => setAuthState(next)} />;
-  return <Workspace key={auth.account.id} account={auth.account} onLogout={() => setAuthState(null)} />;
+    })().catch(error=>{if(!cancelled)setSessionError(error.message);})
+      .finally(()=>{if(!cancelled)setChecking(false);});
+    return()=>{cancelled=true;};
+  },[sessionEpoch]);
+  if(checking)return <div className="boot" role="status">正在载入…</div>;
+  if(sessionError)return <div className="boot" role="alert">{sessionError}<button className="btn" onClick={reloadSession}>重新连接</button></div>;
+  if(!auth)return <LoginPage onLogin={setAuthState}/>;
+  if(loginRequired&&auth.account.mustChangePwd)return <LoginPage initialAuth={auth} onLogin={setAuthState}/>;
+  return <Workspace key={auth.account.id} account={auth.account} loginRequired={loginRequired} onLogout={()=>{setAuthState(null);reloadSession();}}/>;
 }
 
-function Workspace({account,onLogout}:{account:AuthAccount;onLogout:()=>void}) {
+function Workspace({account,onLogout,loginRequired}:{account:AuthAccount;onLogout:()=>void;loginRequired:boolean}) {
   const userId = account.id;
   const userName = account.displayName || account.username;
   /** 本机持久化 key 加账户命名空间，防止切账户串数据 */
@@ -366,7 +380,7 @@ function Workspace({account,onLogout}:{account:AuthAccount;onLogout:()=>void}) {
           <button className={`nav-item ${mode==='agent'?'active':''}`} onClick={()=>{setMode('agent');setAssistantOpen(false);setAssistantDocked(false);}}><span className="nav-label">AI 对话</span></button>
         </nav>
         <div className="sidebar-foot">
-          <AccountMenu account={account} onExit={logout} onProfile={()=>setProfileOpen(true)} onBusiness={()=>{setSettingsSection('pricing');setSettingsOpen(true);}} onModels={()=>{setSettingsSection('services');setSettingsOpen(true);}} onAccountAdmin={()=>setAdminOpen(true)} onEmailBindings={()=>setBindingsOpen(true)} onChangePassword={()=>setPwdOpen(true)} />
+          <AccountMenu loginRequired={loginRequired} account={account} onExit={logout} onProfile={()=>setProfileOpen(true)} onBusiness={()=>{setSettingsSection('pricing');setSettingsOpen(true);}} onModels={()=>{setSettingsSection('services');setSettingsOpen(true);}} onAccountAdmin={()=>setAdminOpen(true)} onEmailBindings={()=>setBindingsOpen(true)} onChangePassword={()=>setPwdOpen(true)} />
         </div>
       </aside>
       <main className={`content ${mode === 'workbench' && view === 'workbench' && assistantOpen ? 'with-copilot' : ''}`}>
