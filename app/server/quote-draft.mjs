@@ -1,3 +1,4 @@
+import {validDate} from '../shared/normalization.mjs';
 import {canonicalJson} from '../shared/quote-state.mjs';
 import {createHash} from 'node:crypto';
 import {z} from 'zod';
@@ -13,7 +14,9 @@ const policySchema=z.object({
 }).strict();
 const costSchema=z.object({value:money.positive(),source:z.enum(['ai','manual']),basis:z.string().max(8000).optional(),refs:z.array(z.object({title:z.string().max(1000),url:z.string().max(2000)})).max(50).optional(),verdict:z.enum(['有市场依据','有间接参考','纯经验估算']).optional(),limitation:z.string().max(4000).optional(),trace:z.array(z.object({query:z.string().max(1000),hits:z.number().nonnegative()})).max(50).optional()}).strict();
 const lineSchema=z.object({key:z.string().max(200),price:money.positive().nullable(),manual:z.boolean(),reviewed:z.boolean(),skipped:z.boolean(),manualCost:costSchema.nullable(),selectedBasisId:z.string().min(1).max(200).nullable().optional()}).strict();
-const saveSchema=z.object({requestId:z.string().uuid(),version:z.number().int().nonnegative(),sourceFingerprint:z.string().regex(/^[a-f0-9]{64}$/),operator:z.string().trim().min(1).max(100),policy:policySchema,lines:z.array(lineSchema).max(150)}).strict();
+const companySchema=z.object(Object.fromEntries(['name','address','creditCode','contact','operator','warrantyLabel','warrantyNew','warrantyOh','validityDays'].map(key=>[key,z.string().max(1000)]))).extend({termsTemplate:z.string().max(8000).optional()}).strict();
+const documentSchema=z.object({customerName:z.string().max(200),quoteDate:z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine(value=>!!validDate(value)),deliveryTerms:z.string().max(1000),company:companySchema}).strict();
+const saveSchema=z.object({requestId:z.string().uuid(),version:z.number().int().nonnegative(),sourceFingerprint:z.string().regex(/^[a-f0-9]{64}$/),operator:z.string().trim().min(1).max(100),document:documentSchema.optional(),policy:policySchema,lines:z.array(lineSchema).max(150)}).strict();
 const hash=value=>createHash('sha256').update(canonicalJson(value)).digest('hex');
 const fail=(status,message)=>{const error=new Error(message);error.status=status;throw error;};
 
@@ -70,7 +73,8 @@ export function createQuoteDraftStore(db,persist,getInquiry,getUnitConversions=(
       if(line.reviewed&&(policyChanged||sourceChanged||changed)){invalidated=true;return {...line,reviewed:false};}
       return line;
     });
-    const state={policy:body.policy,lines},content=JSON.stringify(state),version=body.version+1,now=new Date().toISOString();
+    const document=body.document??prior?.document;
+    const state={...(document?{document}:{}),policy:body.policy,lines},content=JSON.stringify(state),version=body.version+1,now=new Date().toISOString();
     db.run('BEGIN');
     try{
       db.run('INSERT INTO quote_draft VALUES(?,?,?,?,?,?) ON CONFLICT(inquiry_id) DO UPDATE SET version=excluded.version,source_fingerprint=excluded.source_fingerprint,content=excluded.content,operator=excluded.operator,updated_at=excluded.updated_at',[id,version,fingerprint,content,body.operator,now]);
@@ -93,6 +97,7 @@ export function validateSavedQuote(receipt,saved){
   if(!saved.state||saved.stale||receipt.draftVersion!==saved.version)fail(409,'询价审核版本已变化，请载入最新版本后导出');
   let content;try{content=JSON.parse(receipt.content);}catch{fail(400,'报价内容无效');}
   if(content.draftVersion!==saved.version||hash(content.policy)!==hash(saved.state.policy))fail(409,'报价策略版本不一致，请重新核对');
+  if(hash(content.document??null)!==hash(saved.state.document??null))fail(409,'报价单内容未保存，请等待保存后导出');
   const expected=new Map(saved.state.lines.map(line=>[line.key,line]));
   if(content.lines?.length!==expected.size)fail(409,'报价行不一致');
   for(const line of content.lines){

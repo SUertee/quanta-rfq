@@ -1426,3 +1426,64 @@ tr:hover .material-reference-name>.reference-cite,.material-reference-name:focus
 .layout-reference .workflow-card-header { display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin:0 0 20px;padding:0; }
 .layout-reference .stage-checks>.stage-check-filters { display:flex;padding:0;margin:0 0 16px;border:0; }
 .layout-reference .stage-checks .stage-check-row + .stage-check-row { border-top:1px solid var(--line); }
+
+/* Final review keeps downloads aligned at the lower right. */
+.layout-reference .export-final-actions { display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;margin-top:24px; }
+.layout-reference .export-final-actions .export-row { justify-content:flex-end;margin:0 0 0 auto; }
+@media(max-width:600px) {
+ .layout-reference .export-final-actions { align-items:flex-start;gap:16px; }
+ .layout-reference .export-final-actions .export-row { width:100%;gap:8px; }
+}
+
+/* Conflict evidence carries a row-level signal in addition to its status label. */
+.layout-reference .resource-table tr.resource-conflict>td { background:#fff3ef; }
+.layout-reference .resource-table tr.resource-conflict>td:first-child { box-shadow:inset 3px 0 0 #c45740; }
+.layout-reference .resource-table tr.resource-conflict>td[data-label="匹配结果"] { color:#923d2c; }
+.layout-reference .resource-table tr.resource-conflict>td[data-label="匹配结果"] li::marker { color:#b34c35; }
+@media(max-width:650px) {
+ .layout-reference .resource-table tr.resource-conflict { background:#fff3ef;box-shadow:inset 3px 0 0 #c45740;padding:20px 16px; }
+ .layout-reference .resource-table tr.resource-conflict>td { background:transparent; }
+ .layout-reference .resource-table tr.resource-conflict>td:first-child { box-shadow:none; }
+}
+
+/* Current pricing basis remains visible after selection and synchronization. */
+.layout-reference .resource-table tr.resource-current>td { background:#e9f6f2; }
+.layout-reference .resource-table tr.resource-current>td:first-child { box-shadow:inset 3px 0 0 #287b67; }
+.layout-reference .resource-selected { display:block;margin-top:10px;color:#1c6552;font-weight:600; }
+.layout-reference .evidence-selection { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;background:#e9f6f2;border:1px solid #b8dcd0;border-radius:var(--radius-control);padding:12px 16px;color:#1c6552; }
+@media(max-width:650px) {
+ .layout-reference .resource-table tr.resource-current { background:#e9f6f2;box-shadow:inset 3px 0 0 #287b67;padding:20px 16px; }
+ .layout-reference .resource-table tr.resource-current>td { background:transparent; }
+ .layout-reference .resource-table tr.resource-current>td:first-child { box-shadow:none; }
+}
+
+/* Match labels share the table header's text edge without badge insets. */
+.layout-reference .resource-table td>.resource-match-status { display:block;padding:0;margin:0;border:0;background:transparent;line-height:1.6; }
+.layout-reference .resource-table td>.resource-match-status[data-state="usable"] { color:#1c6552; }
+.layout-reference .resource-table td>.resource-match-status[data-state="conflict"] { color:#923d2c; }
+.layout-reference .resource-table td>.resource-match-status[data-state="needs_review"] { color:#8b641f; }
+.layout-reference .resource-table td>.resource-selected { padding:0;margin-left:0; }
+
+.layout-reference .signature-block { display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-top:20px;padding:14px 16px;border-left:3px solid #b67a20;background:#fff6e5;color:#805719;border-radius:var(--radius-control);font-size:14px;line-height:1.6; }
+
+.layout-reference .export-card-header .quote-signature-actions { margin-left:auto;justify-content:flex-end; }
+.layout-reference .stage-export>.quote-signature-identity { margin-bottom:20px; }
+
+.layout-reference .quote-document-header-actions { display:flex;gap:8px;flex-wrap:wrap;margin-left:auto;justify-content:flex-end; }
+.layout-reference .quote-document-fields { padding:24px;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px; }
+.layout-reference .quote-document-fields label { display:flex;flex-direction:column;gap:8px;min-width:0; }
+.layout-reference .quote-document-fields input,.layout-reference .quote-document-fields textarea { width:100%;box-sizing:border-box;min-height:42px;padding:10px 12px;border:1px solid var(--line);border-radius:var(--field-radius);background:var(--hal-head);color:var(--ink);font:inherit; }
+.layout-reference .quote-document-fields .span2 { grid-column:1/-1; }
+.layout-reference .quote-document-actions { display:flex;justify-content:flex-end;gap:12px;padding:0 24px 24px; }
+@media(max-width:600px) { .layout-reference .quote-document-fields { grid-template-columns:minmax(0,1fr);padding:20px; } }
+.layout-reference .quote-document-dialog { width:760px;padding:0;overflow:hidden; }
+.layout-reference .quote-document-dialog[open] { display:flex;flex-direction:column; }
+.layout-reference .quote-document-dialog>.app-dialog-head { flex-shrink:0;margin:0;padding:20px 24px; }
+.layout-reference .quote-document-dialog>form { display:flex;flex-direction:column;min-height:0;overflow:hidden; }
+.layout-reference .quote-document-fields { overflow-y:auto;overscroll-behavior:contain; }
+.layout-reference .quote-document-actions { flex-shrink:0;padding-top:16px; }
+.layout-reference .quote-document-fields label { font-size:14px;line-height:1.5; }
+@media(max-width:600px) {
+ .layout-reference .quote-document-dialog>.app-dialog-head { padding:20px; }
+ .layout-reference .quote-document-actions { padding-right:20px;padding-left:20px; }
+}

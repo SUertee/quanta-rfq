@@ -5,7 +5,7 @@ import { Badge } from '../components/ui';
 import type { PricingPolicy } from '../engine/pricingPolicy';
 import { getAiConfig, saveAiConfig, type AiConfig } from '../engine/config';
 import { getCompany, saveCompany, type CompanyInfo } from '../engine/company';
-import { listChatModels, llmPing } from '../engine/llm';
+import { modelConfigured, listChatModels, llmPing } from '../engine/llm';
 import {
   DEFAULT_CERTIFICATES, DEFAULT_SCHEMA, INDUSTRY_TEMPLATES, applyTemplate, fieldsFor,
   loadFieldSchema, saveFieldSchema,
@@ -47,6 +47,16 @@ export function SettingsPage({
   const [saved, setSaved] = useState('');
   const [testing, setTesting] = useState(false);
   const [modelOptions, setModelOptions] = useState<string[]>([]);
+  useEffect(()=>{
+    let active=true;
+    void fetch('/api/model-config').then(response=>response.ok?response.json():null).then(config=>{
+      if(!active||!config?.configured||!config.model)return;
+      setAi(current=>current.llm.baseUrl==='/llm'?{...current,llm:{...current.llm,apiKey:'',model:config.model}}:current);
+      setBaseline(current=>{const values=JSON.parse(current);if(values[0].llm.baseUrl==='/llm')values[0].llm={...values[0].llm,apiKey:'',model:config.model};return JSON.stringify(values);});
+    }).catch(()=>{});
+    return()=>{active=false;};
+  },[]);
+
   const [company, setCompany] = useState<CompanyInfo>(getCompany);
   const [units, setUnits] = useState<{ pn: string; uom: string; factor: number }[]>([]);
   const [newUnit, setNewUnit] = useState({ pn: '', uom: 'IN', factor: '' });
@@ -167,7 +177,7 @@ export function SettingsPage({
 
   const saveAi = () => {
     const savePlatform = scope==='platform'||scope==='all'&&JSON.stringify(ai)!==JSON.stringify(JSON.parse(baseline)[0]);
-    if (savePlatform && (!ai.llm.apiKey || !ai.llm.model || !ai.llm.baseUrl)) {
+    if (savePlatform && (!modelConfigured(ai.llm) || !ai.llm.baseUrl)) {
       selectSection('services'); setSaved('请填写模型 API Key、模型名称和接口地址'); return false;
     }
     if (scope!=='platform' && (Object.values(policy).some((v) => typeof v === 'number' && (!Number.isFinite(v) || v < 0)) || policy.marginFloor >= 1 || (policy.fxUsd != null && policy.fxUsd <= 0) || (policy.fxEur != null && policy.fxEur <= 0))) {
@@ -190,7 +200,7 @@ export function SettingsPage({
     try {
       const models = await listChatModels(ai.llm);
       setModelOptions(models.map((m) => m.id));
-      setSaved(`已读取 ${models.length} 个当前 Key 可调用的聊天模型`);
+      setSaved(`已读取 ${models.length} 个可用聊天模型`);
       if (models.length && !models.some((m) => m.id === ai.llm.model)) {
         setAi({ ...ai, llm: { ...ai.llm, model: models[0].id } });
       }
@@ -231,7 +241,7 @@ export function SettingsPage({
       <div className="panel">
         <div className="panel-title">
           模型服务与文档解析配置
-          <button className="btn" disabled={testing || !ai.llm.apiKey || !ai.llm.model} onClick={testAi}>{testing ? '请求中…' : '测试模型连接'}</button>
+          <button className="btn" disabled={testing || !modelConfigured(ai.llm)} onClick={testAi}>{testing ? '请求中…' : '测试模型连接'}</button>
           <button className="btn" disabled={testing} onClick={resetAi}>撤销模型修改</button>
         </div>
         <fieldset disabled={testing} className="ai-grid settings-fields">
@@ -251,7 +261,7 @@ export function SettingsPage({
                 <input value={ai.llm.model} onChange={(e) => setAi({ ...ai, llm: { ...ai.llm, model: e.target.value.trim() } })} />
               )}
             </label>
-            <button className="btn" disabled={testing || !ai.llm.apiKey} onClick={loadModels}>读取当前 Key 可用模型</button>
+            <button className="btn" disabled={testing || !modelConfigured(ai.llm)} onClick={loadModels}>读取可用模型</button>
             <label>接口地址（高级，默认 /llm 本机代理）
               <input value={ai.llm.baseUrl}
                 onChange={(e) => setAi({ ...ai, llm: { ...ai.llm, baseUrl: e.target.value.trim() } })} />

@@ -295,6 +295,7 @@ http.createServer(async (req, res) => {
       res.end(JSON.stringify(result));return;
     }
     if(url.pathname==='/api/auth/logout'&&req.method==='POST'){accounts.logout(ctx.token);res.end(JSON.stringify({ok:true}));return;}
+    if(url.pathname==='/api/model-config'&&req.method==='GET'){res.end(JSON.stringify({configured:!!runtime.model,model:runtime.model?.model||''}));return;}
     if(url.pathname==='/api/auth/me'&&req.method==='GET'){res.end(JSON.stringify(accounts.listAccounts().find(a=>a.id===ctx.accountId)||null));return;}
     if(url.pathname==='/api/auth/change-password'&&req.method==='POST'){
       const {oldPassword,newPassword}=await readBody(req,50000);

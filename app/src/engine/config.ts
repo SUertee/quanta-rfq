@@ -13,7 +13,7 @@ const defaults = (): AiConfig => ({
   llm: {
     baseUrl: '/llm', // vite 代理 → MOI Genesis（生产由后端代理）
     apiKey: '', // Model credentials are injected only by the server-side proxy.
-    model: import.meta.env.VITE_LLM_MODEL ?? 'deepseek-v4.1-flash',
+    model: import.meta.env.VITE_LLM_MODEL ?? 'DeepSeek-V4.1-Flash',
   },
   search: {
     enabled: false,

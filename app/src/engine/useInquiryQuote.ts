@@ -3,9 +3,10 @@ import {canonicalJson} from '../../shared/quote-state.mjs';
 import {useEffect,useRef,useState} from 'react';
 import {appFetch} from './appUrl';
 import type {PricingPolicy} from './pricingPolicy';
+import type {QuoteDocument} from './quoteDocument';
 import type {EstCost} from '../types';
 
-export interface QuoteDraftState {policy:PricingPolicy;lines:{key:string;price:number|null;manual:boolean;reviewed:boolean;skipped:boolean;manualCost:EstCost|null;selectedBasisId?:string|null}[];}
+export interface QuoteDraftState {document?:QuoteDocument;policy:PricingPolicy;lines:{key:string;price:number|null;manual:boolean;reviewed:boolean;skipped:boolean;manualCost:EstCost|null;selectedBasisId?:string|null}[];}
 interface Reply {version:number;sourceFingerprint:string;state:QuoteDraftState|null;stale:boolean;}
 interface Pending {requestId:string;version:number;sourceFingerprint:string;state:QuoteDraftState;}
 interface Slot {id:string;sourceRevision:string;version:number;sourceFingerprint:string;last:string;pending:QuoteDraftState|null;pendingId:string;flight:Promise<void>|null;timer:ReturnType<typeof setTimeout>|null;error:string;conflict:boolean;}

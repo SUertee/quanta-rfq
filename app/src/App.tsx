@@ -1,3 +1,4 @@
+import type {QuoteDocument} from './engine/quoteDocument';
 import type {WorkflowRun,InquiryStage} from './engine/workflow';
 import {useInquiryQuote} from './engine/useInquiryQuote';
 import {appFetch as fetch,appUrl} from './engine/appUrl';
@@ -130,6 +131,7 @@ function Workspace({account,onLogout,loginRequired}:{account:AuthAccount;onLogou
   }, []);
   const [policy, setPolicy] = useStoredState<PricingPolicy>(ns('policy'), DEFAULT_POLICY);
   const [priceBook, setPriceBook] = useStoredState<Record<string, number>>(ns('prices'), {});
+  const [quoteDocuments,setQuoteDocuments]=useStoredState<Record<string,QuoteDocument>>(ns('quote-documents'),{});
   const [selectedBases,setSelectedBases]=useStoredState<Record<string,string>>(ns('selected-bases'),{});
   const [manualPrices, setManualPrices] = useStoredState<Set<string>>(ns('manual-prices'), new Set());
   const [skipped, setSkipped] = useStoredState<Set<string>>(ns('skipped-lines'), new Set());
@@ -206,8 +208,9 @@ function Workspace({account,onLogout,loginRequired}:{account:AuthAccount;onLogou
   }, [dsx2, source, lineEdits, addedLines,selectedBases]);
   const priced = useMemo(() => (dsx2 ? priceAll(current.lines, dsx2, priceOpts) : []), [dsx2, current.lines, priceOpts]);
 
-  const quoteSync=useInquiryQuote({inquiryId:current.email?.intakeBatchId,sourceRevision:JSON.stringify({rows:current.email?.parsedRows||[],status:current.email?.intakeStatus,issues:current.email?.intakeIssues||[]}),operator:userName,value:{policy:policyFull,lines:current.lines.map(line=>({key:line.key,price:priceBook[line.key]??null,manual:manualPrices.has(line.key),reviewed:resolved.has(line.key),skipped:skipped.has(line.key),manualCost:estCost[line.key]??null,selectedBasisId:selectedBases[line.key]??null}))},onRestore:state=>{
+  const quoteSync=useInquiryQuote({inquiryId:current.email?.intakeBatchId,sourceRevision:JSON.stringify({rows:current.email?.parsedRows||[],status:current.email?.intakeStatus,issues:current.email?.intakeIssues||[]}),operator:userName,value:{document:source?quoteDocuments[sourceKey(source)]:undefined,policy:policyFull,lines:current.lines.map(line=>({key:line.key,price:priceBook[line.key]??null,manual:manualPrices.has(line.key),reviewed:resolved.has(line.key),skipped:skipped.has(line.key),manualCost:estCost[line.key]??null,selectedBasisId:selectedBases[line.key]??null}))},onRestore:state=>{
     const prefix=`intake-${current.email?.intakeBatchId}-`;
+    if(source)setQuoteDocuments(old=>{const next={...old};if(state.document)next[sourceKey(source)]=state.document;else delete next[sourceKey(source)];return next;});
     setPolicy(state.policy);
     setSelectedBases(old=>({...Object.fromEntries(Object.entries(old).filter(([key])=>!key.startsWith(prefix))),...Object.fromEntries(state.lines.filter(line=>line.selectedBasisId).map(line=>[line.key,line.selectedBasisId!]))}));
     setPriceBook(old=>({...Object.fromEntries(Object.entries(old).filter(([key])=>!key.startsWith(prefix))),...Object.fromEntries(state.lines.filter(line=>line.price!=null).map(line=>[line.key,line.price!]))}));
@@ -448,7 +451,7 @@ function Workspace({account,onLogout,loginRequired}:{account:AuthAccount;onLogou
           {quoteSync.error?<><strong>询价加载失败</strong><button className="btn" onClick={quoteSync.retry}>重新加载</button></>:<span className="inquiry-loading-spinner" aria-hidden="true" />}
         </section>}
         {view === 'workbench' && source && quoteSync.ready && (
-          <WorkbenchPage focusTarget={inspectionTarget} onConfigureRules={()=>{setSettingsSection('pricing');setSettingsOpen(true);}} run={current.email?.intakeBatchId?workflowRuns[current.email.intakeBatchId]:undefined} persistenceError={quoteSync.error} persistenceConflict={quoteSync.conflict} onRetryQuote={()=>{if(quoteSync.conflict){quoteSync.loadServer();setInvVersion(version=>version+1);}else quoteSync.retry();}} quoteVersion={current.email?.intakeBatchId?quoteSync.version:undefined} persistencePending={!quoteSync.ready||quoteSync.saving||!!quoteSync.error} key={sourceKey(source)} onDataRefresh={()=>setInvVersion(v=>v+1)}
+          <WorkbenchPage quoteDocument={quoteDocuments[sourceKey(source)]} onDocumentChange={document=>setQuoteDocuments(old=>({...old,[sourceKey(source)]:document}))} focusTarget={inspectionTarget} onConfigureRules={()=>{setSettingsSection('pricing');setSettingsOpen(true);}} run={current.email?.intakeBatchId?workflowRuns[current.email.intakeBatchId]:undefined} persistenceError={quoteSync.error} persistenceConflict={quoteSync.conflict} onRetryQuote={()=>{if(quoteSync.conflict){quoteSync.loadServer();setInvVersion(version=>version+1);}else quoteSync.retry();}} quoteVersion={current.email?.intakeBatchId?quoteSync.version:undefined} persistencePending={!quoteSync.ready||quoteSync.saving||!!quoteSync.error} key={sourceKey(source)} onDataRefresh={()=>setInvVersion(v=>v+1)}
             onAskAgent={(key) => { setAgentLineKey(key); setAssistantOpen(true); }}
             selectedAgentLine={agentLineKey}
             selectedBases={selectedBases} onSelectBasis={(key,id)=>{

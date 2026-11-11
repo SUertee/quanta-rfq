@@ -10,7 +10,8 @@ import { allowedUnitsFor, fieldsFor, schemaPrompt, validateValue, type FieldSche
 
 const cfg = () => getAiConfig().llm;
 
-export const llmConfigured = () => cfg().apiKey.length > 0;
+export const modelConfigured = (config = cfg()) => !!config.model && (!!config.apiKey || config.baseUrl.replace(/\/$/,'')==='/llm');
+export const llmConfigured = () => modelConfigured();
 
 export interface GenesisModel {
   id: string;
@@ -21,9 +22,9 @@ export interface GenesisModel {
 
 /** Query models visible to the current Genesis credential. */
 export async function listChatModels(config = cfg()): Promise<GenesisModel[]> {
-  if (!config.apiKey) return [];
+  if (!modelConfigured(config)) return [];
   const r = await fetch(`${config.baseUrl}/models?type=chat`, {
-    headers: { Authorization: `Bearer ${config.apiKey}` },
+    headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
     signal: AbortSignal.timeout(45000),
   });
   if (!r.ok) throw new Error(`模型列表请求失败 ${r.status}：${(await r.text()).slice(0, 160)}`);
@@ -33,7 +34,7 @@ export async function listChatModels(config = cfg()): Promise<GenesisModel[]> {
 
 /** 在线探测：注意必须用够 max_tokens（推理模型会先用 token 思考，给太少会空回复被网关判 502） */
 export async function llmPing(config = cfg()): Promise<boolean> {
-  if (!config.apiKey) return false;
+  if (!modelConfigured(config)) return false;
   try {
     const text = await chat([{ role: 'user', content: '回复 ok' }], 64, config);
     return text.trim().length > 0;
@@ -53,7 +54,7 @@ export async function chat(messages: ChatMessage[], maxTokens = 2000, config = c
   try {
     const r = await fetch(`${config.baseUrl}/chat/completions`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${config.apiKey}` },
+      headers: { 'Content-Type': 'application/json', ...(config.apiKey?{Authorization:`Bearer ${config.apiKey}`}:{}) },
       body: JSON.stringify({ model: config.model, messages, max_tokens: maxTokens, temperature: 0 }),
       signal: ctrl.signal,
     });

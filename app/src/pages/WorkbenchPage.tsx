@@ -1,3 +1,5 @@
+import {QuoteDocumentEditor} from '../components/QuoteDocumentEditor';
+import type {QuoteDocument} from '../engine/quoteDocument';
 import {ModuleBorderGrips} from "../components/ModuleBorderGrips";
 import {useWorkflowPresentation} from '../engine/useWorkflowPresentation';
 import {useModuleReferenceDrag} from '../engine/useModuleReferenceDrag';
@@ -59,9 +61,11 @@ function RawHighlight({ body, needle }: { body: string; needle: string }) {
 
 /** 报价工作台：一个页面完成 核对 → 定价 → 预览 → 导出 */
 export function WorkbenchPage({
-  focusTarget,onConfigureRules,run, selectedBases={},onSelectBasis,persistenceError, persistenceConflict, onRetryQuote, quoteVersion, persistencePending=false, onDataRefresh, onAskAgent, selectedAgentLine, ds, source, lines, priced, email, label, assigneeId, onAssigneeChange, currentUserId, inquiryError,
+  quoteDocument,onDocumentChange,focusTarget,onConfigureRules,run, selectedBases={},onSelectBasis,persistenceError, persistenceConflict, onRetryQuote, quoteVersion, persistencePending=false, onDataRefresh, onAskAgent, selectedAgentLine, ds, source, lines, priced, email, label, assigneeId, onAssigneeChange, currentUserId, inquiryError,
   policy, priceBook, setPriceBook, resolved, setResolved, estCost, setEstCost, manualPrices, setManualPrices, skipped, setSkipped, taskKey, timing, ops, onTime, onOp, onEditLine, onAddLine, onBack, onApplyLlmRows,
 }: {
+  quoteDocument?:QuoteDocument;
+  onDocumentChange?:(document:QuoteDocument)=>void;
   focusTarget?:{id:number;stage:InquiryStage;lineKey:string}|null;
   onConfigureRules?:()=>void;
   run?:WorkflowRun;
@@ -393,16 +397,19 @@ export function WorkbenchPage({
   const exportable = !inquiryError && !invalidLines.length && gate.ok;
   const overCap = orderTotal > policy.orderCapCny;
 
+  const documentValues:QuoteDocument=quoteDocument||{customerName:lines[0]?.customer||'',quoteDate:new Date().toISOString().slice(0,10),deliveryTerms:'合同约定',company:getCompany()};
+  const [documentEditing,setDocumentEditing]=useState(false);
   const exportCtx: ExportCtx = {
-    taskLabel: label, priceBook, policy, company: getCompany(), resolved, skipped,
+    taskLabel: label, priceBook, policy, company: documentValues.company, document:documentValues, resolved, skipped,
     manualCost: estCost, schema: ds.fieldSchema,
   };
-  const unsignedReceiptContent=JSON.stringify({schemaVersion:2,draftVersion:quoteVersion,policy,company:getCompany(),manualCost:estCost,lines:priced.map(p=>({
+  const unsignedReceiptContent=JSON.stringify({schemaVersion:2,draftVersion:quoteVersion,policy,document:quoteDocument,company:documentValues.company,manualCost:estCost,lines:priced.map(p=>({
     key:p.line.key,pn:p.line.partNumber,desc:p.line.description,requestedQty:p.line.quantity,qty:quoteQtyOf(p).qty,
     uom:p.line.uom,condition:p.line.condition,requirement:p.line.requirement,needByDate:p.line.needByDate||'',dueDate:p.line.dueDate,quoteDeadline:p.line.quoteDeadline||'',ruleVersion:p.ruleVersion,basisId:p.basisId,basisResource:p.basisResource,price:priceBook[p.line.key]??null,skipped:skipped.has(p.line.key),reviewed:resolved.has(p.line.key),flags:p.flags,
   }))});
   const quoteSignature=useQuoteSignature(taskKey,unsignedReceiptContent);
   const [signatureOpen,setSignatureOpen]=useState(false);
+  const [signatureRequested,setSignatureRequested]=useState(false);
   const currentReceiptContent=quoteSignature.signature?JSON.stringify({...JSON.parse(unsignedReceiptContent),signature:quoteSignature.signature}):unsignedReceiptContent;
   exportCtx.signature=quoteSignature.signature;
   const liveReceiptContent=useRef(currentReceiptContent);
@@ -507,6 +514,21 @@ export function WorkbenchPage({
   const customFieldIssues=lines.reduce((sum,l)=>sum+validateCustomFields(ds.fieldSchema,'inquiry',l.customFields).length,0);
   const extractionGaps=lines.filter(l=>!l.partNumber||!(l.quantity>0)||!l.uom||(needCondition&&!l.condition)||l.issues.length).length+customFieldIssues+(intakeRecord?.issues.length||0);
   const stageExportable=!persistencePending&&exportable&&extractionGaps===0&&activePriced.length>0&&activePriced.every(p=>resolved.has(p.line.key));
+  const signatureBlock = persistencePending
+    ? {message:'报价尚未保存完成，请等待保存或处理保存错误。',stage:null}
+    : inquiryError || extractionGaps>0 || invalidLines.length || !activePriced.length
+      ? {message:'请先补全物料信息，再签署报价单。',stage:2 as InquiryStage}
+      : gate.unpriced.length
+        ? {message:`还有 ${gate.unpriced.length} 行未确认报价单价，请先完成定价。`,stage:5 as InquiryStage}
+        : !stageExportable
+          ? {message:`还有 ${activePriced.filter(p=>!resolved.has(p.line.key)).length || gate.blocked.length} 行供货条件待核对，请先完成审核。`,stage:4 as InquiryStage}
+          : !quoteSignature.basis
+            ? {message:quoteSignature.error||'正在准备当前报价的签名，请稍后重试。',stage:null}
+            : null;
+  const requestSignature=()=>{
+    setSignatureRequested(true);
+    if(!signatureBlock)setSignatureOpen(true);
+  };
   const stageItems=inquiryStages({materialCount:intakeRecord?.files.length ?? (email?1+email.attachments.length:lines.length?1:0),lineCount:lines.length,extractionGaps,matchedLines:intakeRecord?intakeRecord.lines.filter(l=>(l as typeof l&{evidence?:unknown[]}).evidence?.length).length:priced.filter(p=>p.cost||p.candidates.length).length,reviewedLines:activePriced.filter(p=>resolved.has(p.line.key)).length,activeLines:activePriced.length,pricedLines:activePriced.filter(p=>validUnitPrice(confirmOf(p))).length,exportAllowed:stageExportable,exported});
   const reviewBasis=JSON.stringify([lines,policy,priced.map(p=>({cost:p.cost,candidates:p.candidates.map(c=>c.row)}))]);
   const seenReviewBasis=useRef(reviewBasis);
@@ -534,7 +556,7 @@ export function WorkbenchPage({
       {extractionReviewOpen&&intakeRecord&&<ExtractionReview batch={intakeRecord} operator={currentUserId||'本机用户'} onClose={()=>setExtractionReviewOpen(false)} onSaved={batch=>{setIntakeRecord(batch);setExtractionReviewOpen(false);onDataRefresh?.();}}/>}
       {intakeRecord?.issues.length? <div className="stage-input-issues">{intakeRecord.issues.map((issue,i)=><button key={i} onClick={()=>goToStage(1)}>{issue} ↗</button>)}</div>:null}
       <div className="panel inquiry-materials-panel" id="rfq-materials" role="region" aria-label="物料核对"><ModuleBorderGrips/>
-        <div className="panel-title workflow-card-header">物料明细
+        <div className="panel-title">物料明细
           <span className="material-header-actions" style={{ marginLeft: 'auto', display: 'flex', gap: 8 }}>
           {email && !email.intakeBatchId && unreadRows > 0 && aiOk === true && (
             <button className="btn" disabled={llmBusy || estBusy !== ''} onClick={runLlmFix}>
@@ -634,6 +656,12 @@ export function WorkbenchPage({
                         ) : (
                           <div className="toolbar" style={{ marginBottom: 8 }}>
                             <button className="btn" onClick={() => startEdit(p)}>修改本行（手工）</button>
+                            <button className="btn" onClick={() => toggleResolved(p.line.key)}>
+                              {isResolved ? '撤销核对标记' : '我已核对，标记完成'}
+                            </button>
+                            <button className="btn" onClick={() => toggleSkip(p.line.key)}>
+                              {skipped.has(p.line.key) ? '恢复报价' : '本行暂不报价（进待报价清单）'}
+                            </button>
                           </div>
                         )}
                         {fieldsFor(ds.fieldSchema, 'inquiry', { customOnly: true }).length > 0 && (
@@ -672,12 +700,7 @@ export function WorkbenchPage({
                                 {f === 'NO_MATCH' && estCost[p.line.key] != null && '（已有估价，建议价已出）'}
                               </li>
                             ))}</ul>
-                            <button className="btn" onClick={() => toggleResolved(p.line.key)}>
-                              {isResolved ? '撤销核对标记' : '我已核对，标记完成'}
-                            </button>
-                            <button className="btn" onClick={() => toggleSkip(p.line.key)}>
-                              {skipped.has(p.line.key) ? '恢复报价' : '本行暂不报价（进待报价清单）'}
-                            </button>
+
                           </div>
                         )}
                         {p.flags.includes('NO_MATCH') && (
@@ -802,7 +825,7 @@ export function WorkbenchPage({
       <section className="panel stage-checks">
         <ModuleBorderGrips/>
         <header className="stage-check-header workflow-card-header">
-          <div className="panel-title">供货条件核对 <span>{activePriced.length} 项物料</span></div>
+          <div className="panel-title">供货条件核对</div>
         </header>
           <div className="wb-filterbar stage-check-filters">
             <FilterTabs label="条件检查筛选" value={checkFilter} onChange={setCheckFilter} items={[
@@ -901,9 +924,10 @@ export function WorkbenchPage({
       </section>
       <div className="panel inquiry-quote-panel" id="rfq-quote-preview" role="region" aria-label="报价草稿"><ModuleBorderGrips/>
         <div className="panel-title workflow-card-header">
-          报价单预览 · {activePriced.length} 项物料
-          <button className="btn" onClick={fillAll}>按规则填入建议价</button>
+          报价单预览
+          <div className="quote-document-header-actions"><button className="btn" onClick={fillAll}>按规则填入建议价</button><button className="btn primary" disabled={!onDocumentChange} onClick={()=>setDocumentEditing(true)}>填写报价单</button></div>
         </div>
+        {documentEditing&&<QuoteDocumentEditor value={documentValues} onClose={()=>setDocumentEditing(false)} onSave={value=>{onDocumentChange?.(value);setDocumentEditing(false);}}/>}
         <div className="wb-filterbar">
           <FilterTabs label="报价版式" value={tab} onChange={setTab} items={[{value:'quote',label:'标准 Quote 表'},{value:'cn',label:'中文报价单'}]} />
         </div>
@@ -949,9 +973,9 @@ export function WorkbenchPage({
           <div className="doc">
             <h3 className="doc-title">报 价 单</h3>
             <div className="doc-parties">
-              <span>需方（客户）：{lines[0]?.customer || '________'}</span>
-              <span>供方（报价方）：{getCompany().name || '________（设置页维护）'}</span>
-              <span>报价日期：{new Date().toISOString().slice(0, 10)}</span>
+              <span>需方（客户）：{documentValues.customerName || '待填写'}</span>
+              <span>供方（报价方）：{documentValues.company.name || '待填写'}</span>
+              <span>报价日期：{documentValues.quoteDate}</span>
             </div>
             <table>
               <thead>
@@ -985,13 +1009,13 @@ export function WorkbenchPage({
               {overCap && <div className="margin-low">整单金额超过审批上限 {fmtMoney(policy.orderCapCny)}，请主管审批后再导出。</div>}
             </div>
             <div className="doc-foot">
-              <span>交货时间：合同约定</span>
-              <span>{getCompany().warrantyLabel || '质保期'}：{getCompany().warrantyNew} 个月{getCompany().warrantyOh ? `（其他件状 ${getCompany().warrantyOh} 个月）` : ''}</span>
-              <span>报价有效期：{getCompany().validityDays} 天</span>
-              <span>供方盖章 / 信用代码：{getCompany().creditCode || '________'}</span>
+              <span>交货时间：{documentValues.deliveryTerms}</span>
+              <span>{documentValues.company.warrantyLabel || '质保期'}：{documentValues.company.warrantyNew} 个月{documentValues.company.warrantyOh ? `（其他件状 ${documentValues.company.warrantyOh} 个月）` : ''}</span>
+              <span>报价有效期：{documentValues.company.validityDays} 天</span>
+              <span>供方盖章 / 信用代码：{documentValues.company.creditCode || '________'}</span>
             </div>
-            {(getCompany().termsTemplate || '').trim() && (
-              <div className="doc-foot"><strong>附加条款</strong>{getCompany().termsTemplate!.split('\n').map((line) => line.trim()).filter(Boolean).map((line, i) => <div key={i}>{line}</div>)}</div>
+            {(documentValues.company.termsTemplate || '').trim() && (
+              <div className="doc-foot"><strong>附加条款</strong>{documentValues.company.termsTemplate!.split('\n').map((line) => line.trim()).filter(Boolean).map((line, i) => <div key={i}>{line}</div>)}</div>
             )}
           </div>
         )}
@@ -1003,8 +1027,14 @@ export function WorkbenchPage({
       <section hidden={shown<6} aria-busy={busyStage===6} className="workflow-section" data-current={stage===6} id="inquiry-stage-6" tabIndex={-1} data-inquiry-stage="6" aria-labelledby="inquiry-stage-title-6">
         <header className="workflow-section-heading"><h2 id="inquiry-stage-title-6" draggable data-module-reference title="拖到右侧输入框提问">{stageItems[5].label}</h2></header>
       <section className="panel stage-export"><ModuleBorderGrips/>
-        <div className="panel-title">导出报价单</div>
-        <div className="quote-signature-row"><div className="quote-signature-identity"><b>报价签名</b>{quoteSignature.signature?<><SignaturePreview signature={quoteSignature.signature}/><span>{quoteSignature.signature.signer}</span></>:<span>尚未签名</span>}</div><div className="quote-signature-actions">{quoteSignature.signature&&<button className="btn" onClick={quoteSignature.clear}>清除签名</button>}<button className="btn" disabled={!quoteSignature.basis||!stageExportable} onClick={()=>setSignatureOpen(true)}>{quoteSignature.signature?'重新签名':'手写签名'}</button></div></div>
+        <div className="panel-title workflow-card-header export-card-header">
+          <span>导出报价单</span>
+          <div className="quote-signature-actions">
+            {quoteSignature.signature&&<button className="btn" onClick={quoteSignature.clear}>清除签名</button>}
+            <button className="btn primary" disabled={exportBusy} onClick={requestSignature}>{quoteSignature.signature?'重新签名':'手写签名'}</button>
+          </div>
+        </div>
+        {quoteSignature.signature&&<div className="quote-signature-identity"><SignaturePreview signature={quoteSignature.signature}/><span>{quoteSignature.signature.signer}</span></div>}
         {quoteSignature.error&&<div role="alert" className="check-box">{quoteSignature.error}</div>}
         {signatureOpen&&quoteSignature.basis&&<QuoteSignature key={quoteSignature.basis} basis={quoteSignature.basis} signer={getCompany().operator} onClose={()=>setSignatureOpen(false)} onSave={signature=>{quoteSignature.save(signature);setSignatureOpen(false);}}/>}
         <div className="export-checklist"><div><span>物料信息</span><b>{extractionGaps ? `${extractionGaps} 项待补全` : invalidLines.length ? `${invalidLines.length} 行待补全` : `${activePriced.length} 行已完整`}</b><button className="btn" onClick={()=>goToStage(2)}>核对物料</button></div><div><span>人工核对</span><b>{activePriced.filter(p=>!resolved.has(p.line.key)).length ? `${activePriced.filter(p=>!resolved.has(p.line.key)).length} 行待核对` : '全部已核对'}</b><button className="btn" onClick={()=>goToStage(4)}>检查条件</button></div><div><span>报价单价</span><b>{activePriced.filter(p=>!validUnitPrice(confirmOf(p))).length ? `${activePriced.filter(p=>!validUnitPrice(confirmOf(p))).length} 行待定价` : '全部已定价'}</b><button className="btn" onClick={()=>goToStage(5)}>查看草稿</button></div></div>
@@ -1014,14 +1044,16 @@ export function WorkbenchPage({
         {persistencePending&&!persistenceError&&<div role="status">正在保存询价审核…</div>}
         {exportBusy&&<div role="status">正在保存审核快照…</div>}
         {exportReceipt&&exported&&<Badge text={`已生成文件 · 审核快照 ${exportReceipt}`} tone="green" />}
-        <div className="export-row" style={{ marginTop: 14 }}>
-          <button className="btn primary" disabled={!stageExportable||exportBusy} onClick={doExportInternal}>
+        {signatureRequested&&signatureBlock&&<div className="signature-block" role="alert"><span>{signatureBlock.message}</span>{signatureBlock.stage&&<button className="btn" onClick={()=>goToStage(signatureBlock.stage!)}>{signatureBlock.stage===2?'核对物料':signatureBlock.stage===5?'查看草稿':'检查条件'}</button>}</div>}
+        <div className="export-final-actions">
+        <div className="export-row">
+          <button className="btn" disabled={!stageExportable||exportBusy} onClick={doExportInternal}>
             下载内部核价表
           </button>
           <button className="btn primary" disabled={!stageExportable||exportBusy} onClick={doExportCustomer}>
             下载客户报价单
           </button>
-          {stageExportable && <Badge text="可导出" tone="green" />}
+        </div>
         </div>
         {exported&&<div role="status" className="export-receipt">导出文件已生成</div>}
       </section>

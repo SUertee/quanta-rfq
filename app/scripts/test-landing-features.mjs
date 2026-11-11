@@ -1,19 +1,20 @@
-import assert from 'node:assert/strict';import {readFileSync,statSync} from 'node:fs';import vm from 'node:vm';import {Window} from 'happy-dom';
-const html=readFileSync('public/quanta.html','utf8'),script=readFileSync('public/landing-features.js','utf8');
-const window=new Window({url:'http://localhost/quanta-rfq/quanta.html',width:1280,height:900}),document=window.document;
-document.body.innerHTML=html;
-const blobs=[],downloads=[];window.URL.createObjectURL=blob=>{blobs.push(blob);return 'blob:demo-'+blobs.length;};window.URL.revokeObjectURL=()=>{};window.HTMLAnchorElement.prototype.click=function(){downloads.push({name:this.download,url:this.href});};window.fetch=()=>{throw Error('Marketing demo must never call live APIs');};window.eval(script);
-const cards=[...document.querySelectorAll('[data-flip-stage]')];assert.equal(cards.length,6);let navigationCalls=0;window.scrollTo=()=>navigationCalls++;window.HTMLElement.prototype.scrollIntoView=()=>navigationCalls++;const entry=html.match(/<script id="landing-entry-scroll">([\s\S]*?)<\/script>/)[1];window.eval(entry);const baselineCalls=navigationCalls;
-for(const card of cards){assert.equal(card.tagName,'BUTTON');assert.equal(card.hasAttribute('href'),false);const image=card.querySelector('img');assert.equal(image.getAttribute('width'),'1200');image.dispatchEvent(new window.Event('load'));assert.equal(card.dataset.previewState,'ready');card.click();assert.equal(card.getAttribute('aria-pressed'),'true');assert.equal(card.querySelector('.feature-flip-back').getAttribute('aria-hidden'),'false');assert.equal(document.querySelectorAll('.is-flipped').length,1);card.click();assert.equal(card.getAttribute('aria-pressed'),'false');const path=image.getAttribute('src').split('?')[0].replace('./','public/');assert.ok(readFileSync(path,'utf8').includes('<svg'));}
-cards[0].click();document.dispatchEvent(new window.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));assert.equal(cards[0].getAttribute('aria-pressed'),'false');cards[0].querySelector('img').dispatchEvent(new window.Event('error'));cards[0].click();assert.equal(cards[0].dataset.previewState,'error');assert.ok(cards[0].getAttribute('aria-label').includes('重试'));cards[0].click();assert.equal(cards[0].dataset.previewState,'loading');assert.ok(cards[0].querySelector('img').getAttribute('src').includes('?retry='));cards[0].querySelector('img').dispatchEvent(new window.Event('load'));cards[0].click();assert.equal(navigationCalls,baselineCalls,'feature flips must not navigate or scroll');assert.equal(window.location.hash,'');
-const step=key=>document.querySelector(`[data-demo-stage="${key}"]`).click();const check=id=>{const node=document.getElementById(id);node.checked=true;node.dispatchEvent(new window.Event('change',{bubbles:true}));};
-assert.equal(document.querySelectorAll('[data-demo-stage]').length,6);assert.equal(document.querySelectorAll('[aria-pressed="true"][data-demo-stage]').length,1);assert.ok(document.querySelector('.demo-source-preview').textContent.includes('FAA 8130-3'));document.querySelector('[data-source="sheet"]').click();assert.ok(document.querySelector('.demo-source-preview table').textContent.includes('1134-2000'));
-step('extract');check('demo-only-missing');assert.equal(document.querySelector('[data-complete]').hidden,true);assert.ok(document.querySelector('tbody').textContent.includes('待补充'));
-step('evidence');assert.ok(document.querySelector('tbody').textContent.includes('14.37'));assert.ok(document.querySelector('tbody').textContent.includes('暂无可用依据'));
-step('conditions');check('demo-only-risks');assert.equal(document.querySelector('[data-complete]').hidden,true);assert.equal(document.querySelectorAll('.demo-risk-tags .demo-tag').length,3);
-step('draft');const markup=document.getElementById('demo-markup');markup.value='30';markup.dispatchEvent(new window.Event('input',{bubbles:true}));assert.equal(document.querySelector('[data-demo-price]').textContent,'18.68');assert.equal(document.querySelector('[data-demo-total]').textContent,'186.80');assert.ok(document.querySelector('tbody tr:last-child').textContent.includes('缺依据'));
-step('export');assert.equal(document.querySelector('[data-download]').disabled,true);check('demo-reviewed');assert.equal(document.querySelector('[data-download]').disabled,true);check('demo-skipped');assert.equal(document.querySelector('[data-download]').disabled,false);document.querySelector('[data-download="customer"]').click();document.querySelector('[data-download="internal"]').click();const quote=await blobs[0].text(),internal=await blobs[1].text();assert.ok(quote.includes('18.68')&&quote.includes('186.80'));assert.ok(!quote.includes('14.37')&&!quote.includes('内部成本'));assert.ok(internal.includes('14.37')&&internal.includes('暂不报价'));assert.equal(downloads[0].name,'quanta-demo-quote.html');
-step('draft');document.getElementById('demo-markup').value='31';document.getElementById('demo-markup').dispatchEvent(new window.Event('input',{bubbles:true}));step('export');assert.equal(document.querySelector('[data-download]').disabled,true,'changed price invalidates review');
-assert.ok(html.includes('交互演示 · 示例数据'));assert.ok(html.includes('航空航材 RFQ'));assert.ok(!html.includes('images.higgs.ai'));assert.ok(html.includes('./images/aviation-takeoff.jpg'));assert.ok(statSync('public/images/aviation-takeoff.jpg').size<400000);for(const match of html.matchAll(/<script>([\s\S]*?)<\/script>/g))new vm.Script(match[1]);
-const smoke=new Window({url:'http://localhost/quanta-rfq/quanta.html',width:1280,height:900});smoke.document.body.innerHTML=html;smoke.matchMedia=()=>({matches:false});smoke.requestAnimationFrame=()=>0;smoke.HTMLCanvasElement.prototype.getContext=()=>({createImageData:()=>({data:new Uint8ClampedArray(96*60*4)}),putImageData(){}});const animation=[...html.matchAll(/<script>([\s\S]*?)<\/script>/g)].at(-1)[1];smoke.eval(animation);smoke.dispatchEvent(new smoke.Event('scroll'));assert.ok(smoke.document.querySelector('#h1 .letter'));const dark=smoke.document.getElementById('split');Object.defineProperty(dark,'offsetHeight',{configurable:true,value:760});for(const height of [844,1700,3000]){smoke.happyDOM.setViewport({width:1280,height});dark.getBoundingClientRect=()=>({top:height-840});smoke.dispatchEvent(new smoke.Event('scroll'));assert.equal(smoke.document.getElementById('row').style.opacity,'1','short dark section must finish revealing at the bottom of tall viewports');}await smoke.happyDOM.close();
-await window.happyDOM.close();console.log('PASS: stationary flip previews, loading/retry, no scroll/hash navigation, six aviation demo stages, source preview, missing-field/risk filters, live pricing, missing evidence stays blank, explicit review/skip export gates, customer/internal separation, review invalidation and local aircraft asset');
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { Window } from 'happy-dom';
+
+const html = readFileSync('public/quanta.html', 'utf8');
+const window = new Window();
+window.document.body.innerHTML = html;
+const grid = window.document.querySelector('.logos');
+const stages = [...grid.querySelectorAll('.logo-cell')];
+assert.equal(stages.length, 6);
+assert.deepEqual(stages.map(stage => stage.textContent.trim()), [
+  '接收询价', '提取需求', '查询依据', '检查条件', '报价草稿', '确认导出',
+]);
+assert.equal(grid.querySelectorAll('button, a, [tabindex], [aria-pressed]').length, 0);
+assert.equal(window.document.querySelectorAll('.feature-flip-back').length, 0);
+assert.ok(!html.includes('landing-features.js'));
+assert.ok(window.document.getElementById('stmt'));
+assert.ok(window.document.getElementById('flight-plane'));
+await window.happyDOM.close();
+console.log('PASS: six static stage labels without interactive controls or flip previews');

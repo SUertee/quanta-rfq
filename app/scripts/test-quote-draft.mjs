@@ -77,3 +77,21 @@ const priorVersion=store.read('qa').version;inquiries.get('qa').status='evidence
 await act(async()=>root.render(React.createElement(Probe)));await wait(400);assert.equal(store.read('qa').stale,false,'refreshing source revision saves the cleared draft even without a new user edit');assert.equal(store.read('qa').state.lines[0].price,null);assert.ok(store.read('qa').version>priorVersion);
 await act(async()=>root.unmount());await window.happyDOM.abort();db.close();
 console.log('PASS: hook restore, serial/coalesced saves, conflict protection, explicit server reload and interrupted-write journal recovery');
+
+const documentDb=new SQL.Database();documentDb.run("CREATE TABLE inquiry(id TEXT PRIMARY KEY);INSERT INTO inquiry VALUES('document-qa');");
+const documentInquiry={id:'document-qa',status:'ready',issues:[],files:[],lines:[{id:'doc-line',lineNo:1,partNumber:'A',quantity:2,uom:'EA',condition:'FN',issues:[],evidence:[]}]};
+let documentStore=createQuoteDraftStore(documentDb,()=>{},()=>documentInquiry);
+const documentFields={customerName:'QA 客户',quoteDate:'2026-11-11',deliveryTerms:'收到订单后 5 天',company:{name:'QA 航材',address:'上海',creditCode:'QA-CODE',contact:'李',operator:'报价员',warrantyLabel:'质保期',warrantyNew:'12',warrantyOh:'6',validityDays:'30',termsTemplate:'交付 EASA Form 1'}};
+const documentRequest={...documentStore.read('document-qa'),requestId:randomUUID(),operator:'QA',...state('document-qa'),document:documentFields};delete documentRequest.state;delete documentRequest.stale;
+const savedDocument=documentStore.save('document-qa',documentRequest);
+assert.deepEqual(savedDocument.state.document,documentFields);
+documentStore=createQuoteDraftStore(new SQL.Database(documentDb.export()),()=>{},()=>documentInquiry);
+assert.deepEqual(documentStore.read('document-qa').state.document,documentFields,'quotation fields survive database reopen');
+const documentReceipt={draftVersion:savedDocument.version,content:JSON.stringify({draftVersion:savedDocument.version,policy:savedDocument.state.policy,document:documentFields,lines:savedDocument.state.lines})};
+assert.doesNotThrow(()=>validateSavedQuote(documentReceipt,savedDocument));
+assert.throws(()=>validateSavedQuote({...documentReceipt,content:JSON.stringify({...JSON.parse(documentReceipt.content),document:{...documentFields,customerName:'unsaved'}})},savedDocument),/报价单内容未保存/);
+assert.throws(()=>documentStore.save('document-qa',{...documentRequest,version:1,requestId:randomUUID(),document:{...documentFields,quoteDate:'2026-02-30'}}),error=>error.status===400);
+console.log('PASS: editable quotation metadata persists by inquiry, survives reopen and rejects unsaved export content and invalid dates');
+
+const retainedDocumentRequest={...documentRequest,requestId:randomUUID(),version:documentStore.read('document-qa').version};delete retainedDocumentRequest.document;
+assert.deepEqual(documentStore.save('document-qa',retainedDocumentRequest).state.document,documentFields,'older price-only callers preserve quotation fields');

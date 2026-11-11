@@ -43,7 +43,13 @@ await act(async()=>root.render(null));await act(async()=>root.render(React.creat
 await act(async()=>root.render(React.createElement(Probe,{value:content+' '})));assert.equal(state.signature,null,'change invalidates immediately');await settle();assert.equal(state.signature,null);await act(async()=>root.unmount());
 globalThis.setTimeout=()=>0;
 let download;URL.createObjectURL=blob=>{download=blob;return 'blob:qa';};
-api.exportCustomerHtml([{line:{key:'qa',partNumber:'A',description:'Bolt',quantity:2,uom:'EA',condition:'FN'},flags:[],candidates:[]}],{taskLabel:'QA',signature,priceBook:{qa:10},policy:{},company:{},skipped:new Set(),resolved:new Set(),manualCost:{}});
+api.exportCustomerHtml([{line:{key:'qa',partNumber:'A',description:'Bolt',quantity:2,uom:'EA',condition:'FN'},flags:[],candidates:[]}],{taskLabel:'QA',document:{customerName:'文档客户',quoteDate:'2026-11-10',deliveryTerms:'订单后五天'},signature,priceBook:{qa:10},policy:{},company:{},skipped:new Set(),resolved:new Set(),manualCost:{}});
 const html=await download.text();assert.ok(html.includes('<svg xmlns='));assert.ok(html.includes('QA &lt;script&gt;'));assert.ok(!html.includes('QA <script>'));
 console.log('PASS: mouse/touch drawing, cancellation, clear/re-sign, quote-bound restore/invalidation, bounded SVG, signed receipt, stale source/total rejection and safe customer export');
 await window.happyDOM.abort();
+
+const quotationDocumentHtml=await download.text();
+assert.ok(quotationDocumentHtml.includes('文档客户'));
+assert.ok(quotationDocumentHtml.includes('2026-11-10'));
+assert.ok(quotationDocumentHtml.includes('订单后五天'));
+console.log('PASS: customer quotation export includes edited customer, quotation date and delivery terms with the drawn signature');

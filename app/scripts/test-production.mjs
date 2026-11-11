@@ -15,6 +15,8 @@ try{
  assert.equal((await fetch(origin+base+'api/agents',{headers:{authorization:'Bearer '+automatic.token}})).status,200);
  const login=await fetch(origin+base+'api/auth/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:'admin',password:'admin123'})});assert.equal(login.status,200);const{token}=await login.json();assert.ok(token);
  const headers={authorization:'Bearer '+token};
+ const modelConfig=await (await fetch(origin+base+'api/model-config',{headers})).json();assert.deepEqual(Object.keys(modelConfig).sort(),['configured','model']);assert.equal(typeof modelConfig.configured,'boolean');assert.equal(typeof modelConfig.model,'string');
+
  const aircraft=await fetch(origin+base+'images/aviation-takeoff.jpg');assert.equal(aircraft.status,200);assert.equal(aircraft.headers.get('content-type'),'image/jpeg');const aircraftBytes=new Uint8Array(await aircraft.arrayBuffer());assert.equal(aircraftBytes[0],0xff);assert.equal(aircraftBytes[1],0xd8);
 
  const page=await fetch(origin+base+'?workspace=1',{headers});assert.equal(page.status,200);const html=await page.text();assert.ok(html.includes('href="'+base+'images/brand/quanta-mark.svg"'),'favicon respects deployment base');

@@ -187,6 +187,7 @@ export function IntakeRecord({
     inquiryId:batchId,lineId:line?.id,version:line?.version,evidenceId:entry.id,matchedAt:entry.matched_at,
   });
   const resourceResult=line?evaluateQuoteLine({...line,selectedBasisId:selectedBases[`intake-${batchId}-${line.lineNo}`]},evidence,rules):null;
+  const selectedEvidence=evidence.find(entry=>entry.id===selectedBases[`intake-${batchId}-${line?.lineNo}`]);
   const evaluatedEvidence=evidence.map(entry=>({...entry,current_match:resourceResult?.candidates.find(candidate=>candidate.id===entry.id)?.match||entry.current_match}));
   const toggle = (next: Pane) => setPane((old) => (old === next ? null : next));
   return (
@@ -345,13 +346,13 @@ export function IntakeRecord({
           {pane === "evidence" && (
             <>
               <div className="intake-evidence-toolbar">
-                <div className="evidence-heading"><h3>货源匹配</h3><div className="evidence-match-counts"><span>{lines.length} 项物料</span><span>{matched} 项有候选</span>{lines.length>matched&&<span className="evidence-unmatched">{lines.length-matched} 项待补充</span>}</div></div>
+                <div className="evidence-heading"><h3>货源匹配</h3></div>
                 <div className="intake-evidence-actions">
                   <button className="btn" onClick={()=>setSupplierImportOpen(true)}>导入供应商报价</button>
                   <button className="btn" disabled={busy} onClick={()=>void load(true)}>{busy?'查询中…':'刷新依据'}</button>
                 </div>
               </div>
-              {line&&selectedBases[`intake-${batchId}-${line.lineNo}`]&&onSelectBasis&&<div className="evidence-selection"><span>{resourceResult?.selected?'已指定报价依据':'已选依据待重新确认'}</span><button type="button" className="btn" disabled={selectionDisabled} onClick={()=>onSelectBasis(`intake-${batchId}-${line.lineNo}`,null)}>恢复自动选择</button></div>}
+              {line&&selectedBases[`intake-${batchId}-${line.lineNo}`]&&onSelectBasis&&<div className="evidence-selection" role="status"><span>{resourceResult?.selected?'当前报价依据':'报价依据需重新核对'} · {selectedEvidence?.source==='inventory'?'内部库存':String(selectedEvidence?.snapshot.supplierName||'供应商报价')}</span><button type="button" className="btn" disabled={selectionDisabled} onClick={()=>onSelectBasis(`intake-${batchId}-${line.lineNo}`,null)}>恢复自动选择</button></div>}
               <div className="intake-evidence-layout">
                 <nav className="evidence-material-tabs unified-tabs" aria-label="选择物料依据">
                   {lines.map((l) => (
@@ -409,7 +410,7 @@ export function IntakeRecord({
                             const inventory=e.source==='inventory';
                             const selected=resourceResult?.selected?.id===e.id;
                             const source=e.snapshot.sourceDocument as {fileName?:string}|undefined;
-                            return <tr key={e.id}>
+                            return <tr key={e.id} className={e.current_match?.state==='conflict'?'resource-conflict':selected?'resource-current':undefined}>
                               <td data-label="货源"><strong>{inventory?'内部库存':String(e.snapshot.supplierName||'供应商报价')}</strong>
                                 <span>{inventory?value(e.snapshot.warehouse):source?.fileName||'供应商报价'}</span>
                                 {e.snapshot.dataSource==='official_demo'&&<span className="badge badge-gray">演示数据</span>}
@@ -419,11 +420,11 @@ export function IntakeRecord({
                               <td data-label="供货条件"><span>件状 {value(inventory?e.snapshot.stockCondition:e.snapshot.condition)}</span>
                                 {!inventory&&<><span>交期 {value(e.snapshot.leadDays)} 天</span><span>有效期 {value(e.snapshot.validUntil)}</span><span>证书 {value(e.snapshot.certType)}</span></>}
                               </td>
-                              <td data-label="匹配结果"><strong className={`badge badge-${e.current_match?.state==='usable'?'green':e.current_match?.state==='conflict'?'red':'amber'}`}>{matchStates[e.current_match?.state||'']||'待确认'}</strong>
+                              <td data-label="匹配结果"><strong className="resource-match-status" data-state={e.current_match?.state||'needs_review'}>{matchStates[e.current_match?.state||'']||'待确认'}</strong>
                                 {!!e.current_match?.checks.some(check=>check.state!=='pass')&&<ul>{e.current_match.checks.filter(check=>check.state!=='pass').map(check=><li key={check.code}>{check.message}</li>)}</ul>}
-                                {selected&&<span className="resource-selected">{selectedBases[`intake-${batchId}-${line.lineNo}`]?'已选依据':'自动选用'}</span>}
+                                {selected&&<span className="resource-selected">{selectedBases[`intake-${batchId}-${line.lineNo}`]?'当前采用 · 手动选择':'当前采用 · 自动匹配'}</span>}
                               </td>
-                              <td data-label="操作"><div className="resource-row-actions">{!inventory&&<button type="button" className="btn" disabled={busy||selectionDisabled} onClick={()=>setCorrectionId(e.id)}>{e.current_match?.state==='usable'?'核对报价':'处理冲突'}</button>}{onSelectBasis&&<button type="button" className="btn" disabled={selectionDisabled||e.current_match?.state!=='usable'||!!line.issues?.length||selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id} aria-pressed={selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id} onClick={()=>onSelectBasis(`intake-${batchId}-${line.lineNo}`,e.id)}>{selectedBases[`intake-${batchId}-${line.lineNo}`]===e.id?'已选用':'选用'}</button>}
+                              <td data-label="操作"><div className="resource-row-actions">{!inventory&&<button type="button" className="btn" disabled={busy||selectionDisabled} onClick={()=>setCorrectionId(e.id)}>{e.current_match?.state==='usable'?'核对报价':'处理冲突'}</button>}{onSelectBasis&&<button type="button" className="btn" disabled={selectionDisabled||e.current_match?.state!=='usable'||!!line.issues?.length||selected} aria-pressed={selected} onClick={()=>onSelectBasis(`intake-${batchId}-${line.lineNo}`,e.id)}>{selected?'已采用':'设为报价依据'}</button>}
                                 <button type="button" className="btn reference-cite" aria-label={`引用依据 ${e.source_key}`} draggable onDragStart={event=>dragReference(event,evidenceReference(e))} onClick={()=>citeReference(evidenceReference(e))}>引用</button>
                               </div></td>
                             </tr>;

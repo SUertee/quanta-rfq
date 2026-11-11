@@ -1,3 +1,4 @@
+import type {QuoteDocument} from './quoteDocument';
 import {signatureSvg,type QuoteSignature} from '../../shared/signature.mjs';
 // B5/B13 文件导出：内部版 CSV（Excel 直接打开）+ 客户版 HTML（可打印/另存 PDF）+ 供应商询价单 CSV。
 // 不引第三方库；均为 UTF-8 BOM 文本，Excel 打开不乱码。
@@ -12,6 +13,7 @@ import { FLAG_PLAIN } from '../plain';
 import { fieldsFor, labelOf, type FieldSchema } from './fieldSchema';
 
 export interface ExportCtx {
+  document?:QuoteDocument;
   signature?:QuoteSignature|null;
   taskLabel: string;
   priceBook: Record<string, number>;
@@ -143,7 +145,7 @@ export function exportCustomerHtml(priced: PricedLine[], ctx: ExportCtx): void {
   }, 0);
   const freight = freightChargeFor(items, ctx.policy);
   const total = Math.round((items + freight) * 100) / 100;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = ctx.document?.quoteDate || new Date().toISOString().slice(0, 10);
 
   const html = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
 <title>报价单 ${esc(ctx.taskLabel)}</title>
@@ -162,7 +164,7 @@ th{background:#f0f3f9}
 </style></head><body>
 <h1>报 价 单</h1>
 <div class="meta">
-  <span>需方：${esc(priced[0]?.line.customer ?? '')}</span>
+  <span>需方：${esc(ctx.document?.customerName ?? priced[0]?.line.customer ?? '')}</span>
   <span>供方：${esc(c.name || '________')}</span>
   <span>报价日期：${today}</span>
 </div>
@@ -179,7 +181,7 @@ ${pending.length ? `
   <div>合计（小写）：${fmtMoney(total)}　合计（大写）：${toChineseUpper(total)}</div>
 </div>
 <div class="foot">
-  <span>交货时间：合同约定</span>
+  <span>交货时间：${esc(ctx.document?.deliveryTerms || '合同约定')}</span>
   <span>${esc(c.warrantyLabel || '质保期')}：${esc(c.warrantyNew)} 个月${c.warrantyOh ? `（其他件状 ${esc(c.warrantyOh)} 个月）` : ''}</span>
   <span>报价有效期：${esc(c.validityDays)} 天</span>
 </div>
